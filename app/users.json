@@ -1,0 +1,30 @@
+[
+  {
+    "name": "Nico Prananta",
+    "accountNumber": "ABCD1234",
+    "phoneNumber": "0212345678",
+    "verificationCode": "",
+    "balance": 100
+  },
+  {
+    "name": "John Doe",
+    "accountNumber": "EFGH6789",
+    "phoneNumber": "0221451321",
+    "verificationCode": "",
+    "balance": 1000
+  },
+  {
+    "name": "Jane Doe",
+    "accountNumber": "IJKL9876",
+    "phoneNumber": "0227831212",
+    "verificationCode": "",
+    "balance": 200
+  },
+  {
+    "name": "Mike Smith",
+    "accountNumber": "MNOP4567",
+    "phoneNumber": "02142424242",
+    "verificationCode": "",
+    "balance": 10
+  }
+]

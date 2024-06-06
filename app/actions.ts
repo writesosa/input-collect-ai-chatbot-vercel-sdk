@@ -3,20 +3,19 @@
 import { InvalidToolArgumentsError, generateText, nanoid, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
-
+import users from "./users.json";
 export interface Message {
   role: "user" | "assistant";
   content: string;
 }
 
-const userData = {
-  accountNumber: "ABCD1234",
-  phoneNumber: "0212345678",
+const currentUserData = {
+  name: "",
+  accountNumber: "",
+  phoneNumber: "",
   verificationCode: "",
-  balance: 100,
+  balance: 0,
 };
-
-const otherUserAccounts = ["EFGH6789", "IJKL9876", "MNOP4567"];
 
 // generate 4 digit random number
 function generateFourDigitNumber(): string {
@@ -31,20 +30,25 @@ export async function continueConversation(history: Message[]) {
   try {
     const { text, toolResults } = await generateText({
       model: openai("gpt-4o"),
-      system: `You are a the bank assistant! Reply with nicely formatted markdown. Keep your reply short and concise. Don't overwhelm the user with too much information.
-        You can only perform the following actions:
-        - transferMoney: Perform a transfer of money. Call the transferMoney tool only when you have required information. Otherwise, keep asking the user. Don't come up with the information yourself. Once you have the complete information, ask the user to confirm the transfer before calling the tool by showing the transfer information.
-        - requestBalance: Request to get the current balance of the account. Call the requestBalance tool only when you have required information. Otherwise, keep asking the user. Don't come up with the information yourself. Once you have the complete information, ask the user to confirm the request before calling the tool by showing the request information.
-        - getBalance: Get the current balance of the account. Call the getBalance tool only when you have required information. Otherwise, keep asking the user. Don't come up with the information yourself. Once you have the complete information, ask the user to confirm the request before calling the tool by showing the request information.
-        - verifyPhoneNumber: Verify the phone number of the account. Only call this tool when the previous tool call requires phone number verification. Call the verifyPhoneNumber tool only when you have required information. Otherwise, keep asking the user. Don't come up with the information yourself. Once you have the complete information, ask the user to confirm the request before calling the tool by showing the request information.
+      system: `You are a the Sinarmas bank assistant! You only know things about the Sinarmas bank. Reply with nicely formatted markdown. Keep your reply short and concise. Don't overwhelm the user with too much information. 
+
+        You can _only_ perform the following actions:
+        - transferMoney: Schedule the money transfer. This tool and the parameters' collection must only be called if the user has verified their account via OTP verification. Call the transferMoney tool only when you have all required parameters. Otherwise, keep asking the user. Don't come up with the information yourself. Once you have the complete information, ask the user to confirm the transfer before calling the tool by showing the transfer information.
+        - getBalance: Get the current balance of the account. This tool and the parameters' collection must only be called if the user has verified their account via OTP verification. Call the getBalance tool only when you have required parameters. Otherwise, keep asking the user. Don't come up with the information yourself. Once you have the complete information, ask the user to confirm the request before calling the tool by showing the request information.
+
+        Some of the actions require the user to verify their account first by providing a verification code (OTP) sent to their phone number. The verification code is valid only when the user enters it correctly. If the verification code is invalid, the user needs to request a new verification code. Subsequent verifications are required when the last verification was more than 3 minutes ago.
+        - verifyPhoneNumber: Verify the phone number of the account. Only collect the parameter to call this tool when the previous tool call requires phone number verification. And then call the verifyPhoneNumber tool only when you have required information. Otherwise, keep asking the user. Don't come up with the information yourself. Once you have the complete information, ask the user to confirm the request before calling the tool by showing the request information.
+        - verifyOTP: Verify the OTP sent to the user's phone number. If the OTP is valid, perform the next function. Otherwise, ask the user to request a new OTP.
+
+        Don't perform any other actions.
         `,
       messages: history,
       maxToolRoundtrips: 5,
       tools: {
         transferMoney,
-        requestBalance,
         getBalance,
         verifyPhoneNumber,
+        verifyOTP,
       },
     });
 
@@ -78,7 +82,8 @@ export async function continueConversation(history: Message[]) {
 }
 
 const transferMoney = tool({
-  description: "Perform a transfer of money",
+  description:
+    "Schedule the money transfer to another account. Only collect the parameters for this tool and call this tool when the user has successfully verified their account via OTP verification.",
   parameters: z.object({
     amount: z.number().min(1).describe("The amount of money to transfer"),
     destination: z
@@ -107,38 +112,75 @@ const transferMoney = tool({
       `Execution date time: ${executionDateTime}`
     );
     await new Promise((resolve) => setTimeout(resolve, 1000));
+    console.log(currentUserData);
 
-    if (!otherUserAccounts.includes(destination)) {
+    // check if the destination account number exists in the user database and it is not the same as the current account number
+    const recipient = users.find(
+      (user) =>
+        user.accountNumber !== destination &&
+        user.accountNumber !== currentUserData.accountNumber
+    );
+
+    if (!recipient) {
       return {
         transactionId: nanoid(),
         transactionStatus: "failed",
-        message: `The transfer of ${amount} to ${destination} failed. The destination account is not in our database.`,
+        message: "The destination account number does not exist.",
       };
     }
 
-    const beforeTransferBalance = userData.balance;
-    const afterTransferBalance = userData.balance - amount;
+    const beforeTransferBalance = currentUserData.balance;
+    const afterTransferBalance = currentUserData.balance - amount;
 
     if (afterTransferBalance < 0) {
       return {
         transactionId: nanoid(),
         transactionStatus: "failed",
-        message: `The transfer of ${amount} to ${destination} failed. The user has insufficient funds.`,
+        recipientName: recipient.name,
+        message: `The transfer of ${amount} to ${destination} (${recipient.name}) failed. The current user has insufficient funds.`,
       };
     }
 
-    userData.balance = afterTransferBalance;
+    currentUserData.balance = afterTransferBalance;
+
+    // TODO: append the transaction to the transaction history in transactions.json
 
     return {
       transactionId: nanoid(),
       transactionStatus: "success",
-      message: `The transfer of ${amount} to ${destination} will be executed at ${executionDateTime}. Current balance: ${beforeTransferBalance}. After transfer, balance: ${afterTransferBalance}`,
+      recipientName: recipient.name,
+      message: `The transfer of ${amount} to ${destination} (${recipient.name}) will be executed at ${executionDateTime}. Current balance: ${beforeTransferBalance}. After transfer, balance: ${afterTransferBalance}`,
     };
   },
 });
 
-const requestBalance = tool({
-  description: "Request to get the current balance of the account.",
+const getBalance = tool({
+  description:
+    "Get the current balance of the account. Only collect the parameters for this tool and call this tool when the user has successfully verified their account via OTP verification.",
+  parameters: z.object({
+    accountNumber: z
+      .string()
+      .min(4)
+      .describe(
+        "The account number of the account. It should alphanumeric, minimum 4 characters, no spaces, and no special characters."
+      ),
+  }),
+  execute: async ({ accountNumber }) => {
+    console.log("[TOOL] getBalance", `Account number: ${accountNumber}`);
+    console.log(currentUserData);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    // check if the phone number and account number matches.
+    return {
+      transactionId: nanoid(),
+      balance: currentUserData.balance,
+      userName: currentUserData.name,
+      message: `The balance of the user's account (${currentUserData.name}) is ${currentUserData.balance} USD.`,
+    };
+  },
+});
+
+const verifyPhoneNumber = tool({
+  description: "Send the OTP code to the user's phone number.",
   parameters: z.object({
     accountNumber: z
       .string()
@@ -155,17 +197,19 @@ const requestBalance = tool({
   }),
   execute: async ({ accountNumber, phoneNumber }) => {
     console.log(
-      "[TOOL] requestBalance",
+      "[TOOL] verifyPhoneNumber",
       `Account number: ${accountNumber}`,
       `Phone number: ${phoneNumber}`
     );
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    // check if the phone number and account number matches.
-    if (
-      userData.accountNumber !== accountNumber ||
-      userData.phoneNumber !== phoneNumber
-    ) {
+    // search the user given the phone number and account number
+    const user = users.find(
+      (user) =>
+        user.phoneNumber === phoneNumber && user.accountNumber === accountNumber
+    );
+
+    if (!user) {
       return {
         transactionId: nanoid(),
         transactionStatus: "failed",
@@ -173,11 +217,15 @@ const requestBalance = tool({
       };
     }
 
-    userData.verificationCode = generateFourDigitNumber();
+    currentUserData.name = user.name;
+    currentUserData.accountNumber = accountNumber;
+    currentUserData.phoneNumber = phoneNumber;
+    currentUserData.balance = user.balance;
+    currentUserData.verificationCode = generateFourDigitNumber();
 
     console.log(
-      "[TOOL] requestBalance",
-      `Verification code: ${userData.verificationCode}`
+      "[TOOL] verifyPhoneNumber",
+      `Verification code: ${currentUserData.verificationCode}`
     );
 
     return {
@@ -185,39 +233,15 @@ const requestBalance = tool({
       requireTool: "verifyPhoneNumber",
       onRequireToolSuccess: "getBalance",
       message:
-        "Verification code sent to your phone number. Please enter the code to confirm the request.",
+        "Verification code has been sent to the user's phone number. User needs to enter the code to confirm the request.",
     };
   },
 });
 
-const getBalance = tool({
-  description:
-    "Get the current balance of the account. Only call this tool when the requestBalance has been called and verifyPhoneNumber has been called and succeeded.",
+const verifyOTP = tool({
+  description: "Verify the OTP code that the user entered.",
   parameters: z.object({
-    accountNumber: z
-      .string()
-      .min(4)
-      .describe(
-        "The account number of the account. It should alphanumeric, minimum 4 characters, no spaces, and no special characters."
-      ),
-  }),
-  execute: async ({ accountNumber }) => {
-    console.log("[TOOL] getBalance", `Account number: ${accountNumber}`);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    // check if the phone number and account number matches.
-    return {
-      transactionId: nanoid(),
-      balance: userData.balance,
-      message: `Your balance is ${userData.balance} USD.`,
-    };
-  },
-});
-
-const verifyPhoneNumber = tool({
-  description:
-    "Verify the phone number of the account. Only call this tool when the previous tool call requires phone number verification.",
-  parameters: z.object({
-    verificationCode: z
+    otpCode: z
       .string()
       .refine(
         (value) => {
@@ -228,13 +252,13 @@ const verifyPhoneNumber = tool({
         }
       )
       .describe(
-        "The verification code sent to the user's phone number. It should be a 4-digit number. User must provide this code."
+        "The OTP code sent to the user's phone number. It should be a 4-digit number. User must provide this code."
       ),
     onRequireToolSuccess: z
       .string()
       .min(1)
       .describe(
-        "The tool to call when the verfication code is valid. It should be a valid tool name. This parameter must not be provided by the user."
+        "The tool to call when the verfication code is valid. It should be a valid tool name. This parameter must not be provided by the user. The value of this parameter must be the same as the onRequireToolSuccess parameter of the result of the previous tool."
       ),
     phoneNumber: z
       .string()
@@ -243,29 +267,31 @@ const verifyPhoneNumber = tool({
         "The phone number of the account. It should be a valid phone number."
       ),
   }),
-  execute: async ({ phoneNumber, verificationCode, onRequireToolSuccess }) => {
+  execute: async ({ phoneNumber, otpCode, onRequireToolSuccess }) => {
     console.log(
       "[TOOL] verifyPhoneNumber",
       `Phone number: ${phoneNumber}`,
-      `Verification code: ${verificationCode}`,
+      `OTP code: ${otpCode}`,
       `On require tool success: ${onRequireToolSuccess}`
     );
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    // check if the phone number and verification code matches.
-    // if validated, get the account balance.
-    // in practice, maybe perform the transsaction based on the ID
 
-    if (verificationCode !== userData.verificationCode) {
+    if (otpCode !== currentUserData.verificationCode) {
       return {
         verified: false,
         message: "The verification code is invalid.",
       };
     }
 
+    // reset the verification code
+    currentUserData.verificationCode = "";
+
     return {
-      message: `Verification code successfully verified.`,
+      message: `OTP code successfully verified. The name of the user is ${currentUserData.name}. Perform the next function: ${onRequireToolSuccess}`,
       verified: true,
+      verifiedAt: new Date().toISOString(),
       onRequireToolSuccess,
+      userName: currentUserData.name,
     };
   },
 });
