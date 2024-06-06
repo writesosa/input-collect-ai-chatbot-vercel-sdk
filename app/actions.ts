@@ -9,12 +9,19 @@ export interface Message {
   content: string;
 }
 
+const otpSentData = {
+  accountNumber: "",
+  phoneNumber: "",
+  verificationCode: "",
+};
+
 const currentUserData = {
   name: "",
   accountNumber: "",
   phoneNumber: "",
   verificationCode: "",
   balance: 0,
+  lastVerifiedAt: "",
 };
 
 // generate 4 digit random number
@@ -217,15 +224,14 @@ const verifyPhoneNumber = tool({
       };
     }
 
-    currentUserData.name = user.name;
-    currentUserData.accountNumber = accountNumber;
-    currentUserData.phoneNumber = phoneNumber;
-    currentUserData.balance = user.balance;
-    currentUserData.verificationCode = generateFourDigitNumber();
+    // in production, we would need to store this information in database
+    otpSentData.accountNumber = accountNumber;
+    otpSentData.phoneNumber = phoneNumber;
+    otpSentData.verificationCode = generateFourDigitNumber();
 
     console.log(
       "[TOOL] verifyPhoneNumber",
-      `Verification code: ${currentUserData.verificationCode}`
+      `Verification code: ${otpSentData.verificationCode}`
     );
 
     return {
@@ -276,15 +282,34 @@ const verifyOTP = tool({
     );
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    if (otpCode !== currentUserData.verificationCode) {
+    if (otpCode !== otpSentData.verificationCode) {
       return {
         verified: false,
         message: "The verification code is invalid.",
       };
     }
 
-    // reset the verification code
+    // find user based on phone number and account number
+    const user = users.find(
+      (user) =>
+        user.phoneNumber === otpSentData.phoneNumber &&
+        user.accountNumber === otpSentData.accountNumber
+    );
+
+    if (!user) {
+      return {
+        verified: false,
+        message: "The account number and phone number do not match.",
+      };
+    }
+
+    // pretend that we have a session with the user
+    currentUserData.name = user.name;
+    currentUserData.accountNumber = user.accountNumber;
+    currentUserData.phoneNumber = user.phoneNumber;
+    currentUserData.balance = user.balance;
     currentUserData.verificationCode = "";
+    currentUserData.lastVerifiedAt = new Date().toISOString();
 
     return {
       message: `OTP code successfully verified. The name of the user is ${currentUserData.name}. Perform the next function: ${onRequireToolSuccess}`,
