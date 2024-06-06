@@ -4,6 +4,7 @@ import { useEffect, useOptimistic, useState } from "react";
 import Markdown from "react-markdown";
 import { Message, continueConversation } from "./actions";
 import useConversationStore from "./use-conversation-store";
+import { cn } from "./util";
 
 // Force the page to be dynamic and allow streaming responses up to 30 seconds
 export const dynamic = "force-dynamic";
@@ -30,7 +31,7 @@ export default function Home() {
   }, [conversation.length]);
 
   return (
-    <div className="flex flex-col w-full max-w-md py-24 mx-auto stretch pb-36">
+    <div className="flex flex-col w-full max-w-md py-24 mx-auto stretch pb-36 space-y-2">
       {optimisticConversation
         .filter((m) =>
           m.role === "assistant"
@@ -40,9 +41,24 @@ export default function Home() {
             : true
         )
         .map((message, index) => (
-          <div key={index} className="flex flex-row space-x-2 p-2">
-            <div>{message.role === "assistant" ? "🤖" : "🧔"}</div>
-            <div className="flex flex-col space-y-2">
+          <div
+            key={index}
+            className={cn(
+              "flex flex-row space-x-2 p-2 rounded-md",
+              message.role === "user" ? "flex-row-reverse  self-end" : ""
+            )}
+          >
+            <div className="mx-2">
+              {message.role === "assistant" ? "🤖" : "🧔"}
+            </div>
+            <div
+              className={cn(
+                "flex flex-col space-y-2 p-2 px-4 rounded-md",
+                message.role === "user"
+                  ? "flex-row-reverse bg-blue-500 text-white self-end"
+                  : "bg-slate-100"
+              )}
+            >
               <Markdown>{message.content}</Markdown>
             </div>
           </div>
