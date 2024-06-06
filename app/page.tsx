@@ -78,6 +78,12 @@ export default function Home() {
           e.preventDefault();
           const userInput = input.trim();
           setInput("");
+
+          if (userInput === "reset") {
+            setConversation([]);
+            return;
+          }
+
           addOptimisticMessage([
             {
               role: "assistant",
