@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useOptimistic, useState } from "react";
 import Markdown from "react-markdown";
 import { Message, continueConversation } from "./actions";
 import useConversationStore from "./use-conversation-store";
@@ -13,6 +13,12 @@ export default function Home() {
   const { conversation: conversationString, setConversation } =
     useConversationStore();
   const conversation = JSON.parse(conversationString) as Message[];
+  const [optimisticConversation, addOptimisticMessage] = useOptimistic(
+    conversation,
+    (current, optimisticVal: Message[]) => {
+      return [...current, ...optimisticVal];
+    }
+  );
   const [input, setInput] = useState<string>(
     "I want to transfer money to my friend"
   );
@@ -25,7 +31,7 @@ export default function Home() {
 
   return (
     <div className="flex flex-col w-full max-w-md py-24 mx-auto stretch pb-36">
-      {conversation
+      {optimisticConversation
         .filter((m) =>
           m.role === "assistant"
             ? m.content.startsWith("[METADATA]")
@@ -47,16 +53,22 @@ export default function Home() {
           e.preventDefault();
           const userInput = input.trim();
           setInput("");
-          const nextMessages = [
+          addOptimisticMessage([
+            {
+              role: "assistant",
+              content: `[METADATA] Current date and time: ${new Date().toLocaleString()}`,
+            } as const,
+            { role: "user", content: userInput } as const,
+          ]);
+
+          const { messages } = await continueConversation([
             ...conversation,
             {
               role: "assistant",
               content: `[METADATA] Current date and time: ${new Date().toLocaleString()}`,
             } as const,
             { role: "user", content: userInput } as const,
-          ];
-
-          const { messages } = await continueConversation(nextMessages);
+          ]);
 
           setConversation(messages);
         }}
