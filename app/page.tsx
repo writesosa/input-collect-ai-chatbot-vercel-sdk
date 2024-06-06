@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useOptimistic, useState } from "react";
+import { useEffect, useOptimistic, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import { Message, continueConversation } from "./actions";
 import useConversationStore from "./use-conversation-store";
@@ -23,12 +23,20 @@ export default function Home() {
   const [input, setInput] = useState<string>(
     "I want to transfer money to my friend"
   );
+  const [isTyping, setIsTyping] = useState(false);
+  const lastElementRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (conversation.length > 0) {
       setInput("");
     }
   }, [conversation.length]);
+
+  useEffect(() => {
+    if (optimisticConversation.length > 0) {
+      lastElementRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [optimisticConversation.length]);
 
   return (
     <div className="flex flex-col w-full max-w-md py-24 mx-auto stretch pb-36 space-y-2">
@@ -63,6 +71,7 @@ export default function Home() {
             </div>
           </div>
         ))}
+      <div className="w-full h-1 bg-transparent" ref={lastElementRef} />
 
       <form
         onSubmit={async (e) => {
@@ -76,6 +85,7 @@ export default function Home() {
             } as const,
             { role: "user", content: userInput } as const,
           ]);
+          setIsTyping(true);
 
           const { messages } = await continueConversation([
             ...conversation,
@@ -85,11 +95,14 @@ export default function Home() {
             } as const,
             { role: "user", content: userInput } as const,
           ]);
-
+          setIsTyping(false);
           setConversation(messages);
         }}
       >
-        <div className="fixed bottom-0 w-full max-w-md flex flex-col space-y-2 py-4">
+        <div className="fixed bottom-0 w-full max-w-md flex flex-col space-y-2 py-4 bg-white">
+          {isTyping ? (
+            <p className="text-gray-400 italic text-sm">Bot is typing ...</p>
+          ) : null}
           <input
             className=" p-2 border border-gray-300 rounded shadow-xl"
             type="text"
