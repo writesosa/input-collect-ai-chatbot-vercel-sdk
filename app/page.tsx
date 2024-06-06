@@ -79,7 +79,7 @@ export default function Home() {
           const userInput = input.trim();
           setInput("");
 
-          if (userInput === "reset") {
+          if (userInput === "reset" || userInput === "clear") {
             setConversation([]);
             return;
           }
