@@ -35,6 +35,7 @@ export async function continueConversation(history: Message[]) {
   "use server";
 
   try {
+    console.log("[LLM] continueConversation");
     const { text, toolResults } = await generateText({
       model: openai("gpt-4o"),
       system: `You are a the Sinarmas bank assistant! You only know things about the Sinarmas bank. Reply with nicely formatted markdown. Keep your reply short and concise. Don't overwhelm the user with too much information. 
@@ -236,8 +237,6 @@ const verifyPhoneNumber = tool({
 
     return {
       transactionId: nanoid(),
-      requireTool: "verifyPhoneNumber",
-      onRequireToolSuccess: "getBalance",
       message:
         "Verification code has been sent to the user's phone number. User needs to enter the code to confirm the request.",
     };
@@ -264,7 +263,7 @@ const verifyOTP = tool({
       .string()
       .min(1)
       .describe(
-        "The tool to call when the verfication code is valid. It should be a valid tool name. This parameter must not be provided by the user. The value of this parameter must be the same as the onRequireToolSuccess parameter of the result of the previous tool."
+        "The tool to call when the verfication code is valid. It should be a valid tool name. This parameter must not be provided by the user."
       ),
     phoneNumber: z
       .string()
