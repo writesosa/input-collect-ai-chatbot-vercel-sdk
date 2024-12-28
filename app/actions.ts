@@ -3,7 +3,7 @@
 import { InvalidToolArgumentsError, generateText, nanoid, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
-import { updateAirtableRecord } from "../../utils/airtable"; // Ensure this function is available
+import { updateAirtableRecord } from "./utils/airtable";
 
 export interface Message {
   role: "user" | "assistant";
