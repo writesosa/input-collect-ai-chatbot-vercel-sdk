@@ -12,23 +12,29 @@ export async function POST(req: Request) {
     messages,
   });
 
-  // Create a new Response object to set headers
-  const response = new Response(result);
+  // Extract the text content from the StreamTextResult
+  const textContent = result.text; // Adjust this line based on the actual property that contains the text
 
-  // Set CORS headers
-  response.headers.set("Access-Control-Allow-Origin", "https://www.wonderland.guru");
-  response.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
-  response.headers.set("Access-Control-Allow-Headers", "Content-Type");
+  // Create a new Response object with the text content
+  const response = new Response(textContent, {
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "https://www.wonderland.guru",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    },
+  });
 
   return response;
 }
 
 export async function OPTIONS() {
-  const headers = new Headers();
-  headers.set("Access-Control-Allow-Origin", "https://www.wonderland.guru");
-  headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
-  headers.set("Access-Control-Allow-Headers", "Content-Type");
-  headers.set("Access-Control-Max-Age", "86400"); // Cache preflight response for 24 hours
-
-  return new Response(null, { headers });
+  return new Response(null, {
+    headers: {
+      "Access-Control-Allow-Origin": "https://www.wonderland.guru",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Max-Age": "86400", // Cache preflight response for 24 hours
+    },
+  });
 }
