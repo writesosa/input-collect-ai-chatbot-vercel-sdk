@@ -1,53 +1,53 @@
-document.getElementById('chatbot-send').addEventListener('click', async () => {
-  const inputField = document.getElementById('chatbot-input');
-  const message = inputField.value.trim();
-  if (message) {
-    displayMessage('user', message);
-    inputField.value = '';
-    try {
-      const response = await fetch('https://input-collect-ai-chatbot-vercel-sdk.vercel.app/api/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ messages: [{ role: 'user', content: message }] }),
+import { openai } from "@ai-sdk/openai";
+import { streamText } from "ai";
+
+// Allow streaming responses up to 30 seconds
+export const maxDuration = 30;
+
+export async function POST(req: Request) {
+  const { messages } = await req.json();
+
+  const result = await streamText({
+    model: openai("gpt-4-turbo"),
+    messages,
+  });
+
+  // Set up a readable stream to process text as chunks
+  const stream = new ReadableStream({
+    start(controller) {
+      result.on("data", (chunk) => {
+        const text = chunk.toString();
+        controller.enqueue(text);
       });
+      result.on("end", () => {
+        controller.close();
+      });
+      result.on("error", (error) => {
+        console.error("Stream error:", error);
+        controller.error(error);
+      });
+    },
+  });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! Status: ${response.status}`);
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let assistantMessage = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        assistantMessage += chunk;
-        updateLastAssistantMessage(assistantMessage); // Update in real-time
-      }
-    } catch (error) {
-      console.error('Error:', error);
-      displayMessage('assistant', 'An error occurred while processing your request.');
-    }
-  }
-});
-
-function displayMessage(role, content) {
-  const messagesContainer = document.getElementById('chatbot-messages');
-  const messageElement = document.createElement('div');
-  messageElement.textContent = `${role === 'user' ? 'You' : 'Assistant'}: ${content}`;
-  messagesContainer.appendChild(messageElement);
-  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  // Return the stream with proper headers
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/plain", // Streaming plain text
+      "Access-Control-Allow-Origin": "https://www.wonderland.guru",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    },
+  });
 }
 
-function updateLastAssistantMessage(content) {
-  const messagesContainer = document.getElementById('chatbot-messages');
-  const lastMessageElement = messagesContainer.querySelector('div.assistant:last-child');
-  if (lastMessageElement) {
-    lastMessageElement.textContent = `Assistant: ${content}`;
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-  }
+// Handle preflight OPTIONS request
+export async function OPTIONS() {
+  return new Response(null, {
+    headers: {
+      "Access-Control-Allow-Origin": "https://www.wonderland.guru",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Max-Age": "86400", // Cache preflight response for 24 hours
+    },
+  });
 }
