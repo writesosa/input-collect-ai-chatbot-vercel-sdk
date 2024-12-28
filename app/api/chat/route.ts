@@ -1,71 +1,71 @@
-import { continueConversation } from "../../actions"; // Adjust the path as needed
+import { continueConversation } from "../../actions"; // Adjust the import path as needed
 import { Message } from "../../actions"; // Ensure Message is imported
-import { updateAirtableRecord } from "../../utils/airtable"; // Helper function to update Airtable
-
-export const maxDuration = 30;
+import { fetchAirtableData } from "../../utils/airtable"; // Ensure this function exists to fetch Airtable data
 
 export async function POST(req: Request) {
   try {
-    const { messages, recordId, pageType, fields }: { 
-      messages: Message[]; 
-      recordId: string; 
-      pageType: string; 
-      fields: Record<string, any>; 
+    // Parse the incoming request payload
+    const { messages, pageType, recordId, fields }: { 
+      messages: Message[];
+      pageType: string;
+      recordId: string;
+      fields: Record<string, any>;
     } = await req.json();
 
-    // Log incoming payload
-    console.log("[INCOMING PAYLOAD]:", { messages, recordId, pageType, fields });
+    console.log("[DEBUG] Incoming Payload:", { messages, pageType, recordId, fields });
 
-    // Generate the response using the assistant
-    const { messages: updatedMessages } = await continueConversation([
-      ...messages,
-      { role: "system", content: `Here are the current record details: ${JSON.stringify(fields)}` },
-    ]);
-
-    // Extract assistant response for the user
-    const userResponse = updatedMessages.find((msg) => msg.role === "assistant")?.content || "";
-
-    // Extract Airtable updates from the assistant's response (assume JSON update format)
-    const airtableUpdates = updatedMessages.find((msg) => msg.role === "assistant_update")?.content;
-    let updateResult;
-
-    if (airtableUpdates) {
-      try {
-        const parsedUpdates = JSON.parse(airtableUpdates);
-        console.log("[Airtable Updates Parsed]:", parsedUpdates);
-
-        // Update Airtable record
-        updateResult = await updateAirtableRecord(pageType, recordId, parsedUpdates);
-        console.log("[Airtable Update Result]:", updateResult);
-      } catch (error) {
-        console.error("[ERROR] Parsing or Updating Airtable:", error);
-      }
+    // Fetch Airtable data if fields are not provided
+    let recordFields = fields;
+    if (!recordFields && pageType && recordId) {
+      recordFields = await fetchAirtableData(pageType, recordId);
     }
 
-    // Log outgoing payload
-    console.log("[OUTGOING PAYLOAD]:", { userResponse, airtableUpdates });
-
-    return new Response(
-      JSON.stringify({
-        userResponse,
-        airtableUpdates: updateResult,
-      }),
-      {
-        headers: { "Content-Type": "application/json" },
-      }
+    // Generate the response using the assistant
+    const { messages: updatedMessages } = await continueConversation(
+      messages,
+      pageType,
+      recordId,
+      recordFields
     );
+
+    console.log("[DEBUG] Outgoing Payload:", updatedMessages);
+
+    // Stream the assistant's response back to the client
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        updatedMessages.forEach((msg) => {
+          if (msg.role === "assistant") {
+            controller.enqueue(encoder.encode(msg.content));
+          }
+        });
+        controller.close();
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/plain",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+      },
+    });
   } catch (error) {
     console.error("[ERROR] Processing Request:", error);
+
     return new Response("Internal Server Error", { status: 500 });
   }
 }
 
+// Handle preflight OPTIONS request
 export async function OPTIONS() {
   return new Response(null, {
     headers: {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Max-Age": "86400", // Cache preflight response for 24 hours
     },
   });
 }
