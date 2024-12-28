@@ -12,11 +12,8 @@ export async function POST(req: Request) {
     messages,
   });
 
-  // Extract the text content from the StreamTextResult
-  const textContent = result.text; // Adjust this line based on the actual property that contains the text
-
-  // Create a new Response object with the text content
-  const response = new Response(textContent, {
+  // Assuming 'result.stream' is a ReadableStream containing the response body
+  const response = new Response(result.stream, {
     headers: {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "https://www.wonderland.guru",
