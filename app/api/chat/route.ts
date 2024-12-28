@@ -1,6 +1,3 @@
-// route.ts
-
-import { openai } from "@ai-sdk/openai";
 import { continueConversation } from "../../actions"; // Adjust the import path as necessary
 import { Message } from "../../actions"; // Ensure the Message interface is imported
 
@@ -8,51 +5,55 @@ import { Message } from "../../actions"; // Ensure the Message interface is impo
 export const maxDuration = 30;
 
 export async function POST(req: Request) {
- try {
-   const { messages }: { messages: Message[] } = await req.json();
+  try {
+    // Log the incoming request payload
+    const { messages }: { messages: Message[] } = await req.json();
+    console.log("[INCOMING PAYLOAD] Messages:", messages);
 
-   // Generate the response using continueConversation
-   const { messages: updatedMessages } = await continueConversation(messages);
+    // Generate the response using continueConversation
+    const { messages: updatedMessages } = await continueConversation(messages);
 
-   // Stream the assistant's response back to the client
-   const encoder = new TextEncoder();
-   const stream = new ReadableStream({
-     start(controller) {
-       updatedMessages.forEach((msg) => {
-         if (msg.role === "assistant") {
-           controller.enqueue(encoder.encode(msg.content));
-         }
-       });
-       controller.close();
-     },
-   });
+    // Log the outgoing response payload
+    console.log("[OUTGOING PAYLOAD] Updated Messages:", updatedMessages);
 
-   // Create the response with the stream
-   const response = new Response(stream, {
-     headers: {
-       "Content-Type": "text/plain",
-       "Access-Control-Allow-Origin": "https://www.wonderland.guru",
-       "Access-Control-Allow-Methods": "POST, OPTIONS",
-       "Access-Control-Allow-Headers": "Content-Type",
-     },
-   });
+    // Stream the assistant's response back to the client
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        updatedMessages.forEach((msg) => {
+          if (msg.role === "assistant") {
+            controller.enqueue(encoder.encode(msg.content));
+          }
+        });
+        controller.close();
+      },
+    });
 
-   return response;
- } catch (error) {
-   console.error("Error processing request:", error);
-   return new Response("Internal Server Error", { status: 500 });
- }
+    // Create the response with the stream
+    const response = new Response(stream, {
+      headers: {
+        "Content-Type": "text/plain",
+        "Access-Control-Allow-Origin": "https://www.wonderland.guru",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+      },
+    });
+
+    return response;
+  } catch (error) {
+    console.error("[ERROR] Processing request:", error);
+    return new Response("Internal Server Error", { status: 500 });
+  }
 }
 
 // Handle preflight OPTIONS request
 export async function OPTIONS() {
- return new Response(null, {
-   headers: {
-     "Access-Control-Allow-Origin": "https://www.wonderland.guru",
-     "Access-Control-Allow-Methods": "POST, OPTIONS",
-     "Access-Control-Allow-Headers": "Content-Type",
-     "Access-Control-Max-Age": "86400", // Cache preflight response for 24 hours
-   },
- });
+  return new Response(null, {
+    headers: {
+      "Access-Control-Allow-Origin": "https://www.wonderland.guru",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Max-Age": "86400", // Cache preflight response for 24 hours
+    },
+  });
 }
-
