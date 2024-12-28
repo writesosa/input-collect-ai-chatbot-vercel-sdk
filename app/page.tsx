@@ -1,47 +1,54 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { continueConversation } from "./actions";
 
 export default function Home() {
-  const [messages, setMessages] = useState([]);
+  const [conversation, setConversation] = useState([]);
   const [input, setInput] = useState("");
+  const [isTyping, setIsTyping] = useState(false);
   const lastElementRef = useRef(null);
 
   useEffect(() => {
-    lastElementRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    if (lastElementRef.current) {
+      lastElementRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [conversation]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const userMessage = { role: "user", content: input };
-    setMessages((prev) => [...prev, userMessage]);
+    if (!input.trim()) return;
 
-    const { messages: updatedMessages } = await continueConversation(
-      [...messages, userMessage],
-      "accounts", // Example pageType
-      "rec12345", // Example recordId
-      { Name: "Current Name" } // Example fields
-    );
-
-    setMessages(updatedMessages);
+    const userMessage = { role: "user", content: input.trim() };
+    const updatedConversation = [...conversation, userMessage];
+    setConversation(updatedConversation);
     setInput("");
+    setIsTyping(true);
+
+    const response = await continueConversation(updatedConversation, "accounts", "rec12345");
+    setConversation(response.messages);
+    setIsTyping(false);
   };
 
   return (
     <div>
       <div>
-        {messages.map((msg, idx) => (
-          <div key={idx} ref={idx === messages.length - 1 ? lastElementRef : null}>
-            {msg.role === "user" ? "You: " : "Assistant: "}
-            {msg.content}
+        {conversation.map((msg, idx) => (
+          <div key={idx}>
+            <strong>{msg.role}:</strong> {msg.content}
           </div>
         ))}
+        <div ref={lastElementRef}></div>
       </div>
       <form onSubmit={handleSubmit}>
-        <input value={input} onChange={(e) => setInput(e.target.value)} />
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Type your message..."
+        />
         <button type="submit">Send</button>
       </form>
+      {isTyping && <p>Typing...</p>}
     </div>
   );
 }
