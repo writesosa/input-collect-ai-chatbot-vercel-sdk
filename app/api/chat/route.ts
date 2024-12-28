@@ -1,59 +1,71 @@
-import { continueConversation } from "../../actions"; // Adjust the import path as necessary
-import { Message } from "../../actions"; // Ensure the Message interface is imported
+import { continueConversation } from "../../actions"; // Adjust the path as needed
+import { Message } from "../../actions"; // Ensure Message is imported
+import { updateAirtableRecord } from "../../utils/airtable"; // Helper function to update Airtable
 
-// Allow streaming responses up to 30 seconds
 export const maxDuration = 30;
 
 export async function POST(req: Request) {
   try {
-    // Log the incoming request payload
-    const { messages }: { messages: Message[] } = await req.json();
-    console.log("[INCOMING PAYLOAD] Messages:", messages);
+    const { messages, recordId, pageType, fields }: { 
+      messages: Message[]; 
+      recordId: string; 
+      pageType: string; 
+      fields: Record<string, any>; 
+    } = await req.json();
 
-    // Generate the response using continueConversation
-    const { messages: updatedMessages } = await continueConversation(messages);
+    // Log incoming payload
+    console.log("[INCOMING PAYLOAD]:", { messages, recordId, pageType, fields });
 
-    // Log the outgoing response payload
-    console.log("[OUTGOING PAYLOAD] Updated Messages:", updatedMessages);
+    // Generate the response using the assistant
+    const { messages: updatedMessages } = await continueConversation([
+      ...messages,
+      { role: "system", content: `Here are the current record details: ${JSON.stringify(fields)}` },
+    ]);
 
-    // Stream the assistant's response back to the client
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      start(controller) {
-        updatedMessages.forEach((msg) => {
-          if (msg.role === "assistant") {
-            controller.enqueue(encoder.encode(msg.content));
-          }
-        });
-        controller.close();
-      },
-    });
+    // Extract assistant response for the user
+    const userResponse = updatedMessages.find((msg) => msg.role === "assistant")?.content || "";
 
-    // Create the response with the stream
-    const response = new Response(stream, {
-      headers: {
-        "Content-Type": "text/plain",
-        "Access-Control-Allow-Origin": "https://www.wonderland.guru",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
-      },
-    });
+    // Extract Airtable updates from the assistant's response (assume JSON update format)
+    const airtableUpdates = updatedMessages.find((msg) => msg.role === "assistant_update")?.content;
+    let updateResult;
 
-    return response;
+    if (airtableUpdates) {
+      try {
+        const parsedUpdates = JSON.parse(airtableUpdates);
+        console.log("[Airtable Updates Parsed]:", parsedUpdates);
+
+        // Update Airtable record
+        updateResult = await updateAirtableRecord(pageType, recordId, parsedUpdates);
+        console.log("[Airtable Update Result]:", updateResult);
+      } catch (error) {
+        console.error("[ERROR] Parsing or Updating Airtable:", error);
+      }
+    }
+
+    // Log outgoing payload
+    console.log("[OUTGOING PAYLOAD]:", { userResponse, airtableUpdates });
+
+    return new Response(
+      JSON.stringify({
+        userResponse,
+        airtableUpdates: updateResult,
+      }),
+      {
+        headers: { "Content-Type": "application/json" },
+      }
+    );
   } catch (error) {
-    console.error("[ERROR] Processing request:", error);
+    console.error("[ERROR] Processing Request:", error);
     return new Response("Internal Server Error", { status: 500 });
   }
 }
 
-// Handle preflight OPTIONS request
 export async function OPTIONS() {
   return new Response(null, {
     headers: {
-      "Access-Control-Allow-Origin": "https://www.wonderland.guru",
+      "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
-      "Access-Control-Max-Age": "86400", // Cache preflight response for 24 hours
     },
   });
 }
