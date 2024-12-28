@@ -5,6 +5,7 @@ import Markdown from "react-markdown";
 import { Message, continueConversation } from "./actions";
 import useConversationStore from "./use-conversation-store";
 import { cn } from "./util";
+import { fetchAirtableData } from "./utils/airtable"; // Import the fetch function
 
 // Force the page to be dynamic and allow streaming responses up to 30 seconds
 export const dynamic = "force-dynamic";
@@ -24,7 +25,36 @@ export default function Home() {
     "I want to transfer money to my friend"
   );
   const [isTyping, setIsTyping] = useState(false);
+  const [pageType, setPageType] = useState<string>("unknown");
+  const [recordId, setRecordId] = useState<string | null>(null);
+  const [fields, setFields] = useState<Record<string, any> | null>(null);
   const lastElementRef = useRef<HTMLDivElement>(null);
+
+  // Helper to extract pageType and recordId from URL
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const id = urlParams.get("recordId");
+    const path = window.location.pathname;
+
+    setRecordId(id);
+
+    if (path.includes("/accounts/")) {
+      setPageType("accounts");
+    } else if (path.includes("/journey/")) {
+      setPageType("journey");
+    } else {
+      setPageType("unknown");
+    }
+  }, []);
+
+  // Fetch Airtable data based on pageType and recordId
+  useEffect(() => {
+    if (pageType !== "unknown" && recordId) {
+      fetchAirtableData(pageType, recordId)
+        .then((data) => setFields(data))
+        .catch((error) => console.error("Error fetching Airtable data:", error));
+    }
+  }, [pageType, recordId]);
 
   useEffect(() => {
     if (conversation.length > 0) {
@@ -93,14 +123,19 @@ export default function Home() {
           ]);
           setIsTyping(true);
 
-          const { messages } = await continueConversation([
-            ...conversation,
-            {
-              role: "assistant",
-              content: `[METADATA] Current date and time: ${new Date().toLocaleString()}`,
-            } as const,
-            { role: "user", content: userInput } as const,
-          ]);
+          if (!fields) {
+            console.error("Airtable fields are not available.");
+            setIsTyping(false);
+            return;
+          }
+
+          const { messages } = await continueConversation(
+            [...conversation, { role: "user", content: userInput } as const],
+            pageType,
+            recordId!,
+            fields
+          );
+
           setIsTyping(false);
           setConversation(messages);
         }}
