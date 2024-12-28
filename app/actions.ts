@@ -1,6 +1,6 @@
 "use server";
 
-import { InvalidToolArgumentsError, generateText, tool } from "ai";
+import { InvalidToolArgumentsError, generateText, nanoid, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import { updateAirtableRecord } from "./utils/airtable";
@@ -22,9 +22,11 @@ const modifyRecord = tool({
   }),
   execute: async ({ recordId, tableName, updates }) => {
     try {
-      console.log("[DEBUG] Modifying Airtable Record:", { recordId, tableName, updates });
+      console.log("[DEBUG] Attempting to modify Airtable Record:", { recordId, tableName, updates });
 
       const result = await updateAirtableRecord(tableName, recordId, updates);
+
+      console.log("[DEBUG] Airtable Record Updated Successfully:", result);
 
       return {
         status: "success",
@@ -47,20 +49,18 @@ export async function continueConversation(
   recordId: string,
   fields: Record<string, any>
 ) {
-  "use server";
-
   try {
     const systemPrompt = `
-      You are an assistant for managing and modifying Airtable records. You have access to the following actions:
+      You are an assistant for managing and modifying Airtable records. You can perform the following actions:
       - modifyRecord: Modify any field of an Airtable record dynamically.
       
-      Use the fields provided in the initial context for making decisions. Ensure that updates are relevant to the record and confirm changes with the user before applying them.
-      
-      Here are the current details of the record:
+      Use the fields provided in the context for making decisions. Here are the current record details:
       ${JSON.stringify(fields)}
-
-      Respond concisely and use markdown for formatting. Confirm modifications before executing them.
+      
+      Confirm all changes with the user before executing them. Respond concisely.
     `;
+
+    console.log("[DEBUG] Starting Conversation with Context:", { pageType, recordId, fields });
 
     const { text, toolResults } = await generateText({
       model: openai("gpt-4"),
@@ -70,11 +70,14 @@ export async function continueConversation(
       tools: { modifyRecord },
     });
 
+    console.log("[DEBUG] Assistant Messages:", text);
+    console.log("[DEBUG] Tool Results:", toolResults);
+
     return {
       messages: [
         ...history,
         {
-          role: "assistant" as const,
+          role: "assistant",
           content: text || toolResults.map((toolResult) => toolResult.result).join("\n"),
         },
       ],
@@ -86,7 +89,7 @@ export async function continueConversation(
       messages: [
         ...history,
         {
-          role: "assistant" as const,
+          role: "assistant",
           content: "An error occurred while processing your request. Please try again.",
         },
       ],
