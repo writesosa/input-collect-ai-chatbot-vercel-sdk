@@ -1,153 +1,127 @@
 "use server";
 
-import { generateText, nanoid, tool } from "ai";
+import { InvalidToolArgumentsError, generateText, nanoid, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
-import axios from "axios";
-
-const AIRTABLE_API_URL = "https://api.airtable.com/v0/appFf0nHuVTVWRjTa/Journeys";
-const AIRTABLE_API_KEY = "patuiAgEvFzitXyIu.a0fed140f02983ccc3dfeed6c02913b5e2593253cb784a08c3cfd8ac96518ba0";
 
 export interface Message {
   role: "user" | "assistant";
   content: string;
 }
 
-async function logToAirtable(fields: Record<string, any>) {
-  try {
-    await axios.post(
-      AIRTABLE_API_URL,
-      { fields },
-      {
-        headers: {
-          Authorization: `Bearer ${AIRTABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-  } catch (error) {
-    console.error("Error logging to Airtable:", error);
-  }
-}
+// Sample data storage
+const users: Record<string, any> = {};
+const journeys: Record<string, any> = {};
 
+// Tool to create a new user account
 const createAccount = tool({
-  description: "Create a new user account with a name and description.",
+  description: "Create a new user account with a unique username and additional details.",
   parameters: z.object({
-    name: z.string().min(1).describe("The name of the user."),
-    description: z.string().optional().describe("A brief description of the user."),
+    username: z.string().min(4).describe("Unique username for the account."),
+    email: z.string().email().describe("Email address of the user."),
+    password: z.string().min(6).describe("Password for the account."),
   }),
-  execute: async ({ name, description }) => {
-    const responseMessage = `Account for ${name} has been created successfully.`;
-    const outgoingPayload = {
-      name,
-      description,
-      responseMessage,
+  execute: async ({ username, email, password }) => {
+    if (users[username]) {
+      return {
+        status: "failed",
+        message: "Username already exists.",
+      };
+    }
+    users[username] = { username, email, password, id: nanoid() };
+    return {
+      status: "success",
+      message: `Account for ${username} created successfully.`,
     };
-
-    await logToAirtable({
-      "User Message": `Create account for ${name}`,
-      Response: responseMessage,
-      "Incoming Payload": JSON.stringify({ name, description }),
-      "Outgoing Payload": JSON.stringify(outgoingPayload),
-      Status: "Account Created",
-    });
-
-    return responseMessage;
   },
 });
 
+// Tool to modify an existing user account
 const modifyAccount = tool({
-  description: "Modify an existing user account identified by name.",
+  description: "Modify details of an existing user account.",
   parameters: z.object({
-    name: z.string().min(1).describe("The name of the user to modify."),
-    newName: z.string().optional().describe("The new name for the user."),
-    newDescription: z.string().optional().describe("The new description for the user."),
+    username: z.string().min(4).describe("Username of the account to modify."),
+    email: z.string().email().optional().describe("New email address."),
+    password: z.string().min(6).optional().describe("New password."),
   }),
-  execute: async ({ name, newName, newDescription }) => {
-    const responseMessage = `Account ${name} has been updated successfully.`;
-    const outgoingPayload = {
-      name,
-      newName,
-      newDescription,
-      responseMessage,
+  execute: async ({ username, email, password }) => {
+    const user = users[username];
+    if (!user) {
+      return {
+        status: "failed",
+        message: "User not found.",
+      };
+    }
+    if (email) user.email = email;
+    if (password) user.password = password;
+    return {
+      status: "success",
+      message: `Account for ${username} updated successfully.`,
     };
-
-    await logToAirtable({
-      "User Message": `Modify account ${name}`,
-      Response: responseMessage,
-      "Incoming Payload": JSON.stringify({ name, newName, newDescription }),
-      "Outgoing Payload": JSON.stringify(outgoingPayload),
-      Status: "Account Modified",
-    });
-
-    return responseMessage;
   },
 });
 
+// Tool to create a new journey
 const createJourney = tool({
-  description: "Create a new journey with a name and description.",
+  description: "Create a new journey with a unique title and description.",
   parameters: z.object({
-    name: z.string().min(1).describe("The name of the journey."),
-    description: z.string().optional().describe("A brief description of the journey."),
+    title: z.string().min(4).describe("Title of the journey."),
+    description: z.string().describe("Description of the journey."),
+    createdBy: z.string().describe("Username of the creator."),
   }),
-  execute: async ({ name, description }) => {
-    const responseMessage = `Journey ${name} has been created successfully.`;
-    const outgoingPayload = {
-      name,
-      description,
-      responseMessage,
+  execute: async ({ title, description, createdBy }) => {
+    if (!users[createdBy]) {
+      return {
+        status: "failed",
+        message: "Creator user not found.",
+      };
+    }
+    const journeyId = nanoid();
+    journeys[journeyId] = { title, description, createdBy, id: journeyId };
+    return {
+      status: "success",
+      message: `Journey '${title}' created successfully.`,
     };
-
-    await logToAirtable({
-      "User Message": `Create journey ${name}`,
-      Response: responseMessage,
-      "Incoming Payload": JSON.stringify({ name, description }),
-      "Outgoing Payload": JSON.stringify(outgoingPayload),
-      Status: "Journey Created",
-    });
-
-    return responseMessage;
   },
 });
 
+// Tool to modify an existing journey
 const modifyJourney = tool({
-  description: "Modify an existing journey identified by name.",
+  description: "Modify details of an existing journey.",
   parameters: z.object({
-    name: z.string().min(1).describe("The name of the journey to modify."),
-    newName: z.string().optional().describe("The new name for the journey."),
-    newDescription: z.string().optional().describe("The new description for the journey."),
+    journeyId: z.string().describe("ID of the journey to modify."),
+    title: z.string().min(4).optional().describe("New title of the journey."),
+    description: z.string().optional().describe("New description of the journey."),
   }),
-  execute: async ({ name, newName, newDescription }) => {
-    const responseMessage = `Journey ${name} has been updated successfully.`;
-    const outgoingPayload = {
-      name,
-      newName,
-      newDescription,
-      responseMessage,
+  execute: async ({ journeyId, title, description }) => {
+    const journey = journeys[journeyId];
+    if (!journey) {
+      return {
+        status: "failed",
+        message: "Journey not found.",
+      };
+    }
+    if (title) journey.title = title;
+    if (description) journey.description = description;
+    return {
+      status: "success",
+      message: `Journey '${journey.title}' updated successfully.`,
     };
-
-    await logToAirtable({
-      "User Message": `Modify journey ${name}`,
-      Response: responseMessage,
-      "Incoming Payload": JSON.stringify({ name, newName, newDescription }),
-      "Outgoing Payload": JSON.stringify(outgoingPayload),
-      Status: "Journey Modified",
-    });
-
-    return responseMessage;
   },
 });
 
 export async function continueConversation(history: Message[]) {
+  "use server";
+
   try {
     const { text, toolResults } = await generateText({
-      model: openai("gpt-4-turbo"),
+      model: openai("gpt-4"),
       system: `You are an assistant for managing user accounts and journeys. You can perform the following actions:
         - createAccount: Create a new user account.
         - modifyAccount: Modify an existing user account.
         - createJourney: Create a new journey.
         - modifyJourney: Modify an existing journey.
-        Respond with plain text messages to the user.`,
+        Respond with concise and clear information. Use markdown formatting where appropriate.`,
       messages: history,
       maxToolRoundtrips: 5,
       tools: {
@@ -168,7 +142,11 @@ export async function continueConversation(history: Message[]) {
       ],
     };
   } catch (error) {
-    console.error("Error in continueConversation:", error);
+    if (error instanceof InvalidToolArgumentsError) {
+      console.error(error.toJSON());
+    } else {
+      console.error(error);
+    }
     return {
       messages: [
         ...history,
