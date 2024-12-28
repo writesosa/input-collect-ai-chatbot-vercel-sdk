@@ -11,10 +11,11 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 export default function Home() {
-  const { conversation, setConversation } = useConversationStore();
+  const { conversation: conversationString, setConversation } = useConversationStore();
+  const conversation = JSON.parse(conversationString || "[]") as Message[]; // Parse the stored string
   const [input, setInput] = useState<string>("I want to transfer money to my friend");
   const [isTyping, setIsTyping] = useState(false);
-  const lastElementRef = useRef<HTMLDivElement>(null); // Explicitly define the type
+  const lastElementRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (lastElementRef.current) {
@@ -29,7 +30,7 @@ export default function Home() {
           key={index}
           className={cn(
             "flex flex-row space-x-2 p-2 rounded-md",
-            message.role === "user" ? "flex-row-reverse  self-end" : ""
+            message.role === "user" ? "flex-row-reverse self-end" : ""
           )}
         >
           <div className="mx-2">
@@ -56,7 +57,7 @@ export default function Home() {
           setInput("");
 
           if (userInput === "reset" || userInput === "clear") {
-            setConversation([]);
+            setConversation(JSON.stringify([])); // Reset the conversation
             return;
           }
 
@@ -64,16 +65,12 @@ export default function Home() {
             ...conversation,
             { role: "user", content: userInput } as Message,
           ];
-          setConversation(updatedConversation); // Pass the raw array
+          setConversation(JSON.stringify(updatedConversation)); // Store as a string
           setIsTyping(true);
 
           try {
-            const response = await continueConversation(
-              updatedConversation,
-              "accounts",
-              "rec12345"
-            );
-            setConversation(response.messages);
+            const response = await continueConversation(updatedConversation);
+            setConversation(JSON.stringify(response.messages)); // Store as a string
           } catch (error) {
             console.error("[ERROR] Sending conversation:", error);
           } finally {
