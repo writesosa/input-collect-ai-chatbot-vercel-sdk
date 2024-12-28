@@ -1,63 +1,76 @@
+import { InvalidToolArgumentsError, generateText, tool } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { z } from "zod";
+import { updateAirtableRecord } from "./utils/airtable";
+
 export async function continueConversation(
-  history: Message[],
-  pageType: string,
-  recordId: string,
-  fields: Record<string, any>
+  history,
+  pageType,
+  recordId,
+  fields
 ) {
-  "use server";
-
   try {
-    const lastMessage = history[history.length - 1];
-
-    // Detect if a tool is required
-    const requiresTool =
-      /(update|change|modify)/i.test(lastMessage.content) &&
-      /(name|field|account)/i.test(lastMessage.content);
-
-    console.log("[DEBUG] Tool Required:", requiresTool);
-
     const systemPrompt = `
-      You are an assistant for managing Airtable records. Use the following actions:
-      - modifyRecord: Modify any field dynamically.
-
-      Current record details:
+      You are assisting with Airtable record updates. Here are the record details:
       ${JSON.stringify(fields)}
-
-      If a user requests to modify a field, confirm their intent first. If confirmed, use modifyRecord to update the record.
+      Confirm any changes with the user before applying updates.
     `;
 
     const { text, toolResults } = await generateText({
       model: openai("gpt-4"),
       system: systemPrompt,
       messages: history,
-      maxToolRoundtrips: requiresTool ? 5 : 0, // Only invoke tools if needed
-      tools: requiresTool ? { modifyRecord } : undefined,
+      maxToolRoundtrips: 5,
+      tools: {
+        modifyRecord: tool({
+          description: "Update Airtable record dynamically.",
+          parameters: z.object({
+            recordId: z.string(),
+            tableName: z.string(),
+            updates: z.record(z.string(), z.any()),
+          }),
+          execute: async ({ recordId, tableName, updates }) => {
+            console.log("[DEBUG] modifyRecord called:", { recordId, tableName, updates });
+
+            try {
+              const result = await updateAirtableRecord(tableName, recordId, updates);
+              console.log("[DEBUG] Airtable update result:", result);
+
+              return {
+                status: "success",
+                message: "Record updated successfully.",
+                updates: result,
+              };
+            } catch (error) {
+              console.error("[ERROR] modifyRecord:", error);
+              return {
+                status: "failed",
+                message: "Failed to update Airtable record.",
+              };
+            }
+          },
+        }),
+      },
     });
 
-    console.log("[DEBUG] Assistant Response Text:", text);
+    console.log("[DEBUG] Assistant Response:", text);
     console.log("[DEBUG] Tool Results:", toolResults);
-
-    const assistantMessages = [
-      ...history,
-      {
-        role: "assistant" as const,
-        content: text || toolResults.map((toolResult) => toolResult.result).join("\n"),
-      },
-    ];
-
-    return {
-      messages: assistantMessages,
-    };
-  } catch (error) {
-    console.error("[ERROR] Processing Conversation:", error);
 
     return {
       messages: [
         ...history,
         {
-          role: "assistant" as const,
-          content: "An error occurred while processing your request. Please try again.",
+          role: "assistant",
+          content: text || toolResults.map((tool) => tool.result).join("\n"),
         },
+      ],
+    };
+  } catch (error) {
+    console.error("[ERROR] continueConversation:", error);
+    return {
+      messages: [
+        ...history,
+        { role: "assistant", content: "An error occurred. Please try again." },
       ],
     };
   }
