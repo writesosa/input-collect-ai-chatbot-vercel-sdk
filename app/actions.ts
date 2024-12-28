@@ -42,6 +42,7 @@ const modifyRecord = tool({
   },
 });
 
+// Main function to handle conversations
 export async function continueConversation(
   history: Message[],
   pageType: string,
@@ -51,17 +52,14 @@ export async function continueConversation(
   "use server";
 
   try {
-    // Include context details in the system prompt
     const systemPrompt = `
       You are an assistant for managing and modifying Airtable records. You have access to the following actions:
       - modifyRecord: Modify any field of an Airtable record dynamically.
-      
-      Use the fields provided in the initial context for making decisions. Ensure that updates are relevant to the record and confirm changes with the user before applying them.
-      
+
       Here are the current details of the record:
       ${JSON.stringify(fields)}
 
-      Respond concisely and use markdown for formatting. Confirm modifications before executing them.
+      Use the fields provided in the context for making decisions. Ensure that updates are relevant to the record and confirm changes with the user before applying them.
     `;
 
     const { text, toolResults } = await generateText({
