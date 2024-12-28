@@ -7,28 +7,30 @@ export async function continueConversation(
   "use server";
 
   try {
-    // Determine if a tool (e.g., modifyRecord) is required
-    const requiresTool = history.some((msg) =>
-      /(update|change|modify)/i.test(msg.content)
-    );
+    const lastMessage = history[history.length - 1];
+
+    // Detect if a tool is required
+    const requiresTool =
+      /(update|change|modify)/i.test(lastMessage.content) &&
+      /(name|field|account)/i.test(lastMessage.content);
 
     console.log("[DEBUG] Tool Required:", requiresTool);
 
     const systemPrompt = `
-      You are an assistant for managing and modifying Airtable records. You have access to the following actions:
-      - modifyRecord: Modify any field of an Airtable record dynamically.
-      
-      Current record details:
-      ${requiresTool ? JSON.stringify(fields) : "Details are available upon request."}
+      You are an assistant for managing Airtable records. Use the following actions:
+      - modifyRecord: Modify any field dynamically.
 
-      Confirm changes before making updates.
+      Current record details:
+      ${JSON.stringify(fields)}
+
+      If a user requests to modify a field, confirm their intent first. If confirmed, use modifyRecord to update the record.
     `;
 
     const { text, toolResults } = await generateText({
       model: openai("gpt-4"),
       system: systemPrompt,
       messages: history,
-      maxToolRoundtrips: requiresTool ? 5 : 0, // Only invoke tools if necessary
+      maxToolRoundtrips: requiresTool ? 5 : 0, // Only invoke tools if needed
       tools: requiresTool ? { modifyRecord } : undefined,
     });
 
