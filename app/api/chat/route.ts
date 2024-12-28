@@ -1,7 +1,3 @@
-import { continueConversation } from "../../actions";
-import { Message } from "../../actions";
-import { fetchAirtableData } from "../../utils/airtable";
-
 export async function POST(req: Request) {
   try {
     const { messages, pageType, recordId, fields }: { 
@@ -13,11 +9,11 @@ export async function POST(req: Request) {
 
     console.log("[DEBUG] Incoming Payload:", { messages, pageType, recordId, fields });
 
-    // Fetch Airtable fields only on the first interaction or if fields are missing
     const initialFields =
       fields ?? (pageType && recordId ? await fetchAirtableData(pageType, recordId) : {});
 
-    // Generate response
+    console.log("[DEBUG] Fetched Initial Fields:", initialFields);
+
     const { messages: updatedMessages } = await continueConversation(
       messages,
       pageType,
@@ -25,9 +21,8 @@ export async function POST(req: Request) {
       initialFields
     );
 
-    console.log("[DEBUG] Outgoing Payload:", updatedMessages);
+    console.log("[DEBUG] Outgoing Payload (Messages):", updatedMessages);
 
-    // Stream the response
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       start(controller) {
@@ -53,16 +48,4 @@ export async function POST(req: Request) {
 
     return new Response("Internal Server Error", { status: 500 });
   }
-}
-
-// Handle preflight OPTIONS request
-export async function OPTIONS() {
-  return new Response(null, {
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-      "Access-Control-Max-Age": "86400", // Cache preflight response for 24 hours
-    },
-  });
 }
