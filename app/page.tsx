@@ -11,8 +11,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 export default function Home() {
-  const { conversation: conversationString, setConversation } = useConversationStore();
-  const conversation = JSON.parse(conversationString) as Message[];
+  const { conversation, setConversation } = useConversationStore();
   const [input, setInput] = useState<string>("I want to transfer money to my friend");
   const [isTyping, setIsTyping] = useState(false);
   const lastElementRef = useRef<HTMLDivElement>(null); // Explicitly define the type
@@ -65,7 +64,7 @@ export default function Home() {
             ...conversation,
             { role: "user", content: userInput } as Message,
           ];
-          setConversation(JSON.stringify(updatedConversation));
+          setConversation(updatedConversation); // Pass the raw array
           setIsTyping(true);
 
           try {
@@ -74,7 +73,7 @@ export default function Home() {
               "accounts",
               "rec12345"
             );
-            setConversation(JSON.stringify(response.messages));
+            setConversation(response.messages);
           } catch (error) {
             console.error("[ERROR] Sending conversation:", error);
           } finally {
