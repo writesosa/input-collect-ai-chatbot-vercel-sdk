@@ -1,165 +1,46 @@
 "use client";
 
-import { useEffect, useOptimistic, useRef, useState } from "react";
-import Markdown from "react-markdown";
-import { Message, continueConversation } from "./actions";
-import useConversationStore from "./use-conversation-store";
-import { cn } from "./util";
-import { fetchAirtableData } from "./utils/airtable"; // Import the fetch function
-
-// Force the page to be dynamic and allow streaming responses up to 30 seconds
-export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+import { useState, useRef, useEffect } from "react";
+import { continueConversation } from "./actions";
 
 export default function Home() {
-  const { conversation: conversationString, setConversation } =
-    useConversationStore();
-  const conversation = JSON.parse(conversationString) as Message[];
-  const [optimisticConversation, addOptimisticMessage] = useOptimistic(
-    conversation,
-    (current, optimisticVal: Message[]) => {
-      return [...current, ...optimisticVal];
-    }
-  );
-  const [input, setInput] = useState<string>(
-    "I want to transfer money to my friend"
-  );
-  const [isTyping, setIsTyping] = useState(false);
-  const [pageType, setPageType] = useState<string>("unknown");
-  const [recordId, setRecordId] = useState<string | null>(null);
-  const [fields, setFields] = useState<Record<string, any> | null>(null);
-  const lastElementRef = useRef<HTMLDivElement>(null);
-
-  // Helper to extract pageType and recordId from URL
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const id = urlParams.get("recordId");
-    const path = window.location.pathname;
-
-    setRecordId(id);
-
-    if (path.includes("/accounts/")) {
-      setPageType("accounts");
-    } else if (path.includes("/journey/")) {
-      setPageType("journey");
-    } else {
-      setPageType("unknown");
-    }
-  }, []);
-
-  // Fetch Airtable data based on pageType and recordId
-  useEffect(() => {
-    if (pageType !== "unknown" && recordId) {
-      fetchAirtableData(pageType, recordId)
-        .then((data) => setFields(data))
-        .catch((error) => console.error("Error fetching Airtable data:", error));
-    }
-  }, [pageType, recordId]);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const lastElementRef = useRef(null);
 
   useEffect(() => {
-    if (conversation.length > 0) {
-      setInput("");
-    }
-  }, [conversation.length]);
+    lastElementRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
-  useEffect(() => {
-    if (optimisticConversation.length > 0) {
-      lastElementRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [optimisticConversation.length]);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const userMessage = { role: "user", content: input };
+    setMessages((prev) => [...prev, userMessage]);
+
+    const { messages: updatedMessages } = await continueConversation(
+      [...messages, userMessage],
+      "accounts", // Example pageType
+      "rec12345", // Example recordId
+      { Name: "Current Name" } // Example fields
+    );
+
+    setMessages(updatedMessages);
+    setInput("");
+  };
 
   return (
-    <div className="flex flex-col w-full max-w-md py-24 mx-auto stretch pb-36 space-y-2">
-      {optimisticConversation
-        .filter((m) =>
-          m.role === "assistant"
-            ? m.content.startsWith("[METADATA]")
-              ? false
-              : true
-            : true
-        )
-        .map((message, index) => (
-          <div
-            key={index}
-            className={cn(
-              "flex flex-row space-x-2 p-2 rounded-md",
-              message.role === "user" ? "flex-row-reverse  self-end" : ""
-            )}
-          >
-            <div className="mx-2">
-              {message.role === "assistant" ? "🤖" : "🧔"}
-            </div>
-            <div
-              className={cn(
-                "flex flex-col space-y-2 p-2 px-4 rounded-md",
-                message.role === "user"
-                  ? "flex-row-reverse bg-blue-500 text-white self-end"
-                  : "bg-slate-100"
-              )}
-            >
-              <Markdown>{message.content}</Markdown>
-            </div>
+    <div>
+      <div>
+        {messages.map((msg, idx) => (
+          <div key={idx} ref={idx === messages.length - 1 ? lastElementRef : null}>
+            {msg.role === "user" ? "You: " : "Assistant: "}
+            {msg.content}
           </div>
         ))}
-      <div className="w-full h-1 bg-transparent" ref={lastElementRef} />
-
-      <form
-        onSubmit={async (e) => {
-          e.preventDefault();
-          const userInput = input.trim();
-          setInput("");
-
-          if (userInput === "reset" || userInput === "clear") {
-            setConversation([]);
-            return;
-          }
-
-          addOptimisticMessage([
-            {
-              role: "assistant",
-              content: `[METADATA] Current date and time: ${new Date().toLocaleString()}`,
-            } as const,
-            { role: "user", content: userInput } as const,
-          ]);
-          setIsTyping(true);
-
-          if (!fields) {
-            console.error("Airtable fields are not available.");
-            setIsTyping(false);
-            return;
-          }
-
-          const { messages } = await continueConversation(
-            [...conversation, { role: "user", content: userInput } as const],
-            pageType,
-            recordId!,
-            fields
-          );
-
-          setIsTyping(false);
-          setConversation(messages);
-        }}
-      >
-        <div className="fixed bottom-0 w-full max-w-md flex flex-col space-y-2 py-4 bg-white">
-          {isTyping ? (
-            <p className="text-gray-400 italic text-sm">Bot is typing ...</p>
-          ) : null}
-          <input
-            className=" p-2 border border-gray-300 rounded shadow-xl"
-            type="text"
-            value={input}
-            placeholder="Enter a message"
-            onChange={(event) => {
-              setInput(event.target.value);
-            }}
-          />
-          <button
-            className="p-2 border bg-slate-700 text-white rounded shadow-xl"
-            type="submit"
-          >
-            Send Message
-          </button>
-        </div>
+      </div>
+      <form onSubmit={handleSubmit}>
+        <input value={input} onChange={(e) => setInput(e.target.value)} />
+        <button type="submit">Send</button>
       </form>
     </div>
   );
