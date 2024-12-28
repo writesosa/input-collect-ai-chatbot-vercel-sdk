@@ -1,8 +1,4 @@
-export async function updateAirtableRecord(
-  tableName: string,
-  recordId: string,
-  updates: Record<string, any>
-) {
+export async function fetchAirtableData(pageType: string, recordId: string) {
   const apiKey = process.env.AIRTABLE_API_KEY;
   const baseId = process.env.AIRTABLE_BASE_ID;
 
@@ -10,30 +6,41 @@ export async function updateAirtableRecord(
     throw new Error("Airtable API key or Base ID is missing. Check environment variables.");
   }
 
+  let tableName;
+
+  if (pageType === "accounts") {
+    tableName = "Accounts";
+  } else if (pageType === "journey") {
+    tableName = "Journeys";
+  } else {
+    console.error("Unknown page type. Cannot fetch data.");
+    return null;
+  }
+
   const url = `https://api.airtable.com/v0/${baseId}/${tableName}/${recordId}`;
-  console.log("[DEBUG] Airtable Update Request:", { url, updates });
+  console.log(`[DEBUG] Fetching from Airtable URL: ${url}`); // Log the request URL
 
   try {
     const response = await fetch(url, {
-      method: "PATCH",
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
       },
-      body: JSON.stringify({ fields: updates }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("[ERROR] Airtable API Response:", errorText);
-      throw new Error(`Airtable API error: ${response.statusText}`);
+      console.error("[ERROR] Response from Airtable:", errorText);
+      throw new Error(`Failed to fetch data: ${response.statusText}`);
     }
 
     const data = await response.json();
-    console.log("[DEBUG] Airtable API Update Response:", data);
+    console.log("[DEBUG] Fetched Airtable Data:", data.fields);
     return data.fields;
   } catch (error) {
-    console.error("[ERROR] Airtable Update Failed:", error);
+    console.error("[ERROR] Fetching Airtable Data:", error);
     throw error;
   }
 }
+
+// Ensure `fetchAirtableData` is explicitly exported
+export { updateAirtableRecord, fetchAirtableData };
