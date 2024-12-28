@@ -12,19 +12,21 @@ export async function POST(req: Request) {
     messages,
   });
 
-  // Assuming 'result.stream' is a ReadableStream containing the response body
-  const response = new Response(result.stream, {
-    headers: {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "https://www.wonderland.guru",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-    },
-  });
+  // Create the AI stream response
+  const aiStreamResponse = result.toAIStreamResponse();
+
+  // Clone the response to modify headers
+  const response = new Response(aiStreamResponse.body, aiStreamResponse);
+
+  // Set CORS headers
+  response.headers.set("Access-Control-Allow-Origin", "https://www.wonderland.guru");
+  response.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  response.headers.set("Access-Control-Allow-Headers", "Content-Type");
 
   return response;
 }
 
+// Handle preflight OPTIONS request
 export async function OPTIONS() {
   return new Response(null, {
     headers: {
