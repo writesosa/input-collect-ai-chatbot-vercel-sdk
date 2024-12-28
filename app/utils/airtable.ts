@@ -1,28 +1,43 @@
-const apiKey = "your_airtable_api_key";
-const baseId = "your_airtable_base_id";
+export async function fetchAirtableData(pageType: string, recordId: string) {
+  const apiKey = process.env.AIRTABLE_API_KEY;
+  const baseId = process.env.AIRTABLE_BASE_ID;
 
-export async function updateAirtableRecord(tableName: string, recordId: string, updates: Record<string, any>) {
+  if (!apiKey || !baseId) {
+    throw new Error("Airtable API key or Base ID is missing. Check environment variables.");
+  }
+
+  let tableName;
+
+  if (pageType === "accounts") {
+    tableName = "Accounts";
+  } else if (pageType === "journey") {
+    tableName = "Journeys";
+  } else {
+    console.error("Unknown page type. Cannot fetch data.");
+    return null;
+  }
+
   const url = `https://api.airtable.com/v0/${baseId}/${tableName}/${recordId}`;
+  console.log(`Fetching from Airtable URL: ${url}`); // Log the request URL
 
   try {
     const response = await fetch(url, {
-      method: "PATCH",
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
       },
-      body: JSON.stringify({ fields: updates }),
     });
 
     if (!response.ok) {
-      throw new Error(`Airtable API error: ${response.statusText}`);
+      const errorText = await response.text();
+      console.error("Error Response from Airtable:", errorText);
+      throw new Error(`Failed to fetch data: ${response.statusText}`);
     }
 
     const data = await response.json();
-    console.log("[DEBUG] Airtable Update Response:", data);
+    console.log("[DEBUG] Fetched Airtable Data:", data.fields);
     return data.fields;
   } catch (error) {
-    console.error("[ERROR] Updating Airtable Record:", error);
+    console.error("Error fetching Airtable data:", error);
     throw error;
   }
 }
