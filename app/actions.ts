@@ -52,12 +52,15 @@ export async function continueConversation(
   "use server";
 
   try {
-    console.log("[DEBUG] Received Conversation History:", history);
-    console.log("[DEBUG] Page Type:", pageType);
-    console.log("[DEBUG] Record ID:", recordId);
-    console.log("[DEBUG] Record Fields:", fields);
+    const isToolRequired = history.some(
+      (msg) =>
+        msg.role === "user" &&
+        /(update|change|modify)/i.test(msg.content) &&
+        /(field|name|account|record)/i.test(msg.content)
+    );
 
-    // Include context details in the system prompt
+    console.log("[DEBUG] Tool Required:", isToolRequired);
+
     const systemPrompt = `
       You are an assistant for managing and modifying Airtable records. You have access to the following actions:
       - modifyRecord: Modify any field of an Airtable record dynamically.
@@ -75,7 +78,7 @@ export async function continueConversation(
       system: systemPrompt,
       messages: history,
       maxToolRoundtrips: 5,
-      tools: { modifyRecord },
+      tools: isToolRequired ? { modifyRecord } : undefined,
     });
 
     console.log("[DEBUG] Assistant Response Text:", text);
