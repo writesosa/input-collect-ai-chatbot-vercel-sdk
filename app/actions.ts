@@ -1,62 +1,160 @@
 "use server";
 
-import { InvalidToolArgumentsError, generateText, nanoid, tool } from "ai";
+import { generateText, nanoid, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
-import users from "./users.json";
+import axios from "axios";
+
+const AIRTABLE_API_URL = "https://api.airtable.com/v0/appFf0nHuVTVWRjTa/Journeys";
+const AIRTABLE_API_KEY = "patuiAgEvFzitXyIu.a0fed140f02983ccc3dfeed6c02913b5e2593253cb784a08c3cfd8ac96518ba0";
+
 export interface Message {
   role: "user" | "assistant";
   content: string;
 }
 
-const otpSentData = {
-  accountNumber: "",
-  phoneNumber: "",
-  verificationCode: "",
-};
-
-const currentUserData = {
-  name: "",
-  accountNumber: "",
-  phoneNumber: "",
-  verificationCode: "",
-  balance: 0,
-  lastVerifiedAt: "",
-};
-
-// generate 4 digit random number
-function generateFourDigitNumber(): string {
-  return Math.floor(0 + Math.random() * 10000)
-    .toString()
-    .padStart(4, "0");
+async function logToAirtable(fields: Record<string, any>) {
+  try {
+    await axios.post(
+      AIRTABLE_API_URL,
+      { fields },
+      {
+        headers: {
+          Authorization: `Bearer ${AIRTABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+  } catch (error) {
+    console.error("Error logging to Airtable:", error);
+  }
 }
 
+const createAccount = tool({
+  description: "Create a new user account with a name and description.",
+  parameters: z.object({
+    name: z.string().min(1).describe("The name of the user."),
+    description: z.string().optional().describe("A brief description of the user."),
+  }),
+  execute: async ({ name, description }) => {
+    const responseMessage = `Account for ${name} has been created successfully.`;
+    const outgoingPayload = {
+      name,
+      description,
+      responseMessage,
+    };
+
+    await logToAirtable({
+      "User Message": `Create account for ${name}`,
+      Response: responseMessage,
+      "Incoming Payload": JSON.stringify({ name, description }),
+      "Outgoing Payload": JSON.stringify(outgoingPayload),
+      Status: "Account Created",
+    });
+
+    return responseMessage;
+  },
+});
+
+const modifyAccount = tool({
+  description: "Modify an existing user account identified by name.",
+  parameters: z.object({
+    name: z.string().min(1).describe("The name of the user to modify."),
+    newName: z.string().optional().describe("The new name for the user."),
+    newDescription: z.string().optional().describe("The new description for the user."),
+  }),
+  execute: async ({ name, newName, newDescription }) => {
+    const responseMessage = `Account ${name} has been updated successfully.`;
+    const outgoingPayload = {
+      name,
+      newName,
+      newDescription,
+      responseMessage,
+    };
+
+    await logToAirtable({
+      "User Message": `Modify account ${name}`,
+      Response: responseMessage,
+      "Incoming Payload": JSON.stringify({ name, newName, newDescription }),
+      "Outgoing Payload": JSON.stringify(outgoingPayload),
+      Status: "Account Modified",
+    });
+
+    return responseMessage;
+  },
+});
+
+const createJourney = tool({
+  description: "Create a new journey with a name and description.",
+  parameters: z.object({
+    name: z.string().min(1).describe("The name of the journey."),
+    description: z.string().optional().describe("A brief description of the journey."),
+  }),
+  execute: async ({ name, description }) => {
+    const responseMessage = `Journey ${name} has been created successfully.`;
+    const outgoingPayload = {
+      name,
+      description,
+      responseMessage,
+    };
+
+    await logToAirtable({
+      "User Message": `Create journey ${name}`,
+      Response: responseMessage,
+      "Incoming Payload": JSON.stringify({ name, description }),
+      "Outgoing Payload": JSON.stringify(outgoingPayload),
+      Status: "Journey Created",
+    });
+
+    return responseMessage;
+  },
+});
+
+const modifyJourney = tool({
+  description: "Modify an existing journey identified by name.",
+  parameters: z.object({
+    name: z.string().min(1).describe("The name of the journey to modify."),
+    newName: z.string().optional().describe("The new name for the journey."),
+    newDescription: z.string().optional().describe("The new description for the journey."),
+  }),
+  execute: async ({ name, newName, newDescription }) => {
+    const responseMessage = `Journey ${name} has been updated successfully.`;
+    const outgoingPayload = {
+      name,
+      newName,
+      newDescription,
+      responseMessage,
+    };
+
+    await logToAirtable({
+      "User Message": `Modify journey ${name}`,
+      Response: responseMessage,
+      "Incoming Payload": JSON.stringify({ name, newName, newDescription }),
+      "Outgoing Payload": JSON.stringify(outgoingPayload),
+      Status: "Journey Modified",
+    });
+
+    return responseMessage;
+  },
+});
+
 export async function continueConversation(history: Message[]) {
-  "use server";
-
   try {
-    console.log("[LLM] continueConversation");
     const { text, toolResults } = await generateText({
-      model: openai("gpt-4o"),
-      system: `You are a the Sinarmas bank assistant! You only know things about the Sinarmas bank. Reply with nicely formatted markdown. Keep your reply short and concise. Don't overwhelm the user with too much information. 
-
-        You can _only_ perform the following actions:
-        - transferMoney: Schedule the money transfer. This tool and the parameters' collection must only be called if the user has verified their account via OTP verification. Call the transferMoney tool only when you have all required parameters. Otherwise, keep asking the user. Don't come up with the information yourself. Once you have the complete information, ask the user to confirm the transfer before calling the tool by showing the transfer information.
-        - getBalance: Get the current balance of the account. This tool and the parameters' collection must only be called if the user has verified their account via OTP verification. Call the getBalance tool only when you have required parameters. Otherwise, keep asking the user. Don't come up with the information yourself. Once you have the complete information, ask the user to confirm the request before calling the tool by showing the request information.
-
-        Some of the actions require the user to verify their account first by providing a verification code (OTP) sent to their phone number. The verification code is valid only when the user enters it correctly. If the verification code is invalid, the user needs to request a new verification code. Subsequent verifications are required when the last verification was more than 3 minutes ago.
-        - verifyPhoneNumber: Verify the phone number of the account. Only collect the parameter to call this tool when the previous tool call requires phone number verification. And then call the verifyPhoneNumber tool only when you have required information. Otherwise, keep asking the user. Don't come up with the information yourself. Once you have the complete information, ask the user to confirm the request before calling the tool by showing the request information.
-        - verifyOTP: Verify the OTP sent to the user's phone number. If the OTP is valid, perform the next function. Otherwise, ask the user to request a new OTP.
-
-        Don't perform any other actions.
-        `,
+      model: openai("gpt-4-turbo"),
+      system: `You are an assistant for managing user accounts and journeys. You can perform the following actions:
+        - createAccount: Create a new user account.
+        - modifyAccount: Modify an existing user account.
+        - createJourney: Create a new journey.
+        - modifyJourney: Modify an existing journey.
+        Respond with plain text messages to the user.`,
       messages: history,
       maxToolRoundtrips: 5,
       tools: {
-        transferMoney,
-        getBalance,
-        verifyPhoneNumber,
-        verifyOTP,
+        createAccount,
+        modifyAccount,
+        createJourney,
+        modifyJourney,
       },
     });
 
@@ -65,257 +163,20 @@ export async function continueConversation(history: Message[]) {
         ...history,
         {
           role: "assistant" as const,
-          content:
-            text ||
-            toolResults.map((toolResult) => toolResult.result).join("\n"),
+          content: text || toolResults.map((toolResult) => toolResult.result).join("\n"),
         },
       ],
     };
   } catch (error) {
-    if (error instanceof InvalidToolArgumentsError) {
-      console.log(error.toJSON());
-    } else {
-      console.log(error);
-    }
+    console.error("Error in continueConversation:", error);
     return {
       messages: [
         ...history,
         {
           role: "assistant" as const,
-          content: "There's a problem executing the request. Please try again.",
+          content: "An error occurred while processing your request. Please try again.",
         },
       ],
     };
   }
 }
-
-const transferMoney = tool({
-  description:
-    "Schedule the money transfer to another account. Only collect the parameters for this tool and call this tool when the user has successfully verified their account via OTP verification.",
-  parameters: z.object({
-    amount: z.number().min(1).describe("The amount of money to transfer"),
-    destination: z
-      .string()
-      .min(4)
-      .describe(
-        "The destination account of the transfer. It should alphanumeric, minimum 4 characters, no spaces, and no special characters."
-      ),
-    executionDateTime: z
-      .union([
-        z.date(), // Directly accept Date objects.
-        z.string().transform((str) => new Date(str)), // Convert strings to Date objects.
-      ])
-      .refine((date) => date > new Date(), {
-        message: "The date must be in the future",
-      })
-      .describe(
-        "The date and time of the transfer. It should be in the future. Convert the date time given by the user to a date object."
-      ),
-  }),
-  execute: async ({ amount, destination, executionDateTime }) => {
-    console.log(
-      "[TOOL] transferMoney",
-      `Amount: ${amount}`,
-      `Destination: ${destination}`,
-      `Execution date time: ${executionDateTime}`
-    );
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    console.log(currentUserData);
-
-    // check if the destination account number exists in the user database and it is not the same as the current account number
-    const recipient = users.find(
-      (user) =>
-        user.accountNumber !== destination &&
-        user.accountNumber !== currentUserData.accountNumber
-    );
-
-    if (!recipient) {
-      return {
-        transactionId: nanoid(),
-        transactionStatus: "failed",
-        message: "The destination account number does not exist.",
-      };
-    }
-
-    const beforeTransferBalance = currentUserData.balance;
-    const afterTransferBalance = currentUserData.balance - amount;
-
-    if (afterTransferBalance < 0) {
-      return {
-        transactionId: nanoid(),
-        transactionStatus: "failed",
-        recipientName: recipient.name,
-        message: `The transfer of ${amount} to ${destination} (${recipient.name}) failed. The current user has insufficient funds.`,
-      };
-    }
-
-    currentUserData.balance = afterTransferBalance;
-
-    // TODO: append the transaction to the transaction history in transactions.json
-
-    return {
-      transactionId: nanoid(),
-      transactionStatus: "success",
-      recipientName: recipient.name,
-      message: `The transfer of ${amount} to ${destination} (${recipient.name}) will be executed at ${executionDateTime}. Current balance: ${beforeTransferBalance}. After transfer, balance: ${afterTransferBalance}`,
-    };
-  },
-});
-
-const getBalance = tool({
-  description:
-    "Get the current balance of the account. Only collect the parameters for this tool and call this tool when the user has successfully verified their account via OTP verification.",
-  parameters: z.object({
-    accountNumber: z
-      .string()
-      .min(4)
-      .describe(
-        "The account number of the account. It should alphanumeric, minimum 4 characters, no spaces, and no special characters."
-      ),
-  }),
-  execute: async ({ accountNumber }) => {
-    console.log("[TOOL] getBalance", `Account number: ${accountNumber}`);
-    console.log(currentUserData);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    // check if the phone number and account number matches.
-    return {
-      transactionId: nanoid(),
-      balance: currentUserData.balance,
-      userName: currentUserData.name,
-      message: `The balance of the user's account (${currentUserData.name}) is ${currentUserData.balance} USD.`,
-    };
-  },
-});
-
-const verifyPhoneNumber = tool({
-  description: "Send the OTP code to the user's phone number.",
-  parameters: z.object({
-    accountNumber: z
-      .string()
-      .min(4)
-      .describe(
-        "The account number of the account. It should alphanumeric, minimum 4 characters, no spaces, and no special characters."
-      ),
-    phoneNumber: z
-      .string()
-      .min(10)
-      .describe(
-        "The phone number of the account. It should be a valid phone number."
-      ),
-  }),
-  execute: async ({ accountNumber, phoneNumber }) => {
-    console.log(
-      "[TOOL] verifyPhoneNumber",
-      `Account number: ${accountNumber}`,
-      `Phone number: ${phoneNumber}`
-    );
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    // search the user given the phone number and account number
-    const user = users.find(
-      (user) =>
-        user.phoneNumber === phoneNumber && user.accountNumber === accountNumber
-    );
-
-    if (!user) {
-      return {
-        transactionId: nanoid(),
-        transactionStatus: "failed",
-        message: "The account number and phone number do not match.",
-      };
-    }
-
-    // in production, we would need to store this information in database
-    otpSentData.accountNumber = accountNumber;
-    otpSentData.phoneNumber = phoneNumber;
-    otpSentData.verificationCode = generateFourDigitNumber();
-
-    console.log(
-      "[TOOL] verifyPhoneNumber",
-      `Verification code: ${otpSentData.verificationCode}`
-    );
-
-    return {
-      transactionId: nanoid(),
-      message:
-        "Verification code has been sent to the user's phone number. User needs to enter the code to confirm the request.",
-    };
-  },
-});
-
-const verifyOTP = tool({
-  description: "Verify the OTP code that the user entered.",
-  parameters: z.object({
-    otpCode: z
-      .string()
-      .refine(
-        (value) => {
-          return /^\d{4}$/.test(value.toString());
-        },
-        {
-          message: "Number must have exactly 4 digits",
-        }
-      )
-      .describe(
-        "The OTP code sent to the user's phone number. It should be a 4-digit number. User must provide this code."
-      ),
-    onRequireToolSuccess: z
-      .string()
-      .min(1)
-      .describe(
-        "The tool to call when the verfication code is valid. It should be a valid tool name. This parameter must not be provided by the user."
-      ),
-    phoneNumber: z
-      .string()
-      .min(10)
-      .describe(
-        "The phone number of the account. It should be a valid phone number."
-      ),
-  }),
-  execute: async ({ phoneNumber, otpCode, onRequireToolSuccess }) => {
-    console.log(
-      "[TOOL] verifyPhoneNumber",
-      `Phone number: ${phoneNumber}`,
-      `OTP code: ${otpCode}`,
-      `On require tool success: ${onRequireToolSuccess}`
-    );
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    if (otpCode !== otpSentData.verificationCode) {
-      return {
-        verified: false,
-        message: "The verification code is invalid.",
-      };
-    }
-
-    // find user based on phone number and account number
-    const user = users.find(
-      (user) =>
-        user.phoneNumber === otpSentData.phoneNumber &&
-        user.accountNumber === otpSentData.accountNumber
-    );
-
-    if (!user) {
-      return {
-        verified: false,
-        message: "The account number and phone number do not match.",
-      };
-    }
-
-    // pretend that we have a session with the user
-    currentUserData.name = user.name;
-    currentUserData.accountNumber = user.accountNumber;
-    currentUserData.phoneNumber = user.phoneNumber;
-    currentUserData.balance = user.balance;
-    currentUserData.verificationCode = "";
-    currentUserData.lastVerifiedAt = new Date().toISOString();
-
-    return {
-      message: `OTP code successfully verified. The name of the user is ${currentUserData.name}. Perform the next function: ${onRequireToolSuccess}`,
-      verified: true,
-      verifiedAt: new Date().toISOString(),
-      onRequireToolSuccess,
-      userName: currentUserData.name,
-    };
-  },
-});
