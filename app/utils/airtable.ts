@@ -1,5 +1,3 @@
-import fetch from "node-fetch";
-
 const apiKey = "your_airtable_api_key";
 const baseId = "your_airtable_base_id";
 
