@@ -1,154 +1,88 @@
-// actions.ts
-
 "use server";
 
 import { InvalidToolArgumentsError, generateText, nanoid, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
+import { updateAirtableRecord } from "../../utils/airtable"; // Ensure this function is available
 
 export interface Message {
   role: "user" | "assistant";
   content: string;
 }
 
-// Sample data storage
-const users: Record<string, any> = {};
-const journeys: Record<string, any> = {};
-
-// Tool to create a new user account
-const createAccount = tool({
-  description: "Create a new user account with a unique username and additional details.",
+// Tool to dynamically modify fields of an Airtable record
+const modifyRecord = tool({
+  description: "Modify details of an Airtable record dynamically based on provided fields.",
   parameters: z.object({
-    username: z.string().min(4).describe("Unique username for the account."),
-    email: z.string().email().describe("Email address of the user."),
-    password: z.string().min(6).describe("Password for the account."),
+    recordId: z.string().describe("The ID of the record to modify."),
+    tableName: z.string().describe("The Airtable table name (e.g., Accounts, Journeys)."),
+    updates: z.record(z.string(), z.any()).describe(
+      "Key-value pairs of fields to update. Keys are field names, and values are the new field values."
+    ),
   }),
-  execute: async ({ username, email, password }) => {
-    if (users[username]) {
+  execute: async ({ recordId, tableName, updates }) => {
+    try {
+      console.log("[DEBUG] Modifying Airtable Record:", { recordId, tableName, updates });
+
+      // Update the record in Airtable
+      const result = await updateAirtableRecord(tableName, recordId, updates);
+
+      return {
+        status: "success",
+        message: `The record in table '${tableName}' was updated successfully.`,
+        updates: result,
+      };
+    } catch (error) {
+      console.error("[ERROR] Updating Airtable Record:", error);
       return {
         status: "failed",
-        message: "Username already exists.",
+        message: "Failed to update the Airtable record.",
       };
     }
-    users[username] = { username, email, password, id: nanoid() };
-    return {
-      status: "success",
-      message: `Account for ${username} created successfully.`,
-    };
   },
 });
 
-// Tool to modify an existing user account
-const modifyAccount = tool({
-  description: "Modify details of an existing user account.",
-  parameters: z.object({
-    username: z.string().min(4).describe("Username of the account to modify."),
-    email: z.string().email().optional().describe("New email address."),
-    password: z.string().min(6).optional().describe("New password."),
-  }),
-  execute: async ({ username, email, password }) => {
-    const user = users[username];
-    if (!user) {
-      return {
-        status: "failed",
-        message: "User not found.",
-      };
-    }
-    if (email) user.email = email;
-    if (password) user.password = password;
-    return {
-      status: "success",
-      message: `Account for ${username} updated successfully.`,
-    };
-  },
-});
-
-// Tool to create a new journey
-const createJourney = tool({
-  description: "Create a new journey with a unique title and description.",
-  parameters: z.object({
-    title: z.string().min(4).describe("Title of the journey."),
-    description: z.string().describe("Description of the journey."),
-    createdBy: z.string().describe("Username of the creator."),
-  }),
-  execute: async ({ title, description, createdBy }) => {
-    if (!users[createdBy]) {
-      return {
-        status: "failed",
-        message: "Creator user not found.",
-      };
-    }
-    const journeyId = nanoid();
-    journeys[journeyId] = { title, description, createdBy, id: journeyId };
-    return {
-      status: "success",
-      message: `Journey '${title}' created successfully.`,
-    };
-  },
-});
-
-// Tool to modify an existing journey
-const modifyJourney = tool({
-  description: "Modify details of an existing journey.",
-  parameters: z.object({
-    journeyId: z.string().describe("ID of the journey to modify."),
-    title: z.string().min(4).optional().describe("New title of the journey."),
-    description: z.string().optional().describe("New description of the journey."),
-  }),
-  execute: async ({ journeyId, title, description }) => {
-    const journey = journeys[journeyId];
-    if (!journey) {
-      return {
-        status: "failed",
-        message: "Journey not found.",
-      };
-    }
-    if (title) journey.title = title;
-    if (description) journey.description = description;
-    return {
-      status: "success",
-      message: `Journey '${journey.title}' updated successfully.`,
-    };
-  },
-});
-
-export async function continueConversation(history: Message[]) {
+export async function continueConversation(history: Message[], pageType: string, recordId: string, fields: Record<string, any>) {
   "use server";
 
   try {
     const { text, toolResults } = await generateText({
       model: openai("gpt-4"),
-      system: `You are an assistant for managing user accounts and journeys. You can perform the following actions:
-        - createAccount: Create a new user account.
-        - modifyAccount: Modify an existing user account.
-        - createJourney: Create a new journey.
-        - modifyJourney: Modify an existing journey.
-        Respond with concise and clear information. Use markdown formatting where appropriate.`,
+      system: `
+        You are an assistant for managing and modifying Airtable records. You have access to the following actions:
+        - modifyRecord: Modify any field of an Airtable record dynamically.
+        
+        Use the fields provided in the initial context for making decisions. Ensure that updates are relevant to the record and confirm changes with the user before applying them.
+        
+        Here are the current details of the record:
+        ${JSON.stringify(fields)}
+
+        Respond concisely and use markdown for formatting. Confirm modifications before executing them.
+      `,
       messages: history,
       maxToolRoundtrips: 5,
-      tools: {
-        createAccount,
-        modifyAccount,
-        createJourney,
-        modifyJourney,
+      tools: { modifyRecord },
+      context: {
+        pageType,
+        recordId,
+        fields,
       },
     });
 
+    const assistantMessages = [
+      ...history,
+      {
+        role: "assistant" as const,
+        content: text || toolResults.map((toolResult) => toolResult.result).join("\n"),
+      },
+    ];
+
     return {
-      messages: [
-        ...history,
-        {
-          role: "assistant" as const,
-          content: text || toolResults.map((toolResult) => toolResult.result).join("\n"),
-        },
-      ],
+      messages: assistantMessages,
     };
   } catch (error) {
-    if (error instanceof InvalidToolArgumentsError) {
-      console.error(error.toJSON());
-    } else {
-      console.error(error);
-    }
+    console.error("[ERROR] Processing Conversation:", error);
+
     return {
       messages: [
         ...history,
