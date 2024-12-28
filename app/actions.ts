@@ -42,31 +42,34 @@ const modifyRecord = tool({
   },
 });
 
-export async function continueConversation(history: Message[], pageType: string, recordId: string, fields: Record<string, any>) {
+export async function continueConversation(
+  history: Message[],
+  pageType: string,
+  recordId: string,
+  fields: Record<string, any>
+) {
   "use server";
 
   try {
+    // Include context details in the system prompt
+    const systemPrompt = `
+      You are an assistant for managing and modifying Airtable records. You have access to the following actions:
+      - modifyRecord: Modify any field of an Airtable record dynamically.
+      
+      Use the fields provided in the initial context for making decisions. Ensure that updates are relevant to the record and confirm changes with the user before applying them.
+      
+      Here are the current details of the record:
+      ${JSON.stringify(fields)}
+
+      Respond concisely and use markdown for formatting. Confirm modifications before executing them.
+    `;
+
     const { text, toolResults } = await generateText({
       model: openai("gpt-4"),
-      system: `
-        You are an assistant for managing and modifying Airtable records. You have access to the following actions:
-        - modifyRecord: Modify any field of an Airtable record dynamically.
-        
-        Use the fields provided in the initial context for making decisions. Ensure that updates are relevant to the record and confirm changes with the user before applying them.
-        
-        Here are the current details of the record:
-        ${JSON.stringify(fields)}
-
-        Respond concisely and use markdown for formatting. Confirm modifications before executing them.
-      `,
+      system: systemPrompt,
       messages: history,
       maxToolRoundtrips: 5,
       tools: { modifyRecord },
-      context: {
-        pageType,
-        recordId,
-        fields,
-      },
     });
 
     const assistantMessages = [
