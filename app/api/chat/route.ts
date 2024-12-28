@@ -1,43 +1,44 @@
-import { continueConversation } from "../../actions";
 import { openai } from "@ai-sdk/openai";
+import { continueConversation } from "../../actions"; // Adjust the import path as necessary
+import { Message } from "../../actions"; // Ensure the Message interface is imported
 
 // Allow streaming responses up to 30 seconds
 export const maxDuration = 30;
 
 export async function POST(req: Request) {
   try {
-    const { messages } = await req.json();
+    const { messages }: { messages: Message[] } = await req.json();
 
-    console.log("[DEBUG] Incoming messages:", messages); // Log incoming messages
+    // Generate the response using continueConversation
+    const { messages: updatedMessages } = await continueConversation(messages);
 
-    // Call continueConversation from actions.ts
-    const response = await continueConversation(messages);
+    // Stream the assistant's response back to the client
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        updatedMessages.forEach((msg) => {
+          if (msg.role === "assistant") {
+            controller.enqueue(encoder.encode(msg.content));
+          }
+        });
+        controller.close();
+      },
+    });
 
-    console.log("[DEBUG] Assistant response:", response); // Log assistant response
-
-    // Create the AI stream response
-    const aiStreamResponse = new Response(JSON.stringify(response.messages), {
+    // Create the response with the stream
+    const response = new Response(stream, {
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type": "text/plain",
         "Access-Control-Allow-Origin": "https://www.wonderland.guru",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
       },
     });
 
-    return aiStreamResponse;
+    return response;
   } catch (error) {
-    console.error("[ERROR] Failed to process request:", error); // Log any errors
-    return new Response(
-      JSON.stringify({ error: "Failed to process the request." }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "https://www.wonderland.guru",
-        },
-      }
-    );
+    console.error("Error processing request:", error);
+    return new Response("Internal Server Error", { status: 500 });
   }
 }
 
