@@ -12,11 +12,11 @@ export async function POST(req: Request) {
     messages,
   });
 
-  // Create a new Response object to set headers
-  const response = new Response(result.body, result);
+  // Construct the Response object directly from the result
+  const response = new Response(result);
 
   // Set CORS headers
-  response.headers.set("Access-Control-Allow-Origin", "https://wonderland.guru");
+  response.headers.set("Access-Control-Allow-Origin", "*");
   response.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
   response.headers.set("Access-Control-Allow-Headers", "Content-Type");
 
@@ -25,7 +25,7 @@ export async function POST(req: Request) {
 
 export async function OPTIONS() {
   const headers = new Headers();
-  headers.set("Access-Control-Allow-Origin", "https://your-softr-domain.com");
+  headers.set("Access-Control-Allow-Origin", "*");
   headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
   headers.set("Access-Control-Allow-Headers", "Content-Type");
   headers.set("Access-Control-Max-Age", "86400"); // Cache preflight response for 24 hours
