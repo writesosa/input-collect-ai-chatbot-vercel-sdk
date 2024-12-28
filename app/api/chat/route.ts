@@ -12,5 +12,23 @@ export async function POST(req: Request) {
     messages,
   });
 
-  return result.toAIStreamResponse();
+  // Create a new Response object to set headers
+  const response = new Response(result.body, result);
+
+  // Set CORS headers
+  response.headers.set("Access-Control-Allow-Origin", "https://wonderland.guru");
+  response.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  response.headers.set("Access-Control-Allow-Headers", "Content-Type");
+
+  return response;
+}
+
+export async function OPTIONS() {
+  const headers = new Headers();
+  headers.set("Access-Control-Allow-Origin", "https://your-softr-domain.com");
+  headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  headers.set("Access-Control-Allow-Headers", "Content-Type");
+  headers.set("Access-Control-Max-Age", "86400"); // Cache preflight response for 24 hours
+
+  return new Response(null, { headers });
 }
