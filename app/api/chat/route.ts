@@ -8,10 +8,14 @@ export async function POST(req: Request) {
   try {
     const { messages } = await req.json();
 
+    console.log("[DEBUG] Incoming messages:", messages); // Log incoming messages
+
     // Call continueConversation from actions.ts
     const response = await continueConversation(messages);
 
-    // Format the response for streaming
+    console.log("[DEBUG] Assistant response:", response); // Log assistant response
+
+    // Create the AI stream response
     const aiStreamResponse = new Response(JSON.stringify(response.messages), {
       headers: {
         "Content-Type": "application/json",
@@ -23,7 +27,7 @@ export async function POST(req: Request) {
 
     return aiStreamResponse;
   } catch (error) {
-    console.error("[Error in POST handler]:", error);
+    console.error("[ERROR] Failed to process request:", error); // Log any errors
     return new Response(
       JSON.stringify({ error: "Failed to process the request." }),
       {
