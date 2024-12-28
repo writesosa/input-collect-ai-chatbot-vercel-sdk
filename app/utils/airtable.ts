@@ -1,5 +1,3 @@
-// airtable.ts
-
 export async function updateAirtableRecord(
   tableName: string,
   recordId: string,
@@ -9,7 +7,7 @@ export async function updateAirtableRecord(
   const baseId = process.env.AIRTABLE_BASE_ID;
 
   if (!apiKey || !baseId) {
-    throw new Error("Airtable API key or Base ID is missing. Check environment variables.");
+    throw new Error("Airtable API key or Base ID is missing.");
   }
 
   const url = `https://api.airtable.com/v0/${baseId}/${tableName}/${recordId}`;
@@ -26,12 +24,12 @@ export async function updateAirtableRecord(
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("[Airtable Error] Update failed:", errorText);
+      console.error("Error Response from Airtable:", errorText);
       throw new Error(`Airtable API error: ${response.statusText}`);
     }
 
     const data = await response.json();
-    console.log("[DEBUG] Airtable Update Successful:", data.fields);
+    console.log("[DEBUG] Airtable Update Response:", data);
     return data.fields;
   } catch (error) {
     console.error("[ERROR] Updating Airtable Record:", error);
@@ -43,23 +41,15 @@ export async function fetchAirtableData(pageType: string, recordId: string) {
   const apiKey = process.env.AIRTABLE_API_KEY;
   const baseId = process.env.AIRTABLE_BASE_ID;
 
-  if (!apiKey || !baseId) {
-    throw new Error("Airtable API key or Base ID is missing. Check environment variables.");
-  }
-
   let tableName;
-
-  if (pageType === "accounts") {
-    tableName = "Accounts";
-  } else if (pageType === "journey") {
-    tableName = "Journeys";
-  } else {
-    console.error("[Airtable Error] Unknown page type:", pageType);
+  if (pageType === "accounts") tableName = "Accounts";
+  else if (pageType === "journey") tableName = "Journeys";
+  else {
+    console.error("Unknown page type.");
     return null;
   }
 
   const url = `https://api.airtable.com/v0/${baseId}/${tableName}/${recordId}`;
-
   try {
     const response = await fetch(url, {
       headers: {
@@ -69,12 +59,12 @@ export async function fetchAirtableData(pageType: string, recordId: string) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("[Airtable Error] Fetch failed:", errorText);
-      throw new Error(`Failed to fetch Airtable data: ${response.statusText}`);
+      console.error("Error Response from Airtable:", errorText);
+      throw new Error(`Failed to fetch data: ${response.statusText}`);
     }
 
     const data = await response.json();
-    console.log("[DEBUG] Airtable Fetched Data:", data.fields);
+    console.log("[DEBUG] Fetched Airtable Data:", data.fields);
     return data.fields;
   } catch (error) {
     console.error("[ERROR] Fetching Airtable Data:", error);
