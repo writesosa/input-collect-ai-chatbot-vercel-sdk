@@ -12,16 +12,20 @@ export async function POST(req: Request) {
     messages,
   });
 
-  // Set up a readable stream to process text as chunks
+  // Set up a readable stream that outputs cleaned text
   const stream = new ReadableStream({
     start(controller) {
       result.on("data", (chunk) => {
-        const text = chunk.toString();
-        controller.enqueue(text);
+        try {
+          const parsedChunk = JSON.parse(chunk.toString());
+          const text = Object.values(parsedChunk).join(""); // Combine the text values
+          controller.enqueue(text);
+        } catch (error) {
+          console.error("Failed to parse chunk:", error);
+          controller.error(error);
+        }
       });
-      result.on("end", () => {
-        controller.close();
-      });
+      result.on("end", () => controller.close());
       result.on("error", (error) => {
         console.error("Stream error:", error);
         controller.error(error);
@@ -29,25 +33,12 @@ export async function POST(req: Request) {
     },
   });
 
-  // Return the stream with proper headers
   return new Response(stream, {
     headers: {
-      "Content-Type": "text/plain", // Streaming plain text
+      "Content-Type": "text/plain",
       "Access-Control-Allow-Origin": "https://www.wonderland.guru",
       "Access-Control-Allow-Methods": "POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
-    },
-  });
-}
-
-// Handle preflight OPTIONS request
-export async function OPTIONS() {
-  return new Response(null, {
-    headers: {
-      "Access-Control-Allow-Origin": "https://www.wonderland.guru",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-      "Access-Control-Max-Age": "86400", // Cache preflight response for 24 hours
     },
   });
 }
