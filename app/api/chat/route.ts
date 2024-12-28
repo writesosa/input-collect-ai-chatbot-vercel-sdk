@@ -1,4 +1,4 @@
-import { continueConversation } from "./actions";
+import { continueConversation } from "../../actions";
 import { openai } from "@ai-sdk/openai";
 
 // Allow streaming responses up to 30 seconds
