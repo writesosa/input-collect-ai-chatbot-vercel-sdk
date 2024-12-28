@@ -8,19 +8,19 @@ export async function POST(req: Request) {
       messages: Message[];
       pageType: string;
       recordId: string;
-      fields?: Record<string, any>;
+      fields: Record<string, any>;
     } = await req.json();
 
     console.log("[DEBUG] Incoming Payload:", { messages, pageType, recordId, fields });
 
-    // Fetch Airtable data if fields are not provided
-    const recordFields = fields || await fetchAirtableData(pageType, recordId);
+    const initialFields =
+      fields || (pageType && recordId ? await fetchAirtableData(pageType, recordId) : null);
 
     const { messages: updatedMessages } = await continueConversation(
       messages,
       pageType,
       recordId,
-      recordFields
+      initialFields
     );
 
     console.log("[DEBUG] Outgoing Payload:", updatedMessages);
@@ -50,15 +50,4 @@ export async function POST(req: Request) {
 
     return new Response("Internal Server Error", { status: 500 });
   }
-}
-
-export async function OPTIONS() {
-  return new Response(null, {
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-      "Access-Control-Max-Age": "86400",
-    },
-  });
 }
