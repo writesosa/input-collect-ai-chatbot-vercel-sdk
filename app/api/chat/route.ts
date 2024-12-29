@@ -10,10 +10,17 @@ export async function POST(req: Request) {
     const { messages } = body;
     if (!messages || !Array.isArray(messages)) {
       console.error("[POST /api/chat] Invalid input: messages is not an array.");
-      return new Response(JSON.stringify({ error: "Invalid input format." }), { status: 400 });
+      return new Response(JSON.stringify({ error: "Invalid input format." }), {
+        status: 400,
+        headers: {
+          "Access-Control-Allow-Origin": "https://www.wonderland.guru",
+        },
+      });
     }
 
     console.log("[POST /api/chat] Processing messages:", JSON.stringify(messages, null, 2));
+
+    // Call the continueConversation function to generate the assistant's response
     const result = await continueConversation(messages);
 
     console.log("[POST /api/chat] Response from continueConversation:", JSON.stringify(result, null, 2));
@@ -21,7 +28,12 @@ export async function POST(req: Request) {
     const lastMessage = result.messages[result.messages.length - 1];
     if (!lastMessage || lastMessage.role !== "assistant" || !lastMessage.content.trim()) {
       console.warn("[POST /api/chat] Assistant did not provide a response.");
-      return new Response(JSON.stringify({ error: "Assistant did not respond. Please try again." }), { status: 500 });
+      return new Response(JSON.stringify({ error: "Assistant did not respond. Please try again." }), {
+        status: 500,
+        headers: {
+          "Access-Control-Allow-Origin": "https://www.wonderland.guru",
+        },
+      });
     }
 
     return new Response(JSON.stringify(result), {
@@ -34,12 +46,18 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     console.error("[POST /api/chat] Error:", error);
-    return new Response(JSON.stringify({ error: "An error occurred." }), { status: 500 });
+    return new Response(JSON.stringify({ error: "An error occurred." }), {
+      status: 500,
+      headers: {
+        "Access-Control-Allow-Origin": "https://www.wonderland.guru",
+      },
+    });
   }
 }
 
 export async function OPTIONS() {
   console.log("[OPTIONS /api/chat] Preflight request handled");
+
   return new Response(null, {
     headers: {
       "Access-Control-Allow-Origin": "https://www.wonderland.guru",
