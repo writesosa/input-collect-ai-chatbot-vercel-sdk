@@ -1,215 +1,160 @@
-<div id="chatbot-container" style="border: 1px solid #ccc; padding: 10px; width: 300px;">
-  <div id="chatbot-messages" style="height: 200px; overflow-y: auto; border-bottom: 1px solid #ccc; margin-bottom: 10px;"></div>
-  <input type="text" id="chatbot-input" placeholder="Type your message..." style="width: 80%;" />
-  <button id="chatbot-send" style="width: 18%;">Send</button>
-</div>
+"use server";
 
-<script>
-  async function fetchAirtableRecord(recordId) {
-    console.log(`[LOG] Fetching Airtable record for ID: ${recordId}`);
+import { InvalidToolArgumentsError, generateText, nanoid, tool } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { z } from "zod";
 
-    const response = await fetch(`https://api.airtable.com/v0/yourBaseId/yourTableName/${recordId}`, {
-      method: 'GET',
-      headers: {
-        'Authorization': 'Bearer yourAirtableAPIKey',
-        'Content-Type': 'application/json',
-      }
-    });
+export interface Message {
+  role: "user" | "assistant";
+  content: string;
+}
 
-    if (!response.ok) {
-      console.error('[LOG] Error fetching Airtable record:', response.statusText);
-      return null;
-    }
+// Sample data storage
+const users: Record<string, any> = {};
+const journeys: Record<string, any> = {};
 
-    const data = await response.json();
-    console.log('[LOG] Successfully fetched Airtable record:', data);
-    return data.fields;
-  }
-
-  async function updateAirtableRecord(recordId, newUsername, newPassword) {
-    console.log(`[LOG] Updating Airtable record for ID: ${recordId} with new username and password.`);
-
-    const response = await fetch(`https://api.airtable.com/v0/yourBaseId/yourTableName/${recordId}`, {
-      method: 'PATCH',
-      headers: {
-        'Authorization': 'Bearer yourAirtableAPIKey',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        fields: {
-          username: newUsername,
-          password: newPassword
-        }
-      })
-    });
-
-    if (!response.ok) {
-      console.error('[LOG] Error updating Airtable record:', response.statusText);
-      return null;
-    }
-
-    const updatedData = await response.json();
-    console.log('[LOG] Successfully updated Airtable record:', updatedData);
-    return updatedData;
-  }
-
-  document.getElementById('chatbot-send').addEventListener('click', async () => {
-    const inputField = document.getElementById('chatbot-input');
-    const message = inputField.value.trim();
-    if (message) {
-      displayMessage('user', message);
-      inputField.value = '';
-      
-      const urlParams = new URLSearchParams(window.location.search);
-      const recordId = urlParams.get('recordId');
-      
-      if (!recordId) {
-        console.error('[LOG] No record ID found in URL.');
-        return;
-      }
-
-      // Fetch Airtable record and send it to GPT
-      const airtableData = await fetchAirtableRecord(recordId);
-      
-      if (airtableData) {
-        const payload = {
-          userMessage: message,
-          airtableData: airtableData,
-        };
-
-        console.log('[LOG] Sending payload to GPT:', payload);
-
-        try {
-          const response = await fetch('https://input-collect-ai-chatbot-vercel-sdk.vercel.app/api/chat', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ messages: [{ role: 'user', content: message }], recordData: airtableData }),
-          });
-
-          if (!response.body) {
-            throw new Error('ReadableStream not supported in this browser.');
-          }
-
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          let assistantMessage = '';
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            assistantMessage += decoder.decode(value, { stream: true });
-            displayMessage('assistant', assistantMessage);
-          }
-
-          console.log('[LOG] GPT Response:', assistantMessage);
-
-          // Assuming GPT returns the new username and password as part of the message
-          const extractedData = extractUsernameAndPassword(assistantMessage);
-          if (extractedData) {
-            const { newUsername, newPassword } = extractedData;
-
-            // Update Airtable with the new username and password
-            const updatedRecord = await updateAirtableRecord(recordId, newUsername, newPassword);
-
-            if (updatedRecord) {
-              console.log('[LOG] Airtable record updated successfully:', updatedRecord);
-            }
-          }
-        } catch (error) {
-          console.error('[LOG] Error processing response:', error);
-          displayMessage('assistant', 'An error occurred while processing your request.');
-        }
-      }
-    }
-  });
-
-  function displayMessage(role, content) {
-    const messagesContainer = document.getElementById('chatbot-messages');
-    const messageElement = document.createElement('div');
-    messageElement.textContent = `${role === 'user' ? 'You' : 'Assistant'}: ${content}`;
-    messagesContainer.appendChild(messageElement);
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-  }
-
-  function extractUsernameAndPassword(gptResponse) {
-    console.log('[LOG] Extracting new username and password from GPT response:', gptResponse);
-
-    // Example logic: Assuming GPT response contains the new username and password
-    const usernameMatch = gptResponse.match(/new username: (\S+)/);
-    const passwordMatch = gptResponse.match(/new password: (\S+)/);
-
-    if (usernameMatch && passwordMatch) {
+// Tool to create a new user account
+const createAccount = tool({
+  description: "Create a new user account with a unique username and additional details.",
+  parameters: z.object({
+    username: z.string().min(4).describe("Unique username for the account."),
+    email: z.string().email().describe("Email address of the user."),
+    password: z.string().min(6).describe("Password for the account."),
+  }),
+  execute: async ({ username, email, password }) => {
+    if (users[username]) {
       return {
-        newUsername: usernameMatch[1],
-        newPassword: passwordMatch[1],
+        status: "failed",
+        message: "Username already exists.",
       };
     }
+    users[username] = { username, email, password, id: nanoid() };
+    return {
+      status: "success",
+      message: `Account for ${username} created successfully.`,
+    };
+  },
+});
 
-    console.error('[LOG] No username or password found in GPT response.');
-    return null;
-  }
-
-  // On page load, automatically send the Airtable record and an initial message to GPT
-  window.addEventListener('load', async () => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const recordId = urlParams.get('recordId');
-    
-    if (recordId) {
-      const airtableData = await fetchAirtableRecord(recordId);
-      if (airtableData) {
-        const initialMessage = "Here are the details from the Airtable record.";
-        const payload = {
-          userMessage: initialMessage,
-          airtableData: airtableData,
-        };
-
-        console.log('[LOG] Automatically sending payload to GPT:', payload);
-
-        try {
-          const response = await fetch('https://input-collect-ai-chatbot-vercel-sdk.vercel.app/api/chat', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ messages: [{ role: 'user', content: initialMessage }], recordData: airtableData }),
-          });
-
-          if (!response.body) {
-            throw new Error('ReadableStream not supported in this browser.');
-          }
-
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          let assistantMessage = '';
-
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            assistantMessage += decoder.decode(value, { stream: true });
-            displayMessage('assistant', assistantMessage);
-          }
-
-          console.log('[LOG] GPT Response:', assistantMessage);
-
-          // Assuming GPT returns the new username and password as part of the message
-          const extractedData = extractUsernameAndPassword(assistantMessage);
-          if (extractedData) {
-            const { newUsername, newPassword } = extractedData;
-
-            // Update Airtable with the new username and password
-            const updatedRecord = await updateAirtableRecord(recordId, newUsername, newPassword);
-
-            if (updatedRecord) {
-              console.log('[LOG] Airtable record updated successfully:', updatedRecord);
-            }
-          }
-        } catch (error) {
-          console.error('[LOG] Error processing response:', error);
-          displayMessage('assistant', 'An error occurred while processing your request.');
-        }
-      }
+// Tool to modify an existing user account
+const modifyAccount = tool({
+  description: "Modify details of an existing user account.",
+  parameters: z.object({
+    username: z.string().min(4).describe("Username of the account to modify."),
+    email: z.string().email().optional().describe("New email address."),
+    password: z.string().min(6).optional().describe("New password."),
+  }),
+  execute: async ({ username, email, password }) => {
+    const user = users[username];
+    if (!user) {
+      return {
+        status: "failed",
+        message: "User not found.",
+      };
     }
-  });
-</script>
+    if (email) user.email = email;
+    if (password) user.password = password;
+    return {
+      status: "success",
+      message: `Account for ${username} updated successfully.`,
+    };
+  },
+});
+
+// Tool to create a new journey
+const createJourney = tool({
+  description: "Create a new journey with a unique title and description.",
+  parameters: z.object({
+    title: z.string().min(4).describe("Title of the journey."),
+    description: z.string().describe("Description of the journey."),
+    createdBy: z.string().describe("Username of the creator."),
+  }),
+  execute: async ({ title, description, createdBy }) => {
+    if (!users[createdBy]) {
+      return {
+        status: "failed",
+        message: "Creator user not found.",
+      };
+    }
+    const journeyId = nanoid();
+    journeys[journeyId] = { title, description, createdBy, id: journeyId };
+    return {
+      status: "success",
+      message: `Journey '${title}' created successfully.`,
+    };
+  },
+});
+
+// Tool to modify an existing journey
+const modifyJourney = tool({
+  description: "Modify details of an existing journey.",
+  parameters: z.object({
+    journeyId: z.string().describe("ID of the journey to modify."),
+    title: z.string().min(4).optional().describe("New title of the journey."),
+    description: z.string().optional().describe("New description of the journey."),
+  }),
+  execute: async ({ journeyId, title, description }) => {
+    const journey = journeys[journeyId];
+    if (!journey) {
+      return {
+        status: "failed",
+        message: "Journey not found.",
+      };
+    }
+    if (title) journey.title = title;
+    if (description) journey.description = description;
+    return {
+      status: "success",
+      message: `Journey '${journey.title}' updated successfully.`,
+    };
+  },
+});
+
+export async function continueConversation(history: Message[]) {
+  "use server";
+
+  try {
+    const { text, toolResults } = await generateText({
+      model: openai("gpt-4"),
+      system: `You are an assistant for managing user accounts and journeys. You can perform the following actions:
+        - createAccount: Create a new user account.
+        - modifyAccount: Modify an existing user account.
+        - createJourney: Create a new journey.
+        - modifyJourney: Modify an existing journey.
+        Respond with concise and clear information. Use markdown formatting where appropriate.`,
+      messages: history,
+      maxToolRoundtrips: 5,
+      tools: {
+        createAccount,
+        modifyAccount,
+        createJourney,
+        modifyJourney,
+      },
+    });
+
+    return {
+      messages: [
+        ...history,
+        {
+          role: "assistant" as const,
+          content: text || toolResults.map((toolResult) => toolResult.result).join("\n"),
+        },
+      ],
+    };
+  } catch (error) {
+    if (error instanceof InvalidToolArgumentsError) {
+      console.error(error.toJSON());
+    } else {
+      console.error(error);
+    }
+    return {
+      messages: [
+        ...history,
+        {
+          role: "assistant" as const,
+          content: "An error occurred while processing your request. Please try again.",
+        },
+      ],
+    };
+  }
+}
