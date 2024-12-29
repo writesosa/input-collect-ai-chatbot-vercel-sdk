@@ -24,33 +24,16 @@ export default function Home() {
     "I want to transfer money to my friend"
   );
   const [isTyping, setIsTyping] = useState(false);
-  const [recordId, setRecordId] = useState<string | null>(null); // Added state to store the Airtable record ID
   const lastElementRef = useRef<HTMLDivElement>(null);
 
-  // Extract recordId from the URL query parameter
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const id = urlParams.get("recordId");
-    if (id) {
-      console.log(`[LOG] Extracted recordId from URL: ${id}`);
-      setRecordId(id);
-    } else {
-      console.warn(`[WARN] No recordId found in the URL.`);
-    }
-  }, []);
-
-  // Log when conversation updates
   useEffect(() => {
     if (conversation.length > 0) {
-      console.log(`[LOG] Conversation updated. Length: ${conversation.length}`);
       setInput("");
     }
   }, [conversation.length]);
 
-  // Log when optimistic conversation updates
   useEffect(() => {
     if (optimisticConversation.length > 0) {
-      console.log(`[LOG] Optimistic conversation updated.`);
       lastElementRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [optimisticConversation.length]);
@@ -70,7 +53,7 @@ export default function Home() {
             key={index}
             className={cn(
               "flex flex-row space-x-2 p-2 rounded-md",
-              message.role === "user" ? "flex-row-reverse self-end" : ""
+              message.role === "user" ? "flex-row-reverse  self-end" : ""
             )}
           >
             <div className="mx-2">
@@ -96,10 +79,7 @@ export default function Home() {
           const userInput = input.trim();
           setInput("");
 
-          console.log(`[LOG] User input: "${userInput}"`);
-
           if (userInput === "reset" || userInput === "clear") {
-            console.log(`[LOG] Resetting conversation.`);
             setConversation([]); // Reset conversation correctly
             return;
           }
@@ -114,21 +94,24 @@ export default function Home() {
           setIsTyping(true);
 
           try {
-            const { messages } = await continueConversation(
-              [
-                ...conversation,
-                {
-                  role: "assistant",
-                  content: `[METADATA] Current date and time: ${new Date().toLocaleString()}`,
-                } as Message,
-                { role: "user", content: userInput } as Message,
-              ],
-              recordId // Pass the recordId as the second argument
-            );
+            const urlParams = new URLSearchParams(window.location.search);
+            const recordId = urlParams.get("recordId");
+
+            // Ensure the recordId is passed within the messages as part of the request
+            const { messages } = await continueConversation([
+              ...conversation,
+              {
+                role: "assistant",
+                content: `[METADATA] Current date and time: ${new Date().toLocaleString()}`,
+              } as Message,
+              { role: "user", content: userInput } as Message,
+              { role: "assistant", content: `Record ID: ${recordId}` } as Message, // Add recordId in the message
+            ]);
+
             console.log(`[LOG] Server response:`, messages);
             setConversation(messages); // Update conversation with the new messages array
           } catch (error) {
-            console.error(`[ERROR] Sending conversation failed:`, error);
+            console.error("[ERROR] Sending conversation:", error);
           } finally {
             setIsTyping(false);
           }
@@ -139,7 +122,7 @@ export default function Home() {
             <p className="text-gray-400 italic text-sm">Bot is typing ...</p>
           ) : null}
           <input
-            className="p-2 border border-gray-300 rounded shadow-xl"
+            className=" p-2 border border-gray-300 rounded shadow-xl"
             type="text"
             value={input}
             placeholder="Enter a message"
