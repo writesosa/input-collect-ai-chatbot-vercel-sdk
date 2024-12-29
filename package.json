@@ -17,8 +17,7 @@
     "react-dom": "^18",
     "react-markdown": "^9.0.1",
     "tailwind-merge": "^2.3.0",
-    "zod": "^3.23.8",
-    "axios": "^1.7.9"
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^20",
