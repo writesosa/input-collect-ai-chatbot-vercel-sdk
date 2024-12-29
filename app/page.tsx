@@ -24,7 +24,17 @@ export default function Home() {
     "I want to transfer money to my friend"
   );
   const [isTyping, setIsTyping] = useState(false);
+  const [recordId, setRecordId] = useState<string | null>(null); // Added state to store the Airtable record ID
   const lastElementRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Extract recordId from the URL query parameter on first load
+    const urlParams = new URLSearchParams(window.location.search);
+    const id = urlParams.get("recordId");
+    if (id) {
+      setRecordId(id);
+    }
+  }, []);
 
   useEffect(() => {
     if (conversation.length > 0) {
@@ -94,14 +104,17 @@ export default function Home() {
           setIsTyping(true);
 
           try {
-            const { messages } = await continueConversation([
-              ...conversation,
-              {
-                role: "assistant",
-                content: `[METADATA] Current date and time: ${new Date().toLocaleString()}`,
-              } as Message,
-              { role: "user", content: userInput } as Message,
-            ]);
+            const { messages } = await continueConversation(
+              [
+                ...conversation,
+                {
+                  role: "assistant",
+                  content: `[METADATA] Current date and time: ${new Date().toLocaleString()}`,
+                } as Message,
+                { role: "user", content: userInput } as Message,
+              ],
+              recordId // Pass the recordId as the second argument
+            );
             setConversation(messages); // Update conversation with the new messages array
           } catch (error) {
             console.error("[ERROR] Sending conversation:", error);
