@@ -87,28 +87,21 @@ export default function Home() {
           addOptimisticMessage([
             {
               role: "assistant",
-              content: `[METADATA] Current date and time: ${new Date().toLocaleString()}`,
+              content: [METADATA] Current date and time: ${new Date().toLocaleString()},
             } as Message,
             { role: "user", content: userInput } as Message,
           ]);
           setIsTyping(true);
 
           try {
-            const urlParams = new URLSearchParams(window.location.search);
-            const recordId = urlParams.get("recordId");
-
-            // Ensure the recordId is passed within the messages as part of the request
             const { messages } = await continueConversation([
               ...conversation,
               {
                 role: "assistant",
-                content: `[METADATA] Current date and time: ${new Date().toLocaleString()}`,
+                content: [METADATA] Current date and time: ${new Date().toLocaleString()},
               } as Message,
               { role: "user", content: userInput } as Message,
-              { role: "assistant", content: `Record ID: ${recordId}` } as Message, // Add recordId in the message
             ]);
-
-            console.log(`[LOG] Server response:`, messages);
             setConversation(messages); // Update conversation with the new messages array
           } catch (error) {
             console.error("[ERROR] Sending conversation:", error);
