@@ -5,10 +5,13 @@ export async function POST(req: Request) {
   try {
     const { messages } = await req.json();
     const response = await continueConversation(messages);
+
     return new Response(JSON.stringify(response), {
       headers: {
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "https://www.wonderland.guru",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
       },
     });
   } catch (error) {
@@ -27,6 +30,7 @@ export async function OPTIONS() {
       "Access-Control-Allow-Origin": "https://www.wonderland.guru",
       "Access-Control-Allow-Methods": "POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Max-Age": "86400", // Cache preflight response for 24 hours
     },
   });
 }
