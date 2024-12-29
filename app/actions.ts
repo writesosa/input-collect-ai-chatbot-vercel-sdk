@@ -3,132 +3,77 @@
 import { InvalidToolArgumentsError, generateText, nanoid, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
+import axios from "axios"; // Import axios for Airtable API requests
 
 export interface Message {
   role: "user" | "assistant";
   content: string;
 }
 
-// Sample data storage
-const users: Record<string, any> = {};
-const journeys: Record<string, any> = {};
+// Airtable API setup
+const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID;
+const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY;
+const AIRTABLE_TABLE_NAME = "Accounts"; // Adjust this to your Airtable table name
 
-// Tool to create a new user account
-const createAccount = tool({
-  description: "Create a new user account with a unique username and additional details.",
-  parameters: z.object({
-    username: z.string().min(4).describe("Unique username for the account."),
-    email: z.string().email().describe("Email address of the user."),
-    password: z.string().min(6).describe("Password for the account."),
-  }),
-  execute: async ({ username, email, password }) => {
-    if (users[username]) {
-      return {
-        status: "failed",
-        message: "Username already exists.",
-      };
-    }
-    users[username] = { username, email, password, id: nanoid() };
-    return {
-      status: "success",
-      message: `Account for ${username} created successfully.`,
-    };
-  },
-});
+async function fetchAirtableRecord(recordId: string) {
+  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLE_NAME}/${recordId}`;
+  const headers = {
+    Authorization: `Bearer ${AIRTABLE_API_KEY}`,
+  };
 
-// Tool to modify an existing user account
-const modifyAccount = tool({
-  description: "Modify details of an existing user account.",
-  parameters: z.object({
-    username: z.string().min(4).describe("Username of the account to modify."),
-    email: z.string().email().optional().describe("New email address."),
-    password: z.string().min(6).optional().describe("New password."),
-  }),
-  execute: async ({ username, email, password }) => {
-    const user = users[username];
-    if (!user) {
-      return {
-        status: "failed",
-        message: "User not found.",
-      };
-    }
-    if (email) user.email = email;
-    if (password) user.password = password;
-    return {
-      status: "success",
-      message: `Account for ${username} updated successfully.`,
-    };
-  },
-});
+  const response = await axios.get(url, { headers });
+  return response.data;
+}
 
-// Tool to create a new journey
-const createJourney = tool({
-  description: "Create a new journey with a unique title and description.",
-  parameters: z.object({
-    title: z.string().min(4).describe("Title of the journey."),
-    description: z.string().describe("Description of the journey."),
-    createdBy: z.string().describe("Username of the creator."),
-  }),
-  execute: async ({ title, description, createdBy }) => {
-    if (!users[createdBy]) {
-      return {
-        status: "failed",
-        message: "Creator user not found.",
-      };
-    }
-    const journeyId = nanoid();
-    journeys[journeyId] = { title, description, createdBy, id: journeyId };
-    return {
-      status: "success",
-      message: `Journey '${title}' created successfully.`,
-    };
-  },
-});
+async function updateAirtableRecord(recordId: string, fields: Record<string, any>) {
+  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLE_NAME}/${recordId}`;
+  const headers = {
+    Authorization: `Bearer ${AIRTABLE_API_KEY}`,
+    "Content-Type": "application/json",
+  };
 
-// Tool to modify an existing journey
-const modifyJourney = tool({
-  description: "Modify details of an existing journey.",
-  parameters: z.object({
-    journeyId: z.string().describe("ID of the journey to modify."),
-    title: z.string().min(4).optional().describe("New title of the journey."),
-    description: z.string().optional().describe("New description of the journey."),
-  }),
-  execute: async ({ journeyId, title, description }) => {
-    const journey = journeys[journeyId];
-    if (!journey) {
-      return {
-        status: "failed",
-        message: "Journey not found.",
-      };
-    }
-    if (title) journey.title = title;
-    if (description) journey.description = description;
-    return {
-      status: "success",
-      message: `Journey '${journey.title}' updated successfully.`,
-    };
-  },
-});
+  const response = await axios.patch(url, { headers, data: { fields } });
+  return response.data;
+}
 
-export async function continueConversation(history: Message[]) {
+export async function continueConversation(history: Message[], recordId: string | null) {
   "use server";
+
+  let airtableData = null;
+
+  if (recordId) {
+    try {
+      airtableData = await fetchAirtableRecord(recordId); // Fetch the record from Airtable
+    } catch (error) {
+      console.error("Error fetching Airtable record:", error);
+    }
+  }
 
   try {
     const { text, toolResults } = await generateText({
       model: openai("gpt-4"),
       system: `You are an assistant for managing user accounts and journeys. You can perform the following actions:
-        - createAccount: Create a new user account.
-        - modifyAccount: Modify an existing user account.
-        - createJourney: Create a new journey.
-        - modifyJourney: Modify an existing journey.
+        - Fetch Airtable records and fields.
+        - Update Airtable fields dynamically based on user inputs.
         Respond with concise and clear information. Use markdown formatting where appropriate.`,
-      messages: history,
+      messages: [...history, { role: "assistant", content: `Airtable Data: ${JSON.stringify(airtableData)}` }],
       maxToolRoundtrips: 5,
       tools: {
-        createAccount,
-        modifyAccount,
-        createJourney,
-        modifyJourney,
+        modifyAccount: tool({
+          description: "Update fields in an Airtable record.",
+          parameters: z.object({
+            recordId: z.string().describe("Airtable record ID."),
+            fields: z.record(z.string()).describe("Fields to update."),
+          }),
+          execute: async ({ recordId, fields }) => {
+            try {
+              await updateAirtableRecord(recordId, fields);
+              return { status: "success", message: "Record updated successfully." };
+            } catch (error) {
+              return { status: "failed", message: "Failed to update record." };
+            }
+          },
+        }),
       },
     });
 
