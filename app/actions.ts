@@ -99,10 +99,10 @@ const createAccount = tool({
 const modifyAccount = tool({
   description: "Simulate modifying an account in Wonderland.",
   parameters: z.object({
-    accountNumber: z
+    recordId: z
       .string()
-      .min(4)
-      .describe("The account number of the account to modify."),
+      .min(1)
+      .describe("The record ID of the account to modify."),
     fieldToUpdate: z
       .string()
       .min(1)
@@ -114,37 +114,10 @@ const modifyAccount = tool({
       .min(1)
       .describe("The new value to assign to the specified field."),
   }),
-  execute: async ({ accountNumber, fieldToUpdate, newValue }) => {
-    console.log("[TOOL] modifyAccount", { accountNumber, fieldToUpdate, newValue });
+  execute: async ({ recordId, fieldToUpdate, newValue }) => {
+    console.log("[TOOL] modifyAccount", { recordId, fieldToUpdate, newValue });
 
     try {
-      // Fetch the record from Airtable
-      const fetchResponse = await fetch(
-        `https://api.airtable.com/v0/appFf0nHuVTVWRjTa/Accounts?filterByFormula={AccountNumber}="${accountNumber}"`,
-        {
-          headers: {
-            Authorization: `Bearer patuiAgEvFzitXyIu.a0fed140f02983ccc3dfeed6c02913b5e2593253cb784a08c3cfd8ac96518ba0`,
-          },
-        }
-      );
-
-      if (!fetchResponse.ok) {
-        console.error("[TOOL] Error fetching record:", fetchResponse.status);
-        throw new Error(`Failed to fetch record. HTTP Status: ${fetchResponse.status}`);
-      }
-
-      const data = await fetchResponse.json();
-      console.log("[TOOL] Fetched record:", JSON.stringify(data, null, 2));
-
-      if (!data.records || data.records.length === 0) {
-        console.warn("[TOOL] No records found for AccountNumber:", accountNumber);
-        return {
-          message: `No account found with Account Number: ${accountNumber}.`,
-        };
-      }
-
-      const recordId = data.records[0].id;
-
       // Update the record in Airtable
       const updateResponse = await fetch(
         `https://api.airtable.com/v0/appFf0nHuVTVWRjTa/Accounts/${recordId}`,
@@ -171,7 +144,7 @@ const modifyAccount = tool({
       console.log("[TOOL] Updated record:", JSON.stringify(updatedRecord, null, 2));
 
       return {
-        message: `Successfully modified account ${accountNumber}. Updated ${fieldToUpdate} to ${newValue}.`,
+        message: `Successfully modified account with record ID ${recordId}. Updated ${fieldToUpdate} to ${newValue}.`,
       };
     } catch (error) {
       console.error("[TOOL] Error in modifyAccount:", error);
