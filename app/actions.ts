@@ -1,6 +1,6 @@
 "use server";
 
-import { generateText, nanoid, tool } from "ai";
+import { generateText, tool, nanoid } from "ai";
 import { z } from "zod";
 
 export interface Message {
@@ -18,15 +18,25 @@ export async function continueConversation(history: Message[]) {
     console.log("[LLM] continueConversation - History:", JSON.stringify(history, null, 2));
 
     const result = await generateText({
-      model: "gpt-4-turbo", // Updated to match supported OpenAI model type
-      system: `You are a Wonderland assistant! Reply with nicely formatted markdown. Keep your replies short and concise. Mention account or company names politely if provided in the record information.
+      model: "gpt-4-turbo", // OpenAI model
+      system: `You are a Wonderland assistant! Reply with nicely formatted markdown. 
+        Keep your replies short and concise. Mention account or company names politely if provided in the record information.
 
-      Perform the following actions when requested:
-      - Create a new account.
-      - Modify an existing account.
-      
-      Always confirm with the user before finalizing any actions.`,
+        Perform the following actions:
+        - Create a new account in Wonderland when the user requests it.
+        - Modify an existing account in Wonderland when the user requests it.
+
+        When creating or modifying an account:
+        - Extract the required information (e.g., account name, description, or specific fields to update) from the user's input.
+        - Ensure all extracted values are sent outside the user message in a structured format.
+        - Confirm the action with the user before finalizing.
+        
+        Log all actions and results.`,
       messages: history,
+      tools: {
+        createAccount,
+        modifyAccount,
+      },
     });
 
     console.log("[LLM] Result from generateText:", JSON.stringify(result, null, 2));
