@@ -3,7 +3,7 @@ import { Message } from "../../actions";
 
 export async function POST(req: Request) {
   try {
-    console.log('Received request:', req);
+    console.log('Received POST request:', req);
 
     const { airtableRecord }: { airtableRecord: any } = await req.json();
     console.log('Received Airtable record:', airtableRecord);
