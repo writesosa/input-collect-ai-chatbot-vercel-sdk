@@ -36,7 +36,7 @@ const currentUserData = {
   lastVerifiedAt: "",
 };
 
-// generate 4 digit random number
+// Generate 4-digit random OTP
 function generateFourDigitNumber(): string {
   return Math.floor(0 + Math.random() * 10000)
     .toString()
@@ -44,15 +44,16 @@ function generateFourDigitNumber(): string {
 }
 
 export async function continueConversation(history: Message[]) {
-  "use server";
-
   try {
     console.log("[LLM] continueConversation");
+
+    // Fetch users from Airtable
     const users = await fetchUsers();
+
     const { text, toolResults } = await generateText({
-      model: openai("gpt-4o"),
+      model: openai("gpt-4-turbo"),
       system: `You are the Sinarmas bank assistant! You only know things about the Sinarmas bank. Reply with nicely formatted markdown. Keep your reply short and concise. Don't overwhelm the user with too much information. 
-      
+
       You can _only_ perform the following actions:
       - transferMoney: Schedule the money transfer. This tool and the parameters' collection must only be called if the user has verified their account via OTP verification. Call the transferMoney tool only when you have all required parameters. Otherwise, keep asking the user. Don't come up with the information yourself. Once you have the complete information, ask the user to confirm the transfer before calling the tool by showing the transfer information.
       - getBalance: Get the current balance of the account. This tool and the parameters' collection must only be called if the user has verified their account via OTP verification. Call the getBalance tool only when you have required parameters. Otherwise, keep asking the user. Don't come up with the information yourself. Once you have the complete information, ask the user to confirm the request before calling the tool by showing the request information.
@@ -77,25 +78,19 @@ export async function continueConversation(history: Message[]) {
       messages: [
         ...history,
         {
-          role: "assistant" as const,
-          content:
-            text ||
-            toolResults.map((toolResult) => toolResult.result).join("\n"),
+          role: "assistant",
+          content: text || toolResults.map((toolResult) => toolResult.result).join("\n"),
         },
       ],
     };
   } catch (error) {
-    if (error instanceof InvalidToolArgumentsError) {
-      console.log(error.toJSON());
-    } else {
-      console.log(error);
-    }
+    console.error("[ERROR] continueConversation", error);
     return {
       messages: [
         ...history,
         {
-          role: "assistant" as const,
-          content: "There's a problem executing the request. Please try again.",
+          role: "assistant",
+          content: "An error occurred while processing your request. Please try again.",
         },
       ],
     };
@@ -104,11 +99,16 @@ export async function continueConversation(history: Message[]) {
 
 function createTransferMoneyTool(users: any[]) {
   return tool({
-    description: "Schedule the money transfer to another account...",
+    description: "Schedule the money transfer to another account. Only collect the parameters for this tool and call this tool when the user has successfully verified their account via OTP verification.",
     parameters: z.object({
       amount: z.number().min(1).describe("The amount of money to transfer"),
       destination: z.string().min(4).describe("The destination account..."),
-      executionDateTime: z.date().refine((date) => date > new Date(), { message: "The date must be in the future" }),
+      executionDateTime: z
+        .union([
+          z.date(),
+          z.string().transform((str) => new Date(str)),
+        ])
+        .refine((date) => date > new Date(), { message: "The date must be in the future" }),
     }),
     execute: async ({ amount, destination, executionDateTime }) => {
       console.log("[TOOL] transferMoney", { amount, destination, executionDateTime });
@@ -138,7 +138,7 @@ function createTransferMoneyTool(users: any[]) {
       return {
         transactionId: nanoid(),
         transactionStatus: "success",
-        message: `The transfer of ${amount} to ${destination} was successful. Balance after transfer: ${afterTransferBalance}`,
+        message: `The transfer of ${amount} to ${destination} will be executed on ${executionDateTime}. Remaining balance: ${afterTransferBalance}.`,
       };
     },
   });
@@ -146,8 +146,10 @@ function createTransferMoneyTool(users: any[]) {
 
 function createGetBalanceTool(users: any[]) {
   return tool({
-    description: "Get the current balance of the account...",
-    parameters: z.object({ accountNumber: z.string().min(4) }),
+    description: "Get the current balance of the account. Only collect the parameters for this tool and call this tool when the user has successfully verified their account via OTP verification.",
+    parameters: z.object({
+      accountNumber: z.string().min(4),
+    }),
     execute: async ({ accountNumber }) => {
       const user = users.find((user) => user.accountNumber === accountNumber);
       if (!user) {
@@ -161,7 +163,10 @@ function createGetBalanceTool(users: any[]) {
 function createVerifyPhoneNumberTool(users: any[]) {
   return tool({
     description: "Send OTP to phone number...",
-    parameters: z.object({ accountNumber: z.string().min(4), phoneNumber: z.string().min(10) }),
+    parameters: z.object({
+      accountNumber: z.string().min(4),
+      phoneNumber: z.string().min(10),
+    }),
     execute: async ({ accountNumber, phoneNumber }) => {
       const user = users.find((user) => user.accountNumber === accountNumber && user.phoneNumber === phoneNumber);
       if (!user) {
@@ -169,7 +174,25 @@ function createVerifyPhoneNumberTool(users: any[]) {
       }
 
       otpSentData.verificationCode = generateFourDigitNumber();
-      return { message: `OTP sent: ${otpSentData.verificationCode}` };
+      return { message: `OTP sent to ${phoneNumber}. Code: ${otpSentData.verificationCode}` };
     },
   });
 }
+
+const verifyOTP = tool({
+  description: "Verify the OTP code that the user entered.",
+  parameters: z.object({
+    otpCode: z
+      .string()
+      .refine((value) => /^\d{4}$/.test(value), { message: "OTP must be a 4-digit number." }),
+    phoneNumber: z.string().min(10),
+  }),
+  execute: async ({ otpCode, phoneNumber }) => {
+    if (otpCode !== otpSentData.verificationCode) {
+      return { verified: false, message: "Invalid OTP." };
+    }
+
+    currentUserData.lastVerifiedAt = new Date().toISOString();
+    return { verified: true, message: "OTP verified successfully." };
+  },
+});
