@@ -1,33 +1,24 @@
-import { openai } from "@ai-sdk/openai";
-import { generateText } from "../../actions"; // Importing from the correct relative path
-
-// Allow streaming responses up to 30 seconds
-const maxDuration = 30;
+import { continueConversation } from "../../actions"; // Importing from your actions file
 
 export async function POST(req: Request) {
-  const { messages } = await req.json();
-
   try {
-    // Use generateText from actions.ts
-    const { text } = await generateText({
-      model: openai("gpt-4-turbo"),
-      messages,
-    });
+    const { messages } = await req.json();
 
-    // Create response
-    const response = new Response(text, {
+    // Call continueConversation to handle the conversation and tools
+    const result = await continueConversation(messages);
+
+    return new Response(JSON.stringify(result), {
       headers: {
         "Access-Control-Allow-Origin": "https://www.wonderland.guru",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
+        "Content-Type": "application/json",
       },
     });
-
-    return response;
   } catch (error) {
     console.error("[ERROR] POST /api/chat", error);
     return new Response(
-      "An error occurred while processing your request.",
+      JSON.stringify({ error: "An error occurred while processing your request." }),
       { status: 500 }
     );
   }
