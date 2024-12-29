@@ -1,45 +1,29 @@
 import { openai } from "@ai-sdk/openai";
-import { continueConversation } from "../../actions"; // Adjust the import path as necessary
-import { Message } from "../../actions"; // Ensure the Message interface is imported
+import { streamText } from "ai";
 
 // Allow streaming responses up to 30 seconds
 export const maxDuration = 30;
 
 export async function POST(req: Request) {
-  try {
-    const { messages }: { messages: Message[] } = await req.json();
+  const { messages } = await req.json();
 
-    // Generate the response using continueConversation
-    const { messages: updatedMessages } = await continueConversation(messages);
+  const result = await streamText({
+    model: openai("gpt-4-turbo"),
+    messages,
+  });
 
-    // Stream the assistant's response back to the client
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      start(controller) {
-        updatedMessages.forEach((msg) => {
-          if (msg.role === "assistant") {
-            controller.enqueue(encoder.encode(msg.content));
-          }
-        });
-        controller.close();
-      },
-    });
+  // Create the AI stream response
+  const aiStreamResponse = result.toAIStreamResponse();
 
-    // Create the response with the stream
-    const response = new Response(stream, {
-      headers: {
-        "Content-Type": "text/plain",
-        "Access-Control-Allow-Origin": "https://www.wonderland.guru",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
-      },
-    });
+  // Clone the response to modify headers
+  const response = new Response(aiStreamResponse.body, aiStreamResponse);
 
-    return response;
-  } catch (error) {
-    console.error("Error processing request:", error);
-    return new Response("Internal Server Error", { status: 500 });
-  }
+  // Set CORS headers
+  response.headers.set("Access-Control-Allow-Origin", "https://www.wonderland.guru");
+  response.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  response.headers.set("Access-Control-Allow-Headers", "Content-Type");
+
+  return response;
 }
 
 // Handle preflight OPTIONS request
