@@ -1,6 +1,6 @@
 import { continueConversation } from "../../actions";
 
-export async function POST(req: Request) {
+export async function POST(req: Request): Promise<Response> {
   console.log("[POST /api/chat] Request received");
 
   try {
@@ -57,7 +57,7 @@ export async function POST(req: Request) {
   }
 }
 
-export async function OPTIONS() {
+export async function OPTIONS(): Promise<Response> {
   console.log("[OPTIONS /api/chat] Preflight request handled");
 
   return new Response(null, {
