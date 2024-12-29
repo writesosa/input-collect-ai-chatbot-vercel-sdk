@@ -87,7 +87,7 @@ export default function Home() {
           addOptimisticMessage([
             {
               role: "assistant",
-              content: [METADATA] Current date and time: ${new Date().toLocaleString()},
+              content: `[METADATA] Current date and time: ${new Date().toLocaleString()}`,
             } as Message,
             { role: "user", content: userInput } as Message,
           ]);
@@ -98,7 +98,7 @@ export default function Home() {
               ...conversation,
               {
                 role: "assistant",
-                content: [METADATA] Current date and time: ${new Date().toLocaleString()},
+                content: `[METADATA] Current date and time: ${new Date().toLocaleString()}`,
               } as Message,
               { role: "user", content: userInput } as Message,
             ]);
