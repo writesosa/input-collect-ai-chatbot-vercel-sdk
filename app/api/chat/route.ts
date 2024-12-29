@@ -1,55 +1,69 @@
-import { openai } from "@ai-sdk/openai";
-import { continueConversation } from "../../actions"; // Adjust the import path as necessary
-import { Message } from "../../actions"; // Ensure the Message interface is imported
-
-// Allow streaming responses up to 30 seconds
-export const maxDuration = 30;
+import { continueConversation } from "../../actions";
 
 export async function POST(req: Request) {
+  console.log("[POST /api/chat] Request received");
+
   try {
-    const { messages }: { messages: Message[] } = await req.json();
+    const body = await req.json();
+    console.log("[POST /api/chat] Parsed body:", JSON.stringify(body, null, 2));
 
-    // Generate the response using continueConversation
-    const { messages: updatedMessages } = await continueConversation(messages);
+    const { messages, record } = body;
 
-    // Stream the assistant's response back to the client
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      start(controller) {
-        updatedMessages.forEach((msg) => {
-          if (msg.role === "assistant") {
-            controller.enqueue(encoder.encode(msg.content));
-          }
-        });
-        controller.close();
-      },
+    if (!messages || !Array.isArray(messages)) {
+      console.error("[POST /api/chat] Invalid input: messages is not an array.");
+      return new Response(JSON.stringify({ error: "Invalid input format." }), {
+        status: 400,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
+
+    if (!record) {
+      console.error("[POST /api/chat] No record provided.");
+      return new Response(JSON.stringify({ error: "Record is required." }), {
+        status: 400,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
+
+    console.log("[POST /api/chat] Processing record and messages:", {
+      record,
+      messages,
     });
 
-    // Create the response with the stream
-    const response = new Response(stream, {
+    const result = await continueConversation([{ role: "assistant", content: `Here's your account: ${JSON.stringify(record)}` }, ...messages]);
+
+    console.log("[POST /api/chat] Response from continueConversation:", JSON.stringify(result, null, 2));
+
+    return new Response(JSON.stringify(result), {
       headers: {
-        "Content-Type": "text/plain",
-        "Access-Control-Allow-Origin": "https://www.wonderland.guru",
+        "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
+        "Content-Type": "application/json",
       },
     });
-
-    return response;
   } catch (error) {
-    console.error("Error processing request:", error);
-    return new Response("Internal Server Error", { status: 500 });
+    console.error("[POST /api/chat] Error:", error);
+    return new Response(JSON.stringify({ error: "An error occurred." }), {
+      status: 500,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+      },
+    });
   }
 }
 
-// Handle preflight OPTIONS request
 export async function OPTIONS() {
   return new Response(null, {
     headers: {
-      "Access-Control-Allow-Origin": "https://www.wonderland.guru",
+      "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
-      "Access-Control-Max-Age": "86400", // Cache preflight response for 24 hours
+      "Access-Control-Max-Age": "86400",
     },
   });
 }

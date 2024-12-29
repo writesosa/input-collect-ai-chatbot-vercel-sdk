@@ -1,160 +1,52 @@
 "use server";
 
-import { generateText, nanoid, tool } from "ai";
+import { InvalidToolArgumentsError, generateText, nanoid, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
-import axios from "axios";
-
-const AIRTABLE_API_URL = "https://api.airtable.com/v0/appFf0nHuVTVWRjTa/Journeys";
-const AIRTABLE_API_KEY = "patuiAgEvFzitXyIu.a0fed140f02983ccc3dfeed6c02913b5e2593253cb784a08c3cfd8ac96518ba0";
+import users from "./users.json";
+import Airtable from "airtable";
 
 export interface Message {
   role: "user" | "assistant";
   content: string;
 }
 
-async function logToAirtable(fields: Record<string, any>) {
-  try {
-    await axios.post(
-      AIRTABLE_API_URL,
-      { fields },
-      {
-        headers: {
-          Authorization: `Bearer ${AIRTABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-  } catch (error) {
-    console.error("Error logging to Airtable:", error);
-  }
-}
+// Simulated user data for logging and updates
+const currentUserData = {
+  name: "",
+  accountNumber: "",
+  phoneNumber: "",
+  balance: 0,
+};
 
-const createAccount = tool({
-  description: "Create a new user account with a name and description.",
-  parameters: z.object({
-    name: z.string().min(1).describe("The name of the user."),
-    description: z.string().optional().describe("A brief description of the user."),
-  }),
-  execute: async ({ name, description }) => {
-    const responseMessage = `Account for ${name} has been created successfully.`;
-    const outgoingPayload = {
-      name,
-      description,
-      responseMessage,
-    };
-
-    await logToAirtable({
-      "User Message": `Create account for ${name}`,
-      Response: responseMessage,
-      "Incoming Payload": JSON.stringify({ name, description }),
-      "Outgoing Payload": JSON.stringify(outgoingPayload),
-      Status: "Account Created",
-    });
-
-    return responseMessage;
-  },
-});
-
-const modifyAccount = tool({
-  description: "Modify an existing user account identified by name.",
-  parameters: z.object({
-    name: z.string().min(1).describe("The name of the user to modify."),
-    newName: z.string().optional().describe("The new name for the user."),
-    newDescription: z.string().optional().describe("The new description for the user."),
-  }),
-  execute: async ({ name, newName, newDescription }) => {
-    const responseMessage = `Account ${name} has been updated successfully.`;
-    const outgoingPayload = {
-      name,
-      newName,
-      newDescription,
-      responseMessage,
-    };
-
-    await logToAirtable({
-      "User Message": `Modify account ${name}`,
-      Response: responseMessage,
-      "Incoming Payload": JSON.stringify({ name, newName, newDescription }),
-      "Outgoing Payload": JSON.stringify(outgoingPayload),
-      Status: "Account Modified",
-    });
-
-    return responseMessage;
-  },
-});
-
-const createJourney = tool({
-  description: "Create a new journey with a name and description.",
-  parameters: z.object({
-    name: z.string().min(1).describe("The name of the journey."),
-    description: z.string().optional().describe("A brief description of the journey."),
-  }),
-  execute: async ({ name, description }) => {
-    const responseMessage = `Journey ${name} has been created successfully.`;
-    const outgoingPayload = {
-      name,
-      description,
-      responseMessage,
-    };
-
-    await logToAirtable({
-      "User Message": `Create journey ${name}`,
-      Response: responseMessage,
-      "Incoming Payload": JSON.stringify({ name, description }),
-      "Outgoing Payload": JSON.stringify(outgoingPayload),
-      Status: "Journey Created",
-    });
-
-    return responseMessage;
-  },
-});
-
-const modifyJourney = tool({
-  description: "Modify an existing journey identified by name.",
-  parameters: z.object({
-    name: z.string().min(1).describe("The name of the journey to modify."),
-    newName: z.string().optional().describe("The new name for the journey."),
-    newDescription: z.string().optional().describe("The new description for the journey."),
-  }),
-  execute: async ({ name, newName, newDescription }) => {
-    const responseMessage = `Journey ${name} has been updated successfully.`;
-    const outgoingPayload = {
-      name,
-      newName,
-      newDescription,
-      responseMessage,
-    };
-
-    await logToAirtable({
-      "User Message": `Modify journey ${name}`,
-      Response: responseMessage,
-      "Incoming Payload": JSON.stringify({ name, newName, newDescription }),
-      "Outgoing Payload": JSON.stringify(outgoingPayload),
-      Status: "Journey Modified",
-    });
-
-    return responseMessage;
-  },
-});
+// Initialize Airtable base
+const airtableBase = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base("your_base_id");
 
 export async function continueConversation(history: Message[]) {
+  "use server";
+
   try {
+    console.log("[LLM] continueConversation");
     const { text, toolResults } = await generateText({
-      model: openai("gpt-4-turbo"),
-      system: `You are an assistant for managing user accounts and journeys. You can perform the following actions:
-        - createAccount: Create a new user account.
-        - modifyAccount: Modify an existing user account.
-        - createJourney: Create a new journey.
-        - modifyJourney: Modify an existing journey.
-        Respond with plain text messages to the user.`,
+      model: openai("gpt-4o"),
+      system: `You are a Wonderland assistant! You only know things about Wonderland. Reply with nicely formatted markdown. Keep your reply short and concise. Don't overwhelm the user with too much information. 
+        The first message will be a payload with the current record from Airtable and is auto generated. When you receive it, respond with a message asking the user how you can help them with the account and mention the account or company name from the record information politely.
+
+        Never mention the word Airtable, use Wonderland for user messages instead of Airtable.
+        
+        You can _only_ perform the following actions:
+        - createAccount: Simulate creating a new account in Wonderland. This tool and the parameters' collection must only be called if the user has said they want to create an account. Call the createAccount tool only when you have all required parameters. Otherwise, keep asking the user. Don't come up with the information yourself. Once you have the complete information, ask the user to confirm the new account creation before calling the tool by showing a summary of the information.
+        - modifyAccount: Simulate modifying an account in Wonderland. This tool and the parameters must only be called if the user has indicated they wish to modify an account. Call the modifyAccount tool only when you have required information for the field to update. Otherwise, keep asking the user. Once you have the complete information, ask the user to confirm the request before calling the tool by showing the request information.
+
+        When you are creating an account or modifying an account, interpret and clarify the user description to be clear, concise, and ensure proper capitalization for the name when confirming.
+        
+        Don't perform any other actions.
+        `,
       messages: history,
       maxToolRoundtrips: 5,
       tools: {
         createAccount,
         modifyAccount,
-        createJourney,
-        modifyJourney,
       },
     });
 
@@ -163,20 +55,130 @@ export async function continueConversation(history: Message[]) {
         ...history,
         {
           role: "assistant" as const,
-          content: text || toolResults.map((toolResult) => toolResult.result).join("\n"),
+          content:
+            text ||
+            toolResults.map((toolResult) => toolResult.result).join("\n"),
         },
       ],
     };
   } catch (error) {
-    console.error("Error in continueConversation:", error);
+    if (error instanceof InvalidToolArgumentsError) {
+      console.log(error.toJSON());
+    } else {
+      console.log(error);
+    }
     return {
       messages: [
         ...history,
         {
           role: "assistant" as const,
-          content: "An error occurred while processing your request. Please try again.",
+          content: "There's a problem executing the request. Please try again.",
         },
       ],
     };
   }
+}
+
+const createAccount = tool({
+  description: "Simulate creating a new account in Wonderland.",
+  parameters: z.object({
+    name: z.string().min(1).describe("The name of the account holder."),
+    description: z.string().min(1).describe("A description for the account."),
+  }),
+  execute: async ({ name, description }) => {
+    console.log("[TOOL] createAccount", { name, description });
+
+    // Simulate account creation
+    const newAccountNumber = nanoid();
+    console.log(
+      `[SIMULATION] Account Created: Name: ${name}, Description: ${description}, Account Number: ${newAccountNumber}`
+    );
+
+    // Log to Airtable
+    await airtableBase("Accounts").create({
+      Name: name,
+      Description: description,
+      AccountNumber: newAccountNumber,
+    });
+
+    return {
+      message: `Successfully simulated creating an account for ${name} with the description: ${description}. Account Number: ${newAccountNumber}`,
+    };
+  },
+});
+
+const modifyAccount = tool({
+  description: "Simulate modifying an account in Wonderland.",
+  parameters: z.object({
+    accountNumber: z
+      .string()
+      .min(4)
+      .describe("The account number of the account to modify."),
+    fieldToUpdate: z
+      .string()
+      .min(1)
+      .describe(
+        "The field to update (e.g., name, phoneNumber, balance). Must be a valid field."
+      ),
+    newValue: z
+      .string()
+      .min(1)
+      .describe("The new value to assign to the specified field."),
+  }),
+  execute: async ({ accountNumber, fieldToUpdate, newValue }) => {
+    console.log("[TOOL] modifyAccount", { accountNumber, fieldToUpdate, newValue });
+
+    // Simulate account modification
+    console.log(
+      `[SIMULATION] Account Modified: Account Number: ${accountNumber}, Field Updated: ${fieldToUpdate}, New Value: ${newValue}`
+    );
+
+    // Update Airtable record
+    const records = await airtableBase("Accounts")
+      .select({ filterByFormula: `{AccountNumber} = "${accountNumber}"` })
+      .firstPage();
+
+    if (records.length > 0) {
+      const recordId = records[0].id;
+      await airtableBase("Accounts").update(recordId, {
+        [fieldToUpdate]: newValue,
+      });
+    }
+
+    return {
+      message: `Successfully simulated modifying account ${accountNumber}. Updated ${fieldToUpdate} to ${newValue}.`,
+    };
+  },
+});
+
+// Event listener for chatbot container interaction
+if (typeof window !== "undefined") {
+  window.addEventListener("DOMContentLoaded", () => {
+    const chatbotContainer = document.getElementById("chatbot-container");
+
+    if (chatbotContainer) {
+      chatbotContainer.addEventListener("click", sendCurrentRecord);
+      chatbotContainer.addEventListener("mouseover", sendCurrentRecord);
+    }
+
+    async function sendCurrentRecord() {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const recordId = urlParams.get("recordId");
+
+        if (recordId) {
+          const response = await fetch(
+            `https://www.wonderland.guru/accounts/account-details?recordId=${recordId}`
+          );
+          const record = await response.json();
+          console.log("[Frontend] Current record fetched:", record);
+
+          // Send record to Airtable
+          await airtableBase("Records").create(record);
+        }
+      } catch (error) {
+        console.error("[Frontend] Error fetching or sending record:", error);
+      }
+    }
+  });
 }
