@@ -7,10 +7,10 @@ export const maxDuration = 30;
 
 export async function POST(req: Request) {
   try {
-    const { messages }: { messages: Message[] } = await req.json();
+    const { messages, recordId }: { messages: Message[]; recordId: string | null } = await req.json();
 
     // Generate the response using continueConversation
-    const { messages: updatedMessages } = await continueConversation(messages);
+    const { messages: updatedMessages } = await continueConversation(messages, recordId);
 
     // Stream the assistant's response back to the client
     const encoder = new TextEncoder();
