@@ -21,6 +21,10 @@ export default function Home() {
   const [isTyping, setIsTyping] = useState(false);
   const lastElementRef = useRef<HTMLDivElement>(null);
 
+  const pageType = "accounts"; // Update this dynamically if needed
+  const recordId = "recordIdHere"; // Replace with the actual recordId
+  const fields = {}; // Populate with necessary Airtable fields if needed
+
   // Auto-scroll to the last message
   useEffect(() => {
     if (optimisticConversation.length > 0) {
@@ -88,14 +92,12 @@ export default function Home() {
           setIsTyping(true);
 
           try {
-            const { messages } = await continueConversation([
-              ...conversation,
-              {
-                role: "assistant",
-                content: `[METADATA] Current date and time: ${new Date().toLocaleString()}`,
-              } as const,
-              { role: "user", content: userInput } as const,
-            ]);
+            const { messages } = await continueConversation(
+              [...conversation, { role: "user", content: userInput }],
+              pageType,
+              recordId,
+              fields
+            );
             setConversation(messages); // Update conversation with the new messages array
           } catch (error) {
             console.error("[ERROR] Sending conversation:", error);
