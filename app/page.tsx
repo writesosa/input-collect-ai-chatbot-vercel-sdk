@@ -80,7 +80,7 @@ export default function Home() {
           setInput("");
 
           if (userInput === "reset" || userInput === "clear") {
-            setConversation([]); // Reset conversation correctly
+            setConversation([]);
             return;
           }
 
@@ -88,26 +88,21 @@ export default function Home() {
             {
               role: "assistant",
               content: `[METADATA] Current date and time: ${new Date().toLocaleString()}`,
-            } as Message,
-            { role: "user", content: userInput } as Message,
+            } as const,
+            { role: "user", content: userInput } as const,
           ]);
           setIsTyping(true);
 
-          try {
-            const { messages } = await continueConversation([
-              ...conversation,
-              {
-                role: "assistant",
-                content: `[METADATA] Current date and time: ${new Date().toLocaleString()}`,
-              } as Message,
-              { role: "user", content: userInput } as Message,
-            ]);
-            setConversation(messages); // Update conversation with the new messages array
-          } catch (error) {
-            console.error("[ERROR] Sending conversation:", error);
-          } finally {
-            setIsTyping(false);
-          }
+          const { messages } = await continueConversation([
+            ...conversation,
+            {
+              role: "assistant",
+              content: `[METADATA] Current date and time: ${new Date().toLocaleString()}`,
+            } as const,
+            { role: "user", content: userInput } as const,
+          ]);
+          setIsTyping(false);
+          setConversation(messages);
         }}
       >
         <div className="fixed bottom-0 w-full max-w-md flex flex-col space-y-2 py-4 bg-white">
