@@ -1,7 +1,6 @@
 "use server";
 
-import { InvalidToolArgumentsError, generateText, nanoid, tool } from "ai";
-import { openai } from "@ai-sdk/openai";
+import { generateText, nanoid, tool } from "ai";
 import { z } from "zod";
 
 export interface Message {
@@ -9,48 +8,46 @@ export interface Message {
   content: string;
 }
 
+// Airtable API constants
+const AIRTABLE_API_KEY = "patuiAgEvFzitXyIu.a0fed140f02983ccc3dfeed6c02913b5e2593253cb784a08c3cfd8ac96518ba0";
+const AIRTABLE_BASE_ID = "appFf0nHuVTVWRjTa";
+const AIRTABLE_ACCOUNTS_TABLE = "Accounts";
+
 export async function continueConversation(history: Message[]) {
-  "use server";
-
   try {
-    console.log("[LLM] continueConversation");
-    const { text, toolResults } = await generateText({
-      model: openai("gpt-4o"),
-      system: `You are a Wonderland assistant! Reply with nicely formatted markdown. Keep your reply short and concise. Mention the account or company name politely if provided in the record information.
+    console.log("[LLM] continueConversation - History:", JSON.stringify(history, null, 2));
 
-        Perform the following actions when requested:
-        - createAccount: Create a new account in the Accounts table.
-        - modifyAccount: Modify an existing account in the Accounts table.
+    const result = await generateText({
+      model: "gpt-4-turbo", // Updated to match supported OpenAI model type
+      system: `You are a Wonderland assistant! Reply with nicely formatted markdown. Keep your replies short and concise. Mention account or company names politely if provided in the record information.
 
-        Log all operations and their results for user reference.
-        `,
+      Perform the following actions when requested:
+      - Create a new account.
+      - Modify an existing account.
+      
+      Always confirm with the user before finalizing any actions.`,
       messages: history,
-      maxToolRoundtrips: 5,
-      tools: {
-        createAccount,
-        modifyAccount,
-      },
     });
+
+    console.log("[LLM] Result from generateText:", JSON.stringify(result, null, 2));
 
     return {
       messages: [
         ...history,
         {
-          role: "assistant" as const,
-          content:
-            text ||
-            toolResults.map((toolResult) => toolResult.result).join("\n"),
+          role: "assistant",
+          content: result.text || "I'm sorry, something went wrong. Please try again.",
         },
       ],
     };
   } catch (error) {
-    console.error("[LLM] Error during conversation:", error);
+    console.error("[LLM] Error in continueConversation:", error);
     return {
       messages: [
         ...history,
         {
-          role: "assistant" as const,
-          content: "There was an error processing your request. Please try again.",
+          role: "assistant",
+          content: "An error occurred while processing your request.",
         },
       ],
     };
@@ -58,98 +55,84 @@ export async function continueConversation(history: Message[]) {
 }
 
 const createAccount = tool({
-  description: "Create a new account in the Accounts table.",
+  description: "Create a new account in Wonderland.",
   parameters: z.object({
     name: z.string().min(1).describe("The name of the account holder."),
     description: z.string().min(1).describe("A description for the account."),
   }),
   execute: async ({ name, description }) => {
-    console.log("[TOOL] createAccount - Input:", { name, description });
+    console.log("[TOOL] createAccount - Parameters:", { name, description });
 
     try {
-      const createResponse = await fetch(
-        "https://api.airtable.com/v0/appFf0nHuVTVWRjTa/Accounts",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer patuiAgEvFzitXyIu.a0fed140f02983ccc3dfeed6c02913b5e2593253cb784a08c3cfd8ac96518ba0`,
-            "Content-Type": "application/json",
+      const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_ACCOUNTS_TABLE}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${AIRTABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fields: {
+            Name: name,
+            Description: description,
+            AccountNumber: nanoid(),
           },
-          body: JSON.stringify({
-            fields: {
-              Name: name,
-              Description: description,
-            },
-          }),
-        }
-      );
+        }),
+      });
 
-      const result = await createResponse.json();
-
-      if (!createResponse.ok) {
-        console.error("[TOOL] createAccount - Error Response:", result);
-        throw new Error(`Failed to create account. ${result.error?.message || "Unknown error."}`);
+      if (!response.ok) {
+        throw new Error(`Failed to create account. HTTP Status: ${response.status}`);
       }
 
-      console.log("[TOOL] createAccount - Success Response:", result);
+      const data = await response.json();
+      console.log("[TOOL] createAccount - Success:", JSON.stringify(data, null, 2));
+
       return {
-        message: `Account created successfully: Name: ${name}, Description: ${description}, Record ID: ${result.id}`,
+        message: `Successfully created a new account for ${name} with the description: ${description}.`,
       };
     } catch (error) {
       console.error("[TOOL] createAccount - Error:", error);
-      return {
-        message: `Error occurred while creating the account: ${error.message}`,
-      };
+      return { message: `Failed to create account: ${error.message}` };
     }
   },
 });
 
 const modifyAccount = tool({
-  description: "Modify an existing account in the Accounts table.",
+  description: "Modify an existing account in Wonderland.",
   parameters: z.object({
-    recordId: z.string().min(1).describe("The record ID of the account to modify."),
-    fieldToUpdate: z
-      .string()
-      .min(1)
-      .describe("The field to update (e.g., Name, Description)."),
-    newValue: z.string().min(1).describe("The new value for the specified field."),
+    recordId: z.string().min(1).describe("The Airtable Record ID for the account."),
+    fieldToUpdate: z.string().min(1).describe("The field to update (e.g., Name, Description)."),
+    newValue: z.string().min(1).describe("The new value to assign to the specified field."),
   }),
   execute: async ({ recordId, fieldToUpdate, newValue }) => {
-    console.log("[TOOL] modifyAccount - Input:", { recordId, fieldToUpdate, newValue });
+    console.log("[TOOL] modifyAccount - Parameters:", { recordId, fieldToUpdate, newValue });
 
     try {
-      const updateResponse = await fetch(
-        `https://api.airtable.com/v0/appFf0nHuVTVWRjTa/Accounts/${recordId}`,
-        {
-          method: "PATCH",
-          headers: {
-            Authorization: `Bearer patuiAgEvFzitXyIu.a0fed140f02983ccc3dfeed6c02913b5e2593253cb784a08c3cfd8ac96518ba0`,
-            "Content-Type": "application/json",
+      const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_ACCOUNTS_TABLE}/${recordId}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${AIRTABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fields: {
+            [fieldToUpdate]: newValue,
           },
-          body: JSON.stringify({
-            fields: {
-              [fieldToUpdate]: newValue,
-            },
-          }),
-        }
-      );
+        }),
+      });
 
-      const result = await updateResponse.json();
-
-      if (!updateResponse.ok) {
-        console.error("[TOOL] modifyAccount - Error Response:", result);
-        throw new Error(`Failed to update account. ${result.error?.message || "Unknown error."}`);
+      if (!response.ok) {
+        throw new Error(`Failed to modify account. HTTP Status: ${response.status}`);
       }
 
-      console.log("[TOOL] modifyAccount - Success Response:", result);
+      const data = await response.json();
+      console.log("[TOOL] modifyAccount - Success:", JSON.stringify(data, null, 2));
+
       return {
-        message: `Account updated successfully: Record ID: ${recordId}, Updated Field: ${fieldToUpdate}, New Value: ${newValue}`,
+        message: `Successfully updated the ${fieldToUpdate} to "${newValue}" for the account.`,
       };
     } catch (error) {
       console.error("[TOOL] modifyAccount - Error:", error);
-      return {
-        message: `Error occurred while updating the account: ${error.message}`,
-      };
+      return { message: `Failed to modify account: ${error.message}` };
     }
   },
 });
