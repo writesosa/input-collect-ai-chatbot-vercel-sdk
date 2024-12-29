@@ -31,7 +31,7 @@ const createAccount = tool({
     users[username] = { username, email, password, id: nanoid() };
     return {
       status: "success",
-      message: Account for ${username} created successfully.,
+      message: `Account for ${username} created successfully.`,
     };
   },
 });
@@ -56,7 +56,7 @@ const modifyAccount = tool({
     if (password) user.password = password;
     return {
       status: "success",
-      message: Account for ${username} updated successfully.,
+      message: `Account for ${username} updated successfully.`,
     };
   },
 });
@@ -80,7 +80,7 @@ const createJourney = tool({
     journeys[journeyId] = { title, description, createdBy, id: journeyId };
     return {
       status: "success",
-      message: Journey '${title}' created successfully.,
+      message: `Journey '${title}' created successfully.`,
     };
   },
 });
@@ -105,7 +105,7 @@ const modifyJourney = tool({
     if (description) journey.description = description;
     return {
       status: "success",
-      message: Journey '${journey.title}' updated successfully.,
+      message: `Journey '${journey.title}' updated successfully.`,
     };
   },
 });
@@ -116,12 +116,12 @@ export async function continueConversation(history: Message[]) {
   try {
     const { text, toolResults } = await generateText({
       model: openai("gpt-4"),
-      system: You are an assistant for managing user accounts and journeys. You can perform the following actions:
+      system: `You are an assistant for managing user accounts and journeys. You can perform the following actions:
         - createAccount: Create a new user account.
         - modifyAccount: Modify an existing user account.
         - createJourney: Create a new journey.
         - modifyJourney: Modify an existing journey.
-        Respond with concise and clear information. Use markdown formatting where appropriate.,
+        Respond with concise and clear information. Use markdown formatting where appropriate.`,
       messages: history,
       maxToolRoundtrips: 5,
       tools: {
