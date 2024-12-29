@@ -3,7 +3,6 @@
 import { InvalidToolArgumentsError, generateText, nanoid, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
-import axios from "axios"; // Import axios for Airtable API requests
 
 export interface Message {
   role: "user" | "assistant";
@@ -19,10 +18,14 @@ async function fetchAirtableRecord(recordId: string) {
   const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLE_NAME}/${recordId}`;
   const headers = {
     Authorization: `Bearer ${AIRTABLE_API_KEY}`,
+    "Content-Type": "application/json",
   };
 
-  const response = await axios.get(url, { headers });
-  return response.data;
+  const response = await fetch(url, { headers });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch record: ${response.statusText}`);
+  }
+  return response.json();
 }
 
 async function updateAirtableRecord(recordId: string, fields: Record<string, any>) {
@@ -32,8 +35,16 @@ async function updateAirtableRecord(recordId: string, fields: Record<string, any
     "Content-Type": "application/json",
   };
 
-  const response = await axios.patch(url, { headers, data: { fields } });
-  return response.data;
+  const response = await fetch(url, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify({ fields }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to update record: ${response.statusText}`);
+  }
+  return response.json();
 }
 
 export async function continueConversation(history: Message[], recordId: string | null) {
