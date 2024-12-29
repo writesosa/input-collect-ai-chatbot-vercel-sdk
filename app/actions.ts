@@ -21,15 +21,20 @@ async function fetchAirtableRecord(recordId: string) {
     Authorization: `Bearer ${AIRTABLE_API_KEY}`,
   };
 
-  const response = await fetch(url, { method: "GET", headers });
-  if (!response.ok) {
-    console.error(`[ERROR] Failed to fetch record: ${response.statusText}`);
-    throw new Error(`Error fetching record: ${response.statusText}`);
-  }
+  try {
+    const response = await fetch(url, { method: "GET", headers });
+    if (!response.ok) {
+      console.error(`[ERROR] Failed to fetch Airtable record: ${response.statusText}`);
+      throw new Error(`Error fetching record: ${response.statusText}`);
+    }
 
-  const data = await response.json();
-  console.log(`[LOG] Successfully fetched Airtable record:`, data);
-  return data;
+    const data = await response.json();
+    console.log(`[LOG] Successfully fetched Airtable record:`, data);
+    return data;
+  } catch (error) {
+    console.error(`[ERROR] fetchAirtableRecord encountered an error:`, error);
+    throw error;
+  }
 }
 
 async function updateAirtableRecord(recordId: string, fields: Record<string, any>) {
@@ -40,19 +45,24 @@ async function updateAirtableRecord(recordId: string, fields: Record<string, any
     "Content-Type": "application/json",
   };
 
-  const response = await fetch(url, {
-    method: "PATCH",
-    headers,
-    body: JSON.stringify({ fields }),
-  });
-  if (!response.ok) {
-    console.error(`[ERROR] Failed to update record: ${response.statusText}`);
-    throw new Error(`Error updating record: ${response.statusText}`);
-  }
+  try {
+    const response = await fetch(url, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ fields }),
+    });
+    if (!response.ok) {
+      console.error(`[ERROR] Failed to update Airtable record: ${response.statusText}`);
+      throw new Error(`Error updating record: ${response.statusText}`);
+    }
 
-  const data = await response.json();
-  console.log(`[LOG] Successfully updated Airtable record:`, data);
-  return data;
+    const data = await response.json();
+    console.log(`[LOG] Successfully updated Airtable record:`, data);
+    return data;
+  } catch (error) {
+    console.error(`[ERROR] updateAirtableRecord encountered an error:`, error);
+    throw error;
+  }
 }
 
 export async function continueConversation(history: Message[], recordId: string | null) {
@@ -89,10 +99,12 @@ export async function continueConversation(history: Message[], recordId: string 
           }),
           execute: async ({ recordId, fields }) => {
             try {
-              await updateAirtableRecord(recordId, fields);
+              console.log(`[LOG] Modifying account in Airtable. Record ID: ${recordId}, Fields:`, fields);
+              const result = await updateAirtableRecord(recordId, fields);
+              console.log(`[LOG] Modification result:`, result);
               return { status: "success", message: "Record updated successfully." };
             } catch (error) {
-              console.error(`[ERROR] Failed to update Airtable record:`, error);
+              console.error(`[ERROR] Failed to modify Airtable record:`, error);
               return { status: "failed", message: "Failed to update record." };
             }
           },
