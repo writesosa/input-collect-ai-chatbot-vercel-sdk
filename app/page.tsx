@@ -73,7 +73,7 @@ export default function Home() {
           setInput("");
 
           if (userInput === "reset" || userInput === "clear") {
-            setConversation(JSON.stringify([]));
+            setConversation([]); // Reset conversation to an empty array
             return;
           }
 
@@ -96,7 +96,7 @@ export default function Home() {
               } as const,
               { role: "user", content: userInput } as const,
             ]);
-            setConversation(JSON.stringify(messages)); // Update conversation state
+            setConversation(messages); // Update conversation with the new messages array
           } catch (error) {
             console.error("[ERROR] Sending conversation:", error);
           } finally {
