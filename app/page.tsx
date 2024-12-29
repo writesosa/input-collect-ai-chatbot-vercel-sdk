@@ -32,18 +32,23 @@ export default function Home() {
     const urlParams = new URLSearchParams(window.location.search);
     const id = urlParams.get("recordId");
     if (id) {
+      console.log(`[LOG] Extracted recordId from URL: ${id}`);
       setRecordId(id);
+    } else {
+      console.warn(`[WARN] No recordId found in the URL.`);
     }
   }, []);
 
   useEffect(() => {
     if (conversation.length > 0) {
+      console.log(`[LOG] Conversation updated. Length: ${conversation.length}`);
       setInput("");
     }
   }, [conversation.length]);
 
   useEffect(() => {
     if (optimisticConversation.length > 0) {
+      console.log(`[LOG] Optimistic conversation updated.`);
       lastElementRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [optimisticConversation.length]);
@@ -89,7 +94,10 @@ export default function Home() {
           const userInput = input.trim();
           setInput("");
 
+          console.log(`[LOG] User input: "${userInput}"`);
+
           if (userInput === "reset" || userInput === "clear") {
+            console.log(`[LOG] Resetting conversation.`);
             setConversation([]); // Reset conversation correctly
             return;
           }
@@ -115,9 +123,10 @@ export default function Home() {
               ],
               recordId // Pass the recordId as the second argument
             );
+            console.log(`[LOG] Server response:`, messages);
             setConversation(messages); // Update conversation with the new messages array
           } catch (error) {
-            console.error("[ERROR] Sending conversation:", error);
+            console.error(`[ERROR] Sending conversation failed:`, error);
           } finally {
             setIsTyping(false);
           }
@@ -128,22 +137,4 @@ export default function Home() {
             <p className="text-gray-400 italic text-sm">Bot is typing ...</p>
           ) : null}
           <input
-            className=" p-2 border border-gray-300 rounded shadow-xl"
-            type="text"
-            value={input}
-            placeholder="Enter a message"
-            onChange={(event) => {
-              setInput(event.target.value);
-            }}
-          />
-          <button
-            className="p-2 border bg-slate-700 text-white rounded shadow-xl"
-            type="submit"
-          >
-            Send Message
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
+            className=" p-2 border border
