@@ -3,7 +3,6 @@
 import { InvalidToolArgumentsError, generateText, nanoid, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
-import users from "./users.json";
 import dotenv from "dotenv";
 
 dotenv.config();
