@@ -7,6 +7,7 @@ import { z } from "zod";
 export interface Message {
   role: "user" | "assistant";
   content: string;
+  username?: string; // Track the username in the message for memory retention
 }
 
 // Sample data storage for accounts
@@ -112,6 +113,7 @@ export async function continueConversation(history: Message[]) {
       },
     });
 
+    // Update the conversation history with the assistant's response
     return {
       messages: [
         ...history,
