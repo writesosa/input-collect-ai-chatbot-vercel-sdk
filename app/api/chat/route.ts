@@ -2,17 +2,14 @@ import { openai } from "@ai-sdk/openai";
 import { continueConversation } from "../../actions"; // Adjust the import path as necessary
 import { Message } from "../../actions"; // Ensure the Message interface is imported
 
-// Allow streaming responses up to 30 seconds
-export const maxDuration = 30;
-
 export async function POST(req: Request) {
   try {
     const { messages, recordId }: { messages: Message[]; recordId: string | null } = await req.json();
+    console.log(`[LOG] Received POST request with messages:`, messages, `Record ID:`, recordId);
 
-    // Generate the response using continueConversation
     const { messages: updatedMessages } = await continueConversation(messages, recordId);
+    console.log(`[LOG] Successfully processed conversation. Updated messages:`, updatedMessages);
 
-    // Stream the assistant's response back to the client
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       start(controller) {
@@ -25,8 +22,7 @@ export async function POST(req: Request) {
       },
     });
 
-    // Create the response with the stream
-    const response = new Response(stream, {
+    return new Response(stream, {
       headers: {
         "Content-Type": "text/plain",
         "Access-Control-Allow-Origin": "https://www.wonderland.guru",
@@ -34,22 +30,19 @@ export async function POST(req: Request) {
         "Access-Control-Allow-Headers": "Content-Type",
       },
     });
-
-    return response;
   } catch (error) {
-    console.error("Error processing request:", error);
+    console.error(`[ERROR] Processing POST request failed:`, error);
     return new Response("Internal Server Error", { status: 500 });
   }
 }
 
-// Handle preflight OPTIONS request
 export async function OPTIONS() {
   return new Response(null, {
     headers: {
       "Access-Control-Allow-Origin": "https://www.wonderland.guru",
       "Access-Control-Allow-Methods": "POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
-      "Access-Control-Max-Age": "86400", // Cache preflight response for 24 hours
+      "Access-Control-Max-Age": "86400",
     },
   });
 }
