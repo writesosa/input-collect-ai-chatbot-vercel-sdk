@@ -18,14 +18,14 @@ async function fetchAirtableRecord(recordId: string) {
   const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLE_NAME}/${recordId}`;
   const headers = {
     Authorization: `Bearer ${AIRTABLE_API_KEY}`,
-    "Content-Type": "application/json",
   };
 
-  const response = await fetch(url, { headers });
+  const response = await fetch(url, { method: "GET", headers });
   if (!response.ok) {
-    throw new Error(`Failed to fetch record: ${response.statusText}`);
+    throw new Error(`Error fetching record: ${response.statusText}`);
   }
-  return response.json();
+
+  return response.json(); // Parse and return the JSON response
 }
 
 async function updateAirtableRecord(recordId: string, fields: Record<string, any>) {
@@ -40,11 +40,11 @@ async function updateAirtableRecord(recordId: string, fields: Record<string, any
     headers,
     body: JSON.stringify({ fields }),
   });
-
   if (!response.ok) {
-    throw new Error(`Failed to update record: ${response.statusText}`);
+    throw new Error(`Error updating record: ${response.statusText}`);
   }
-  return response.json();
+
+  return response.json(); // Parse and return the JSON response
 }
 
 export async function continueConversation(history: Message[], recordId: string | null) {
@@ -67,7 +67,10 @@ export async function continueConversation(history: Message[], recordId: string 
         - Fetch Airtable records and fields.
         - Update Airtable fields dynamically based on user inputs.
         Respond with concise and clear information. Use markdown formatting where appropriate.`,
-      messages: [...history, { role: "assistant", content: `Airtable Data: ${JSON.stringify(airtableData)}` }],
+      messages: [
+        ...history,
+        { role: "assistant", content: `Airtable Data: ${JSON.stringify(airtableData)}` },
+      ],
       maxToolRoundtrips: 5,
       tools: {
         modifyAccount: tool({
