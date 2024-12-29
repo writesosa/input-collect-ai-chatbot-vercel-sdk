@@ -1,40 +1,29 @@
-import { continueConversation } from "./actions";
 import { openai } from "@ai-sdk/openai";
+import { streamText } from "ai";
 
 // Allow streaming responses up to 30 seconds
 export const maxDuration = 30;
 
 export async function POST(req: Request) {
-  try {
-    const { messages } = await req.json();
+  const { messages } = await req.json();
 
-    // Call continueConversation from actions.ts
-    const response = await continueConversation(messages);
+  const result = await streamText({
+    model: openai("gpt-4-turbo"),
+    messages,
+  });
 
-    // Format the response for streaming
-    const aiStreamResponse = new Response(JSON.stringify(response.messages), {
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "https://www.wonderland.guru",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
-      },
-    });
+  // Create the AI stream response
+  const aiStreamResponse = result.toAIStreamResponse();
 
-    return aiStreamResponse;
-  } catch (error) {
-    console.error("[Error in POST handler]:", error);
-    return new Response(
-      JSON.stringify({ error: "Failed to process the request." }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "https://www.wonderland.guru",
-        },
-      }
-    );
-  }
+  // Clone the response to modify headers
+  const response = new Response(aiStreamResponse.body, aiStreamResponse);
+
+  // Set CORS headers
+  response.headers.set("Access-Control-Allow-Origin", "https://www.wonderland.guru");
+  response.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  response.headers.set("Access-Control-Allow-Headers", "Content-Type");
+
+  return response;
 }
 
 // Handle preflight OPTIONS request
