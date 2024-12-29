@@ -80,7 +80,7 @@ export default function Home() {
           setInput("");
 
           if (userInput === "reset" || userInput === "clear") {
-            setConversation("[]"); // Reset conversation
+            setConversation([]);
             return;
           }
 
@@ -102,7 +102,7 @@ export default function Home() {
             { role: "user", content: userInput } as const,
           ]);
           setIsTyping(false);
-          setConversation(JSON.stringify(messages)); // Properly update conversation
+          setConversation(messages);
         }}
       >
         <div className="fixed bottom-0 w-full max-w-md flex flex-col space-y-2 py-4 bg-white">
