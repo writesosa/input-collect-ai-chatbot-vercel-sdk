@@ -1,33 +1,18 @@
-import { continueConversation } from "../../actions";
-import { Message } from "../../actions";
-import { fetchAirtableData } from "../../utils/airtable";
+import { openai } from "@ai-sdk/openai";
+import { continueConversation } from "../../actions"; // Adjust the import path as necessary
+import { Message } from "../../actions"; // Ensure the Message interface is imported
+
+// Allow streaming responses up to 30 seconds
+export const maxDuration = 30;
 
 export async function POST(req: Request) {
   try {
-    const { messages, pageType, recordId, fields }: {
-      messages: Message[];
-      pageType: string;
-      recordId: string;
-      fields: Record<string, any>;
-    } = await req.json();
+    const { messages }: { messages: Message[] } = await req.json();
 
-    console.log("[DEBUG] Incoming Payload:", { messages, pageType, recordId, fields });
+    // Generate the response using continueConversation
+    const { messages: updatedMessages } = await continueConversation(messages);
 
-    let recordFields = fields;
-
-    if (!recordFields && pageType && recordId) {
-      recordFields = await fetchAirtableData(pageType, recordId);
-    }
-
-    const { messages: updatedMessages } = await continueConversation(
-      messages,
-      pageType,
-      recordId,
-      recordFields
-    );
-
-    console.log("[DEBUG] Outgoing Payload:", updatedMessages);
-
+    // Stream the assistant's response back to the client
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       start(controller) {
@@ -40,28 +25,31 @@ export async function POST(req: Request) {
       },
     });
 
-    return new Response(stream, {
+    // Create the response with the stream
+    const response = new Response(stream, {
       headers: {
         "Content-Type": "text/plain",
-        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Origin": "https://www.wonderland.guru",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
       },
     });
-  } catch (error) {
-    console.error("[ERROR] Processing Request:", error);
 
+    return response;
+  } catch (error) {
+    console.error("Error processing request:", error);
     return new Response("Internal Server Error", { status: 500 });
   }
 }
 
+// Handle preflight OPTIONS request
 export async function OPTIONS() {
   return new Response(null, {
     headers: {
-      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Origin": "https://www.wonderland.guru",
       "Access-Control-Allow-Methods": "POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
-      "Access-Control-Max-Age": "86400",
+      "Access-Control-Max-Age": "86400", // Cache preflight response for 24 hours
     },
   });
 }
