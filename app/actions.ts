@@ -9,9 +9,8 @@ export interface Message {
   content: string;
 }
 
-// Sample data storage
+// Sample data storage for accounts
 const users: Record<string, any> = {};
-const journeys: Record<string, any> = {};
 
 // Tool to create a new user account
 const createAccount = tool({
@@ -19,16 +18,17 @@ const createAccount = tool({
   parameters: z.object({
     username: z.string().min(4).describe("Unique username for the account."),
     email: z.string().email().describe("Email address of the user."),
-    password: z.string().min(6).describe("Password for the account."),
+    description: z.string().describe("Description for the account."),
   }),
-  execute: async ({ username, email, password }) => {
+  execute: async ({ username, email, description }) => {
     if (users[username]) {
       return {
         status: "failed",
-        message: "Username already exists.",
+        message: `Account with username '${username}' already exists.`,
       };
     }
-    users[username] = { username, email, password, id: nanoid() };
+    users[username] = { username, email, description, id: nanoid() };
+    console.log(`[LOG] Account created: ${username}`);
     return {
       status: "success",
       message: `Account for ${username} created successfully.`,
@@ -38,22 +38,30 @@ const createAccount = tool({
 
 // Tool to modify an existing user account
 const modifyAccount = tool({
-  description: "Modify details of an existing user account.",
+  description: "Modify details of an existing user account, such as Name and Description.",
   parameters: z.object({
     username: z.string().min(4).describe("Username of the account to modify."),
-    email: z.string().email().optional().describe("New email address."),
-    password: z.string().min(6).optional().describe("New password."),
+    name: z.string().optional().describe("New name for the account."),
+    description: z.string().optional().describe("New description for the account."),
   }),
-  execute: async ({ username, email, password }) => {
+  execute: async ({ username, name, description }) => {
     const user = users[username];
     if (!user) {
       return {
         status: "failed",
-        message: "User not found.",
+        message: `User with username '${username}' not found.`,
       };
     }
-    if (email) user.email = email;
-    if (password) user.password = password;
+
+    if (name) {
+      user.name = name;
+      console.log(`[LOG] Account name for ${username} updated to: ${name}`);
+    }
+    if (description) {
+      user.description = description;
+      console.log(`[LOG] Account description for ${username} updated.`);
+    }
+
     return {
       status: "success",
       message: `Account for ${username} updated successfully.`,
@@ -61,51 +69,25 @@ const modifyAccount = tool({
   },
 });
 
-// Tool to create a new journey
-const createJourney = tool({
-  description: "Create a new journey with a unique title and description.",
+// Tool to delete an existing user account
+const deleteAccount = tool({
+  description: "Delete an existing user account.",
   parameters: z.object({
-    title: z.string().min(4).describe("Title of the journey."),
-    description: z.string().describe("Description of the journey."),
-    createdBy: z.string().describe("Username of the creator."),
+    username: z.string().min(4).describe("Username of the account to delete."),
   }),
-  execute: async ({ title, description, createdBy }) => {
-    if (!users[createdBy]) {
+  execute: async ({ username }) => {
+    if (!users[username]) {
       return {
         status: "failed",
-        message: "Creator user not found.",
+        message: `User with username '${username}' not found.`,
       };
     }
-    const journeyId = nanoid();
-    journeys[journeyId] = { title, description, createdBy, id: journeyId };
-    return {
-      status: "success",
-      message: `Journey '${title}' created successfully.`,
-    };
-  },
-});
 
-// Tool to modify an existing journey
-const modifyJourney = tool({
-  description: "Modify details of an existing journey.",
-  parameters: z.object({
-    journeyId: z.string().describe("ID of the journey to modify."),
-    title: z.string().min(4).optional().describe("New title of the journey."),
-    description: z.string().optional().describe("New description of the journey."),
-  }),
-  execute: async ({ journeyId, title, description }) => {
-    const journey = journeys[journeyId];
-    if (!journey) {
-      return {
-        status: "failed",
-        message: "Journey not found.",
-      };
-    }
-    if (title) journey.title = title;
-    if (description) journey.description = description;
+    delete users[username];
+    console.log(`[LOG] Account deleted: ${username}`);
     return {
       status: "success",
-      message: `Journey '${journey.title}' updated successfully.`,
+      message: `Account for ${username} deleted successfully.`,
     };
   },
 });
@@ -116,19 +98,17 @@ export async function continueConversation(history: Message[]) {
   try {
     const { text, toolResults } = await generateText({
       model: openai("gpt-4"),
-      system: `You are an assistant for managing user accounts and journeys. You can perform the following actions:
+      system: `You are an assistant for managing user accounts. You can perform the following actions:
         - createAccount: Create a new user account.
-        - modifyAccount: Modify an existing user account.
-        - createJourney: Create a new journey.
-        - modifyJourney: Modify an existing journey.
+        - modifyAccount: Modify an existing user account (Name and Description only).
+        - deleteAccount: Delete an existing user account.
         Respond with concise and clear information. Use markdown formatting where appropriate.`,
       messages: history,
       maxToolRoundtrips: 5,
       tools: {
         createAccount,
         modifyAccount,
-        createJourney,
-        modifyJourney,
+        deleteAccount,
       },
     });
 
