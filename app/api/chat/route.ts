@@ -1,6 +1,5 @@
-// route.ts or similar file in your backend API handler
 import { openai } from "@ai-sdk/openai";
-import { Message } from "../../actions"; // Ensure the Message interface is imported
+import { Message } from "../../actions";
 
 export async function POST(req: Request) {
   try {
