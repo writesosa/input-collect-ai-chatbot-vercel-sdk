@@ -1,6 +1,6 @@
 "use server";
 
-import { InvalidToolArgumentsError, generateText, nanoid, tool } from "ai";
+import { InvalidToolArgumentsError, generateText, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 
@@ -29,7 +29,7 @@ async function fetchAirtableRecord(recordId: string) {
     }
 
     const data = await response.json();
-    console.log(`[LOG] Successfully fetched Airtable record:`, data);
+    console.log(`[LOG] Fetched Airtable record:`, data);
     return data;
   } catch (error) {
     console.error(`[ERROR] fetchAirtableRecord encountered an error:`, error);
@@ -38,7 +38,7 @@ async function fetchAirtableRecord(recordId: string) {
 }
 
 async function updateAirtableRecord(recordId: string, fields: Record<string, any>) {
-  console.log(`[LOG] Updating Airtable record with ID: ${recordId}, Fields:`, fields);
+  console.log(`[LOG] Sending update to Airtable. Record ID: ${recordId}, Fields:`, fields);
   const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLE_NAME}/${recordId}`;
   const headers = {
     Authorization: `Bearer ${AIRTABLE_API_KEY}`,
@@ -53,6 +53,8 @@ async function updateAirtableRecord(recordId: string, fields: Record<string, any
     });
     if (!response.ok) {
       console.error(`[ERROR] Failed to update Airtable record: ${response.statusText}`);
+      const errorText = await response.text();
+      console.error(`[ERROR] Response Body: ${errorText}`);
       throw new Error(`Error updating record: ${response.statusText}`);
     }
 
@@ -66,7 +68,7 @@ async function updateAirtableRecord(recordId: string, fields: Record<string, any
 }
 
 export async function continueConversation(history: Message[], recordId: string | null) {
-  console.log(`[LOG] Starting conversation with history:`, history, `Record ID:`, recordId);
+  console.log(`[LOG] Starting conversation. History:`, history, `Record ID:`, recordId);
 
   let airtableData = null;
 
@@ -74,7 +76,7 @@ export async function continueConversation(history: Message[], recordId: string 
     try {
       airtableData = await fetchAirtableRecord(recordId); // Fetch the record from Airtable
     } catch (error) {
-      console.error("Error fetching Airtable record:", error);
+      console.error(`[ERROR] Error fetching Airtable record:`, error);
     }
   }
 
@@ -99,12 +101,12 @@ export async function continueConversation(history: Message[], recordId: string 
           }),
           execute: async ({ recordId, fields }) => {
             try {
-              console.log(`[LOG] Modifying account in Airtable. Record ID: ${recordId}, Fields:`, fields);
+              console.log(`[LOG] Updating account with ID: ${recordId}, Fields:`, fields);
               const result = await updateAirtableRecord(recordId, fields);
-              console.log(`[LOG] Modification result:`, result);
+              console.log(`[LOG] Update successful. Result:`, result);
               return { status: "success", message: "Record updated successfully." };
             } catch (error) {
-              console.error(`[ERROR] Failed to modify Airtable record:`, error);
+              console.error(`[ERROR] Failed to update Airtable record:`, error);
               return { status: "failed", message: "Failed to update record." };
             }
           },
@@ -124,11 +126,7 @@ export async function continueConversation(history: Message[], recordId: string 
       ],
     };
   } catch (error) {
-    if (error instanceof InvalidToolArgumentsError) {
-      console.error(`[ERROR] Invalid tool arguments:`, error.toJSON());
-    } else {
-      console.error(`[ERROR] Failed to process conversation:`, error);
-    }
+    console.error(`[ERROR] Failed to process conversation:`, error);
     return {
       messages: [
         ...history,
