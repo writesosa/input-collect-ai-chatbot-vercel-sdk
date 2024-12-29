@@ -3,11 +3,17 @@ import { Message } from "../../actions";
 
 export async function POST(req: Request) {
   try {
-    const { airtableRecord }: { airtableRecord: any } = await req.json();
+    console.log('Received request:', req);
 
+    const { airtableRecord }: { airtableRecord: any } = await req.json();
+    console.log('Received Airtable record:', airtableRecord);
+
+    // Check if airtableRecord exists
     if (airtableRecord) {
-      // Process the Airtable record and send a response
+      console.log('Processing Airtable record...');
       const responseText = "Hello! How can I assist you today?";
+      console.log('Sending response:', responseText);
+      
       return new Response(responseText, {
         headers: {
           "Content-Type": "text/plain",
@@ -15,7 +21,7 @@ export async function POST(req: Request) {
         },
       });
     } else {
-      // Missing or invalid payload
+      console.error('Missing or invalid airtableRecord in the payload');
       const responseText = "Hey, check your logs there's a problem";
       return new Response(responseText, {
         headers: {
@@ -32,6 +38,7 @@ export async function POST(req: Request) {
 
 // Handle preflight OPTIONS request
 export async function OPTIONS() {
+  console.log('Handling OPTIONS request');
   return new Response(null, {
     headers: {
       "Access-Control-Allow-Origin": "https://www.wonderland.guru",
