@@ -27,8 +27,8 @@ export default function Home() {
   const [recordId, setRecordId] = useState<string | null>(null); // Added state to store the Airtable record ID
   const lastElementRef = useRef<HTMLDivElement>(null);
 
+  // Extract recordId from the URL query parameter
   useEffect(() => {
-    // Extract recordId from the URL query parameter on first load
     const urlParams = new URLSearchParams(window.location.search);
     const id = urlParams.get("recordId");
     if (id) {
@@ -39,6 +39,7 @@ export default function Home() {
     }
   }, []);
 
+  // Log when conversation updates
   useEffect(() => {
     if (conversation.length > 0) {
       console.log(`[LOG] Conversation updated. Length: ${conversation.length}`);
@@ -46,6 +47,7 @@ export default function Home() {
     }
   }, [conversation.length]);
 
+  // Log when optimistic conversation updates
   useEffect(() => {
     if (optimisticConversation.length > 0) {
       console.log(`[LOG] Optimistic conversation updated.`);
@@ -68,7 +70,7 @@ export default function Home() {
             key={index}
             className={cn(
               "flex flex-row space-x-2 p-2 rounded-md",
-              message.role === "user" ? "flex-row-reverse  self-end" : ""
+              message.role === "user" ? "flex-row-reverse self-end" : ""
             )}
           >
             <div className="mx-2">
@@ -137,4 +139,22 @@ export default function Home() {
             <p className="text-gray-400 italic text-sm">Bot is typing ...</p>
           ) : null}
           <input
-            className=" p-2 border border
+            className="p-2 border border-gray-300 rounded shadow-xl"
+            type="text"
+            value={input}
+            placeholder="Enter a message"
+            onChange={(event) => {
+              setInput(event.target.value);
+            }}
+          />
+          <button
+            className="p-2 border bg-slate-700 text-white rounded shadow-xl"
+            type="submit"
+          >
+            Send Message
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
