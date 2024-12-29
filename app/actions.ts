@@ -3,28 +3,21 @@
 import { InvalidToolArgumentsError, generateText, nanoid, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
-import users from "./users.json";
 
 export interface Message {
   role: "user" | "assistant";
   content: string;
 }
 
-// Simulated user data for logging and updates
-const currentUserData = {
-  name: "",
-  accountNumber: "",
-  phoneNumber: "",
-  balance: 0,
-};
-
 export async function continueConversation(history: Message[]) {
-  "use server";
-
   try {
     console.log("[LLM] continueConversation");
     const { text, toolResults } = await generateText({
-      model: openai("gpt-4o"),
+      model: openai({
+        name: "gpt-4o",
+        inputFormat: "messages",
+        tools: [createAccount, modifyAccount],
+      }),
       system: `You are a Wonderland assistant! You only know things about Wonderland. Reply with nicely formatted markdown. Keep your reply short and concise. Don't overwhelm the user with too much information. 
         The first message will be a payload with the current record from Wonderland and is auto generated. When you receive it, respond with a message asking the user how you can help them with the account and mention the account or company name from the record information politely.
 
@@ -36,14 +29,8 @@ export async function continueConversation(history: Message[]) {
 
         When you are creating an account or modifying an account, interpret and clarify the user description to be clear, concise, and ensure proper capitalization for the name when confirming.
         
-        Don't perform any other actions.
-        `,
+        Don't perform any other actions.`,
       messages: history,
-      maxToolRoundtrips: 5,
-      tools: {
-        createAccount,
-        modifyAccount,
-      },
     });
 
     return {
@@ -76,6 +63,7 @@ export async function continueConversation(history: Message[]) {
 }
 
 const createAccount = tool({
+  name: "createAccount",
   description: "Simulate creating a new account in Wonderland.",
   parameters: z.object({
     name: z.string().min(1).describe("The name of the account holder."),
@@ -97,6 +85,7 @@ const createAccount = tool({
 });
 
 const modifyAccount = tool({
+  name: "modifyAccount",
   description: "Simulate modifying an account in Wonderland.",
   parameters: z.object({
     recordId: z
@@ -118,33 +107,13 @@ const modifyAccount = tool({
     console.log("[TOOL] modifyAccount", { recordId, fieldToUpdate, newValue });
 
     try {
-      // Update the record in Airtable
-      const updateResponse = await fetch(
-        `https://api.airtable.com/v0/appFf0nHuVTVWRjTa/Accounts/${recordId}`,
-        {
-          method: "PATCH",
-          headers: {
-            Authorization: `Bearer patuiAgEvFzitXyIu.a0fed140f02983ccc3dfeed6c02913b5e2593253cb784a08c3cfd8ac96518ba0`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            fields: {
-              [fieldToUpdate]: newValue,
-            },
-          }),
-        }
+      // Update the record in Wonderland (replace with actual implementation)
+      console.log(
+        `[SIMULATION] Account Modified: Record ID: ${recordId}, Field Updated: ${fieldToUpdate}, New Value: ${newValue}`
       );
 
-      if (!updateResponse.ok) {
-        console.error("[TOOL] Error updating record:", updateResponse.status);
-        throw new Error(`Failed to update record. HTTP Status: ${updateResponse.status}`);
-      }
-
-      const updatedRecord = await updateResponse.json();
-      console.log("[TOOL] Updated record:", JSON.stringify(updatedRecord, null, 2));
-
       return {
-        message: `Successfully modified account with record ID ${recordId}. Updated ${fieldToUpdate} to ${newValue}.`,
+        message: `Successfully simulated modifying account with record ID ${recordId}. Updated ${fieldToUpdate} to ${newValue}.`,
       };
     } catch (error) {
       console.error("[TOOL] Error in modifyAccount:", error);
