@@ -1,144 +1,215 @@
-"use server";
+<div id="chatbot-container" style="border: 1px solid #ccc; padding: 10px; width: 300px;">
+  <div id="chatbot-messages" style="height: 200px; overflow-y: auto; border-bottom: 1px solid #ccc; margin-bottom: 10px;"></div>
+  <input type="text" id="chatbot-input" placeholder="Type your message..." style="width: 80%;" />
+  <button id="chatbot-send" style="width: 18%;">Send</button>
+</div>
 
-import { InvalidToolArgumentsError, generateText, tool } from "ai";
-import { openai } from "@ai-sdk/openai";
-import { z } from "zod";
+<script>
+  async function fetchAirtableRecord(recordId) {
+    console.log(`[LOG] Fetching Airtable record for ID: ${recordId}`);
 
-export interface Message {
-  role: "user" | "assistant";
-  content: string;
-}
-
-// Airtable API setup
-const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID as string;
-const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY as string;
-const AIRTABLE_TABLE_NAME = "Accounts"; // Adjust this to your Airtable table name
-
-async function fetchAirtableRecord(recordId: string) {
-  console.log(`[LOG] Fetching Airtable record. Record ID: ${recordId}`);
-  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLE_NAME}/${recordId}`;
-  const headers = {
-    Authorization: `Bearer ${AIRTABLE_API_KEY}`,
-  };
-
-  try {
-    const response = await fetch(url, { method: "GET", headers });
-    console.log(`[LOG] Airtable fetch response status: ${response.status}`);
-    if (!response.ok) {
-      console.error(`[ERROR] Failed to fetch Airtable record. Status: ${response.statusText}`);
-      const errorBody = await response.text();
-      console.error(`[ERROR] Fetch response body: ${errorBody}`);
-      throw new Error(`Error fetching record: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    console.log(`[LOG] Successfully fetched Airtable record:`, data);
-    return data;
-  } catch (error) {
-    console.error(`[ERROR] fetchAirtableRecord encountered an error:`, error);
-    throw error;
-  }
-}
-
-async function updateAirtableRecord(recordId: string, fields: Record<string, any>) {
-  console.log(`[LOG] Updating Airtable record. Record ID: ${recordId}, Fields:`, fields);
-  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_TABLE_NAME}/${recordId}`;
-  const headers = {
-    Authorization: `Bearer ${AIRTABLE_API_KEY}`,
-    "Content-Type": "application/json",
-  };
-
-  try {
-    const response = await fetch(url, {
-      method: "PATCH",
-      headers,
-      body: JSON.stringify({ fields }),
+    const response = await fetch(`https://api.airtable.com/v0/yourBaseId/yourTableName/${recordId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': 'Bearer yourAirtableAPIKey',
+        'Content-Type': 'application/json',
+      }
     });
-    console.log(`[LOG] Airtable update request sent. URL: ${url}, Payload:`, fields);
-    console.log(`[LOG] Airtable update response status: ${response.status}`);
+
     if (!response.ok) {
-      const errorBody = await response.text();
-      console.error(`[ERROR] Failed to update Airtable record. Status: ${response.statusText}, Body: ${errorBody}`);
-      throw new Error(`Error updating record: ${response.statusText}`);
+      console.error('[LOG] Error fetching Airtable record:', response.statusText);
+      return null;
     }
 
     const data = await response.json();
-    console.log(`[LOG] Successfully updated Airtable record:`, data);
-    return data;
-  } catch (error) {
-    console.error(`[ERROR] updateAirtableRecord encountered an error:`, error);
-    throw error;
-  }
-}
-
-export async function continueConversation(history: Message[], recordId: string | null) {
-  console.log(`[LOG] Starting conversation. History:`, history, `Record ID:`, recordId);
-
-  let airtableData = null;
-
-  if (recordId) {
-    try {
-      airtableData = await fetchAirtableRecord(recordId);
-      console.log(`[LOG] Fetched Airtable data:`, airtableData);
-    } catch (error) {
-      console.error(`[ERROR] Error fetching Airtable record:`, error);
-    }
+    console.log('[LOG] Successfully fetched Airtable record:', data);
+    return data.fields;
   }
 
-  try {
-    const { text, toolResults } = await generateText({
-      model: openai("gpt-4"),
-      system: `You are an assistant for managing user accounts and journeys. You can perform the following actions:
-        - Fetch Airtable records and fields.
-        - Update Airtable fields dynamically based on user inputs.
-        Respond with concise and clear information. Use markdown formatting where appropriate.`,
-      messages: [
-        ...history,
-        { role: "assistant", content: `Airtable Data: ${JSON.stringify(airtableData)}` },
-      ],
-      maxToolRoundtrips: 5,
-      tools: {
-        modifyAccount: tool({
-          description: "Update fields in an Airtable record.",
-          parameters: z.object({
-            recordId: z.string().describe("Airtable record ID."),
-            fields: z.record(z.string()).describe("Fields to update."),
-          }),
-          execute: async ({ recordId, fields }) => {
-            try {
-              console.log(`[LOG] Attempting to modify Airtable record:`, recordId, fields);
-              const result = await updateAirtableRecord(recordId, fields);
-              console.log(`[LOG] Account modification successful. Result:`, result);
-              return { status: "success", message: "Record updated successfully." };
-            } catch (error) {
-              console.error(`[ERROR] Failed to modify Airtable record:`, error);
-              return { status: "failed", message: "Failed to update record." };
-            }
-          },
-        }),
+  async function updateAirtableRecord(recordId, newUsername, newPassword) {
+    console.log(`[LOG] Updating Airtable record for ID: ${recordId} with new username and password.`);
+
+    const response = await fetch(`https://api.airtable.com/v0/yourBaseId/yourTableName/${recordId}`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': 'Bearer yourAirtableAPIKey',
+        'Content-Type': 'application/json',
       },
+      body: JSON.stringify({
+        fields: {
+          username: newUsername,
+          password: newPassword
+        }
+      })
     });
 
-    console.log(`[LOG] Generated OpenAI response:`, text || toolResults);
-    return {
-      messages: [
-        ...history,
-        {
-          role: "assistant" as const,
-          content: text || toolResults.map((toolResult) => toolResult.result).join("\n"),
-        },
-      ],
-    };
-  } catch (error) {
-    console.error(`[ERROR] Failed to process conversation:`, error);
-    return {
-      messages: [
-        ...history,
-        {
-          role: "assistant" as const,
-          content: "An error occurred while processing your request. Please try again.",
-        },
-      ],
-    };
+    if (!response.ok) {
+      console.error('[LOG] Error updating Airtable record:', response.statusText);
+      return null;
+    }
+
+    const updatedData = await response.json();
+    console.log('[LOG] Successfully updated Airtable record:', updatedData);
+    return updatedData;
   }
-}
+
+  document.getElementById('chatbot-send').addEventListener('click', async () => {
+    const inputField = document.getElementById('chatbot-input');
+    const message = inputField.value.trim();
+    if (message) {
+      displayMessage('user', message);
+      inputField.value = '';
+      
+      const urlParams = new URLSearchParams(window.location.search);
+      const recordId = urlParams.get('recordId');
+      
+      if (!recordId) {
+        console.error('[LOG] No record ID found in URL.');
+        return;
+      }
+
+      // Fetch Airtable record and send it to GPT
+      const airtableData = await fetchAirtableRecord(recordId);
+      
+      if (airtableData) {
+        const payload = {
+          userMessage: message,
+          airtableData: airtableData,
+        };
+
+        console.log('[LOG] Sending payload to GPT:', payload);
+
+        try {
+          const response = await fetch('https://input-collect-ai-chatbot-vercel-sdk.vercel.app/api/chat', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ messages: [{ role: 'user', content: message }], recordData: airtableData }),
+          });
+
+          if (!response.body) {
+            throw new Error('ReadableStream not supported in this browser.');
+          }
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let assistantMessage = '';
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            assistantMessage += decoder.decode(value, { stream: true });
+            displayMessage('assistant', assistantMessage);
+          }
+
+          console.log('[LOG] GPT Response:', assistantMessage);
+
+          // Assuming GPT returns the new username and password as part of the message
+          const extractedData = extractUsernameAndPassword(assistantMessage);
+          if (extractedData) {
+            const { newUsername, newPassword } = extractedData;
+
+            // Update Airtable with the new username and password
+            const updatedRecord = await updateAirtableRecord(recordId, newUsername, newPassword);
+
+            if (updatedRecord) {
+              console.log('[LOG] Airtable record updated successfully:', updatedRecord);
+            }
+          }
+        } catch (error) {
+          console.error('[LOG] Error processing response:', error);
+          displayMessage('assistant', 'An error occurred while processing your request.');
+        }
+      }
+    }
+  });
+
+  function displayMessage(role, content) {
+    const messagesContainer = document.getElementById('chatbot-messages');
+    const messageElement = document.createElement('div');
+    messageElement.textContent = `${role === 'user' ? 'You' : 'Assistant'}: ${content}`;
+    messagesContainer.appendChild(messageElement);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  }
+
+  function extractUsernameAndPassword(gptResponse) {
+    console.log('[LOG] Extracting new username and password from GPT response:', gptResponse);
+
+    // Example logic: Assuming GPT response contains the new username and password
+    const usernameMatch = gptResponse.match(/new username: (\S+)/);
+    const passwordMatch = gptResponse.match(/new password: (\S+)/);
+
+    if (usernameMatch && passwordMatch) {
+      return {
+        newUsername: usernameMatch[1],
+        newPassword: passwordMatch[1],
+      };
+    }
+
+    console.error('[LOG] No username or password found in GPT response.');
+    return null;
+  }
+
+  // On page load, automatically send the Airtable record and an initial message to GPT
+  window.addEventListener('load', async () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const recordId = urlParams.get('recordId');
+    
+    if (recordId) {
+      const airtableData = await fetchAirtableRecord(recordId);
+      if (airtableData) {
+        const initialMessage = "Here are the details from the Airtable record.";
+        const payload = {
+          userMessage: initialMessage,
+          airtableData: airtableData,
+        };
+
+        console.log('[LOG] Automatically sending payload to GPT:', payload);
+
+        try {
+          const response = await fetch('https://input-collect-ai-chatbot-vercel-sdk.vercel.app/api/chat', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ messages: [{ role: 'user', content: initialMessage }], recordData: airtableData }),
+          });
+
+          if (!response.body) {
+            throw new Error('ReadableStream not supported in this browser.');
+          }
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let assistantMessage = '';
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            assistantMessage += decoder.decode(value, { stream: true });
+            displayMessage('assistant', assistantMessage);
+          }
+
+          console.log('[LOG] GPT Response:', assistantMessage);
+
+          // Assuming GPT returns the new username and password as part of the message
+          const extractedData = extractUsernameAndPassword(assistantMessage);
+          if (extractedData) {
+            const { newUsername, newPassword } = extractedData;
+
+            // Update Airtable with the new username and password
+            const updatedRecord = await updateAirtableRecord(recordId, newUsername, newPassword);
+
+            if (updatedRecord) {
+              console.log('[LOG] Airtable record updated successfully:', updatedRecord);
+            }
+          }
+        } catch (error) {
+          console.error('[LOG] Error processing response:', error);
+          displayMessage('assistant', 'An error occurred while processing your request.');
+        }
+      }
+    }
+  });
+</script>
