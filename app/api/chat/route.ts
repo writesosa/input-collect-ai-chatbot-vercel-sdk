@@ -5,12 +5,13 @@ export async function POST(req: Request) {
   try {
     console.log('Received POST request:', req);
 
-    const { airtableRecord }: { airtableRecord: any } = await req.json();
+    const { airtableRecord, messages }: { airtableRecord: any, messages: any } = await req.json();
     console.log('Received Airtable record:', airtableRecord);
+    console.log('Received messages:', messages);
 
-    // Check if airtableRecord exists
-    if (airtableRecord) {
-      console.log('Processing Airtable record...');
+    // Check if airtableRecord and messages exist
+    if (airtableRecord && messages && messages.length > 0) {
+      console.log('Processing Airtable record and user message...');
       const responseText = "Hello! How can I assist you today?";
       console.log('Sending response:', responseText);
       
@@ -21,7 +22,7 @@ export async function POST(req: Request) {
         },
       });
     } else {
-      console.error('Missing or invalid airtableRecord in the payload');
+      console.error('Missing or invalid airtableRecord or messages in the payload');
       const responseText = "Hey, check your logs there's a problem";
       return new Response(responseText, {
         headers: {
