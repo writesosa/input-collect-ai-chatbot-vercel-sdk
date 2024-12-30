@@ -85,6 +85,7 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
+
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -100,7 +101,7 @@ const createAccount = tool({
     "Talking Points": z.string().optional().describe("Key talking points for the account."),
     "Contact Information": z.string().optional().describe("Contact information for the client."),
   }),
-  execute: async (fields: Record<string, any>) => {
+  execute: async (fields) => {
     console.log("[TOOL] createAccount", fields);
 
     try {
@@ -112,24 +113,32 @@ const createAccount = tool({
       }
 
       // Title case the Name field
-      fields.Name = fields.Name.replace(/\b\w/g, (char: string) => char.toUpperCase());
+      fields.Name = fields.Name.replace(/\b\w/g, (char) => char.toUpperCase());
 
-      // Fetch available industry options
+      // Fetch existing accounts to suggest primary contact person
+      const existingRecords = await airtableBase("Accounts").select().firstPage();
+      const primaryContactSuggestions = existingRecords.map((record) => record.get("Primary Contact Person"));
+
+      // Fetch available industry options from Airtable
       const allowedIndustries = await airtableBase("Accounts").select({ fields: ["Industry"] }).all();
       const industryOptions = allowedIndustries
         .map((record) => record.get("Industry"))
         .filter((value): value is string => typeof value === "string");
 
-      // Suggest and auto-generate missing fields
-      const suggestedFields: Record<string, string> = {
+      // Suggest values for missing fields
+      const suggestedFields = {
         "Client Company Name": fields["Client Company Name"] || "Default Company Name",
         "Client URL": fields["Client URL"] || "https://example.com",
         Status: fields.Status || "New",
-        Industry: fields.Industry || (industryOptions.length > 0 ? industryOptions[0] : "General"),
-        "Primary Contact Person": fields["Primary Contact Person"] || "John Doe",
+        Industry:
+          fields.Industry ||
+          (industryOptions.length > 0 ? industryOptions[0] : "General"),
+        "Primary Contact Person":
+          fields["Primary Contact Person"] ||
+          (primaryContactSuggestions.length > 0 ? primaryContactSuggestions[0] : "John Doe"),
         "About the Client":
           fields["About the Client"] ||
-          `This account represents ${fields.Name}, focusing on innovative and client-specific solutions.`,
+          `This account represents a client in the ${fields.Industry || "General"} sector, focusing on innovative solutions.`,
         "Primary Objective":
           fields["Primary Objective"] ||
           "To achieve a high level of customer satisfaction and engagement.",
@@ -139,28 +148,35 @@ const createAccount = tool({
         "Contact Information": fields["Contact Information"] || "contact@example.com",
         Description:
           fields.Description ||
-          `This is a newly created account for ${fields.Name}, established to support their objectives in the ${fields.Industry || "General"} industry.`,
+          `This is a newly created account for ${fields.Name}, established to support their objectives in the ${fields.Industry || "General"} industry with a focus on excellence.`,
       };
 
-      console.log("[TOOL] Suggested values for account creation:", suggestedFields);
+      console.log("[TOOL] Suggested values for missing fields:", suggestedFields);
 
-      // Confirm with user for final details
-      if (Object.keys(fields).length < Object.keys(suggestedFields).length) {
+      // Check if there are missing fields to confirm with the user
+      const missingFields = Object.keys(suggestedFields).filter((key) => !fields[key]);
+
+      if (missingFields.length > 0) {
         return {
-          message: `Here are the auto-generated suggestions for the missing details:
+          message: `The following fields are missing and have been auto-generated: ${missingFields.join(", ")}. Here are the suggested values:
           ${JSON.stringify(suggestedFields, null, 2)}
           Would you like to proceed with these values, or update any field?`,
         };
       }
 
+      // Merge suggested values with provided fields
+      const finalFields = { ...suggestedFields, ...fields };
+
+      console.log("[TOOL] Final fields for account creation:", finalFields);
+
       // Create a new record in Airtable
-      console.log("[TOOL] Creating a new Airtable record with final values...");
-      const createdRecord = await airtableBase("Accounts").create(suggestedFields);
+      console.log("[TOOL] Creating a new Airtable record...");
+      const createdRecord = await airtableBase("Accounts").create(finalFields);
 
       console.log("[TOOL] Account created successfully in Airtable:", createdRecord);
 
       return {
-        message: `Account created successfully for ${fields.Name}. Record ID: ${createdRecord.id}`,
+        message: `Account created successfully for ${fields.Name} with the provided and suggested details. Record ID: ${createdRecord.id}`,
         recordId: createdRecord.id,
       };
     } catch (error) {
