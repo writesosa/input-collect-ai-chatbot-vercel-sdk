@@ -32,8 +32,8 @@ export async function continueConversation(history: Message[]) {
       system: `You are a Wonderland assistant!
         Reply with nicely formatted markdown. 
         Keep your replies short and concise. 
-        If this is the first reply send a nice welcome message.
-        If the selected Account is different mention account or company name once.
+        If this is the first message of the session reply with "How can I assist you today?"
+        If the selected Account has changed mention account or company name once (except for the first message with the payload).
 
         Perform the following actions:
         - Create a new account in Wonderland when the user requests it.
