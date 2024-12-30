@@ -13,9 +13,14 @@ const AIRTABLE_API_KEY = "patuiAgEvFzitXyIu.a0fed140f02983ccc3dfeed6c02913b5e259
 const AIRTABLE_BASE_ID = "appFf0nHuVTVWRjTa";
 const AIRTABLE_ACCOUNTS_TABLE = "Accounts";
 
-export async function continueConversation(history: Message[]) {
+export async function continueConversation(history: Message[], record: any = null) {
   try {
     console.log("[LLM] continueConversation - History:", JSON.stringify(history, null, 2));
+    console.log("[LLM] Record for context:", JSON.stringify(record, null, 2));
+
+    const initialMessage = record
+      ? { role: "assistant", content: `Here's your account: ${JSON.stringify(record)}` }
+      : null;
 
     const result = await generateText({
       model: "gpt-4-turbo", // OpenAI model
@@ -28,7 +33,6 @@ export async function continueConversation(history: Message[]) {
         Perform the following actions:
         - Create a new account in Wonderland when the user requests it.
         - Modify an existing account in Wonderland when the user requests it.
-        - Delete an existing account in Wonderland when the user requests it.
 
         When creating or modifying an account:
         - Extract the required information (e.g., account name, description, or specific fields to update) from the user's input.
@@ -36,7 +40,7 @@ export async function continueConversation(history: Message[]) {
         - Confirm the action with the user before finalizing.
         
         Log all actions and results.`,
-      messages: history,
+      messages: initialMessage ? [initialMessage, ...history] : history,
       tools: {
         createAccount,
         modifyAccount,
@@ -61,7 +65,7 @@ export async function continueConversation(history: Message[]) {
         ...history,
         {
           role: "assistant",
-          content: "An error occurred while processing your request.",
+          content: `An error occurred while processing your request. Error details: ${error.message}`,
         },
       ],
     };
@@ -94,7 +98,8 @@ const createAccount = tool({
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to create account. HTTP Status: ${response.status}`);
+        const errorDetails = await response.json();
+        throw new Error(`Failed to create account. HTTP Status: ${response.status}, Details: ${JSON.stringify(errorDetails)}`);
       }
 
       const data = await response.json();
@@ -135,7 +140,8 @@ const modifyAccount = tool({
       });
 
       if (!response.ok) {
-        throw new Error(`Failed to modify account. HTTP Status: ${response.status}`);
+        const errorDetails = await response.json();
+        throw new Error(`Failed to modify account. HTTP Status: ${response.status}, Details: ${JSON.stringify(errorDetails)}`);
       }
 
       const data = await response.json();
