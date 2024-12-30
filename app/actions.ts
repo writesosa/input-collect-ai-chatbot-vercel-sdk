@@ -18,7 +18,7 @@ export async function continueConversation(history: Message[]) {
     console.log("[LLM] continueConversation - History:", JSON.stringify(history, null, 2));
 
     const result = await generateText({
-      model: "gpt-4-turbo", // OpenAI model
+      model: "gpt-4", // OpenAI model
       system: `You are a Wonderland assistant! 
       Reply with nicely formatted markdown. 
       Keep your replies short and concise. 
