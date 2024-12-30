@@ -65,23 +65,25 @@ export async function continueConversation(history: Message[]) {
       ],
     };
   } catch (error) {
-    if (error instanceof InvalidToolArgumentsError) {
-      console.log(error.toJSON());
-    } else {
-      console.log(error);
-    }
+    console.error("[LLM] Error in continueConversation:", {
+      message: error instanceof Error ? error.message : "Unknown error",
+      stack: error instanceof Error ? error.stack : undefined,
+      raw: error,
+    });
+
     return {
       messages: [
         ...history,
         {
           role: "assistant" as const,
-          content: "There's a problem executing the request. Please try again.",
+          content: `There's a problem executing the request. Please try again. Error details: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`,
         },
       ],
     };
   }
 }
-
 
 const createAccount = tool({
   description: "Create a new account in Wonderland and log actions.",
@@ -130,8 +132,6 @@ const createAccount = tool({
   },
 });
 
-
-
 const modifyAccount = tool({
   description: "Simulate modifying an account in Wonderland.",
   parameters: z.object({
@@ -175,47 +175,3 @@ const modifyAccount = tool({
     };
   },
 });
-
-// Event listener for chatbot container interaction
-if (typeof window !== "undefined") {
-  window.addEventListener("DOMContentLoaded", () => {
-    const chatbotContainer = document.getElementById("chatbot-container");
-
-    if (chatbotContainer) {
-      chatbotContainer.addEventListener("click", sendCurrentRecord);
-      chatbotContainer.addEventListener("mouseover", sendCurrentRecord);
-    }
-
-    async function sendCurrentRecord() {
-      try {
-        const urlParams = new URLSearchParams(window.location.search);
-        const recordId = urlParams.get("recordId");
-
-        const type = recordId ? "accounts" : "home";
-
-        if (recordId) {
-          const response = await fetch(
-            `https://www.wonderland.guru/accounts/account-details?recordId=${recordId}`
-          );
-          const record = await response.json();
-
-          const filteredRecord = {
-            recordId: record.id,
-            accountName: record.fields["Name"],
-            clientFile: record.fields["Client File"],
-          };
-
-          console.log("[Frontend] Current record fetched:", filteredRecord);
-
-          // Send record to Airtable
-          await airtableBase("Records").create(filteredRecord);
-        } else {
-          console.log("[Frontend] Sending page type only:", type);
-          await airtableBase("Records").create({ type });
-        }
-      } catch (error) {
-        console.error("[Frontend] Error fetching or sending record:", error);
-      }
-    }
-  });
-}
