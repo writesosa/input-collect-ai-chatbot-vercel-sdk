@@ -112,6 +112,9 @@ const createAccount = tool({
         };
       }
 
+      // Use Name as default for Client Company Name if not provided
+      fields["Client Company Name"] = fields["Client Company Name"] || fields.Name;
+
       // Title case the Name field
       fields.Name = fields.Name.replace(/\b\w/g, (char) => char.toUpperCase());
 
@@ -129,7 +132,7 @@ const createAccount = tool({
 
       // Suggest values for missing fields
       const suggestedFields: Record<string, string> = {
-        "Client Company Name": fields["Client Company Name"] || "Default Company Name",
+        "Client Company Name": fields["Client Company Name"],
         "Client URL": fields["Client URL"] || "https://example.com",
         Status: fields.Status || "New",
         Industry:
@@ -140,7 +143,7 @@ const createAccount = tool({
           (primaryContactSuggestions.length > 0 ? primaryContactSuggestions[0] : "John Doe"),
         "About the Client":
           fields["About the Client"] ||
-          `This account represents a client in the ${fields.Industry || "General"} sector, focusing on innovative solutions.`,
+          `This account represents ${fields.Name} in the ${fields.Industry || "General"} sector, focusing on innovative solutions tailored to their needs.`,
         "Primary Objective":
           fields["Primary Objective"] ||
           "To achieve a high level of customer satisfaction and engagement.",
@@ -196,13 +199,14 @@ const createAccount = tool({
 
       throw new Error(
         JSON.stringify({
-          error: `Failed to create account for ${fields.Name}.`,
+          error: `Failed to create account for ${fields.Name}.",
           details: errorDetails,
         })
       );
     }
   },
 });
+
 
 
 const modifyAccount = tool({
