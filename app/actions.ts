@@ -85,7 +85,6 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
-
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -100,6 +99,7 @@ const createAccount = tool({
     "Primary Objective": z.string().optional().describe("The primary objective of the account."),
     "Talking Points": z.string().optional().describe("Key talking points for the account."),
     "Contact Information": z.string().optional().describe("Contact information for the client."),
+    "Priority Image": z.string().optional().describe("The type of images this account should generate or display."),
   }),
   execute: async (fields) => {
     console.log("[TOOL] createAccount", fields);
@@ -123,6 +123,12 @@ const createAccount = tool({
         .map((record) => record.get("Primary Contact Person"))
         .filter((value): value is string => typeof value === "string");
 
+      // Fetch available industry options from Airtable
+      const allowedIndustries = await airtableBase("Accounts").select({ fields: ["Industry"] }).all();
+      const industryOptions = allowedIndustries
+        .map((record) => record.get("Industry"))
+        .filter((value): value is string => typeof value === "string");
+
       // Guess Industry based on client information
       const guessIndustry = (info: string) => {
         if (/jeep|car|vehicle|automobile/i.test(info)) return "Automotive";
@@ -137,6 +143,39 @@ const createAccount = tool({
         return `This account is dedicated to ${info.toLowerCase()}, aiming to enhance visibility and engagement in the ${fields.Industry || "General"} sector with a focus on tailored solutions.`;
       };
       fields.Description = fields.Description || rewriteDescription(fields["About the Client"] || fields.Name || "");
+
+      // Generate Primary Objective and Talking Points based on client info
+      const generatePrimaryObjective = (info: string) => {
+        return `To promote ${info.toLowerCase()} effectively and achieve maximum engagement with the target audience.`;
+      };
+      const generateTalkingPoints = (info: string) => {
+        return `Highlighting ${info.toLowerCase()} with a focus on quality, customer-first strategies, and innovative solutions.`;
+      };
+      fields["Primary Objective"] =
+        fields["Primary Objective"] || generatePrimaryObjective(fields.Description || fields.Name || "");
+      fields["Talking Points"] =
+        fields["Talking Points"] || generateTalkingPoints(fields.Description || fields.Name || "");
+
+      // Prompt for Priority Image field if missing
+      const priorityImageOptions = [
+        "AI Generated",
+        "Stock Images",
+        "Google Images",
+        "Social Media",
+        "Uploaded Media",
+      ];
+      if (!fields["Priority Image"]) {
+        return {
+          message: `What kind of images should this account generate or display? Please choose one of the following options: ${priorityImageOptions.join(
+            ", "
+          )}`,
+        };
+      }
+      if (!priorityImageOptions.includes(fields["Priority Image"])) {
+        return {
+          message: `Invalid choice for Priority Image. Please choose from: ${priorityImageOptions.join(", ")}`,
+        };
+      }
 
       // Prompt for Primary Contact Person if missing
       if (!fields["Primary Contact Person"]) {
