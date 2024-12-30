@@ -1,69 +1,67 @@
 "use server";
 
-import { InvalidToolArgumentsError, generateText, nanoid, tool } from "ai";
-import { openai } from "@ai-sdk/openai";
+import { generateText, tool, nanoid } from "ai";
 import { z } from "zod";
-import users from "./users.json";
 
 export interface Message {
   role: "user" | "assistant";
   content: string;
 }
 
-// Simulated user data for logging and updates
-const currentUserData = {
-  name: "",
-  accountNumber: "",
-  phoneNumber: "",
-  balance: 0,
-};
+// Airtable API constants
+const AIRTABLE_API_KEY = "patuiAgEvFzitXyIu.a0fed140f02983ccc3dfeed6c02913b5e2593253cb784a08c3cfd8ac96518ba0";
+const AIRTABLE_BASE_ID = "appFf0nHuVTVWRjTa";
+const AIRTABLE_ACCOUNTS_TABLE = "Accounts";
 
 export async function continueConversation(history: Message[]) {
-  "use server";
-
   try {
-    console.log("[LLM] continueConversation");
-    const { text, toolResults } = await generateText({
-      model: openai("gpt-4o"),
-      system: `You are a Wonderland assistant! You only know things about Wonderland. Reply with nicely formatted markdown. Keep your reply short and concise. Don't overwhelm the user with too much information. 
+    console.log("[LLM] continueConversation - History:", JSON.stringify(history, null, 2));
 
-        You can _only_ perform the following actions:
-        - createAccount: Simulate creating a new account in Wonderland. This tool and the parameters' collection must only be called if the user has said they want to create an account. Call the createAccount tool only when you have all required parameters. Otherwise, keep asking the user. Don't come up with the information yourself. Once you have the complete information, ask the user to confirm the new account creation before calling the tool by showing a summary of the information.
-        - modifyAccount: Simulate modifying an account in Wonderland. This tool and the parameters must only be called if the user has indicated they wish to modify an account. Call the modifyAccount tool only when you have required information for the field to update. Otherwise, keep asking the user. Once you have the complete information, ask the user to confirm the request before calling the tool by showing the request information.
+    const result = await generateText({
+      model: "gpt-4-turbo", // OpenAI model
+      system: `You are a Wonderland assistant! 
+      Reply with nicely formatted markdown. 
+      Keep your replies short and concise. 
+      If this is the first reply send a nice welcome message.
+      If the selected Account is different mention account or company name once.
 
-        Don't perform any other actions.
-        `,
+        Perform the following actions:
+        - Create a new account in Wonderland when the user requests it.
+        - Modify an existing account in Wonderland when the user requests it.
+        - Delete an existing account in Wonderland when the user requests it.
+
+        When creating or modifying an account:
+        - Extract the required information (e.g., account name, description, or specific fields to update) from the user's input.
+        - Ensure all extracted values are sent outside the user message in a structured format.
+        - Confirm the action with the user before finalizing.
+        
+        Log all actions and results.`,
       messages: history,
-      maxToolRoundtrips: 5,
       tools: {
         createAccount,
         modifyAccount,
       },
     });
 
+    console.log("[LLM] Result from generateText:", JSON.stringify(result, null, 2));
+
     return {
       messages: [
         ...history,
         {
-          role: "assistant" as const,
-          content:
-            text ||
-            toolResults.map((toolResult) => toolResult.result).join("\n"),
+          role: "assistant",
+          content: result.text || "I'm sorry, something went wrong. Please try again.",
         },
       ],
     };
   } catch (error) {
-    if (error instanceof InvalidToolArgumentsError) {
-      console.log(error.toJSON());
-    } else {
-      console.log(error);
-    }
+    console.error("[LLM] Error in continueConversation:", error);
     return {
       messages: [
         ...history,
         {
-          role: "assistant" as const,
-          content: "There's a problem executing the request. Please try again.",
+          role: "assistant",
+          content: "An error occurred while processing your request.",
         },
       ],
     };
@@ -71,54 +69,84 @@ export async function continueConversation(history: Message[]) {
 }
 
 const createAccount = tool({
-  description: "Simulate creating a new account in Wonderland.",
+  description: "Create a new account in Wonderland.",
   parameters: z.object({
     name: z.string().min(1).describe("The name of the account holder."),
     description: z.string().min(1).describe("A description for the account."),
   }),
   execute: async ({ name, description }) => {
-    console.log("[TOOL] createAccount", { name, description });
+    console.log("[TOOL] createAccount - Parameters:", { name, description });
 
-    // Simulate account creation
-    const newAccountNumber = nanoid();
-    console.log(
-      `[SIMULATION] Account Created: Name: ${name}, Description: ${description}, Account Number: ${newAccountNumber}`
-    );
+    try {
+      const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_ACCOUNTS_TABLE}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${AIRTABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fields: {
+            Name: name,
+            Description: description,
+            AccountNumber: nanoid(),
+          },
+        }),
+      });
 
-    return {
-      message: `Successfully simulated creating an account for ${name} with the description: ${description}. Account Number: ${newAccountNumber}`,
-    };
+      if (!response.ok) {
+        throw new Error(`Failed to create account. HTTP Status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log("[TOOL] createAccount - Success:", JSON.stringify(data, null, 2));
+
+      return {
+        message: `Successfully created a new account for ${name} with the description: ${description}.`,
+      };
+    } catch (error) {
+      console.error("[TOOL] createAccount - Error:", error);
+      return { message: `Failed to create account: ${error.message}` };
+    }
   },
 });
 
 const modifyAccount = tool({
-  description: "Simulate modifying an account in Wonderland.",
+  description: "Modify an existing account in Wonderland.",
   parameters: z.object({
-    accountNumber: z
-      .string()
-      .min(4)
-      .describe("The account number of the account to modify."),
-    fieldToUpdate: z
-      .string()
-      .min(1)
-      .describe(
-        "The field to update (e.g., name, phoneNumber, balance). Must be a valid field."
-      ),
-    newValue: z
-      .string()
-      .min(1)
-      .describe("The new value to assign to the specified field."),
+    recordId: z.string().min(1).describe("The Airtable Record ID for the account."),
+    fieldToUpdate: z.string().min(1).describe("The field to update (e.g., Name, Description)."),
+    newValue: z.string().min(1).describe("The new value to assign to the specified field."),
   }),
-  execute: async ({ accountNumber, fieldToUpdate, newValue }) => {
-    console.log("[TOOL] modifyAccount", { accountNumber, fieldToUpdate, newValue });
+  execute: async ({ recordId, fieldToUpdate, newValue }) => {
+    console.log("[TOOL] modifyAccount - Parameters:", { recordId, fieldToUpdate, newValue });
 
-    // Simulate account modification
-    console.log(
-      `[SIMULATION] Account Modified: Account Number: ${accountNumber}, Field Updated: ${fieldToUpdate}, New Value: ${newValue}`
-    );
+    try {
+      const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_ACCOUNTS_TABLE}/${recordId}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${AIRTABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fields: {
+            [fieldToUpdate]: newValue,
+          },
+        }),
+      });
 
-    return {
-      message: `Successfully simulated modifying account ${accountNumber}. Updated ${fieldToUpdate} to ${newValue}.`,
-    };
+      if (!response.ok) {
+        throw new Error(`Failed to modify account. HTTP Status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log("[TOOL] modifyAccount - Success:", JSON.stringify(data, null, 2));
+
+      return {
+        message: `Successfully updated the ${fieldToUpdate} to "${newValue}" for the account.`,
+      };
+    } catch (error) {
+      console.error("[TOOL] modifyAccount - Error:", error);
+      return { message: `Failed to modify account: ${error.message}` };
+    }
   },
 });
