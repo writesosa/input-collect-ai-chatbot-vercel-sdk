@@ -140,10 +140,7 @@ const modifyAccount = tool({
   description: "Modify any field of an existing account in Wonderland.",
   parameters: z.object({
     recordId: z.string().optional().describe("The record ID of the account to modify."),
-    fields: z
-      .record(z.string(), z.any())
-      .optional()
-      .describe("The fields to modify and their new values."),
+    fields: z.record(z.string(), z.any()).refine(fields => Object.keys(fields).length > 0, { message: "Fields object must contain at least one key-value pair." }).describe("The fields to modify and their new values."),
   }),
   execute: async ({ recordId, fields }) => {
     console.log("[TOOL] modifyAccount", { recordId, fields });
@@ -162,14 +159,16 @@ const modifyAccount = tool({
 
       console.log("[TOOL] Account found:", accountRecord);
 
-      // If fields are not provided, throw an error
-      if (!fields || Object.keys(fields).length === 0) {
-        throw new Error("No fields provided for modification.");
-      }
+      console.log("[TOOL] Fetching current fields...");
+      const currentFields = accountRecord.fields;
+      console.log("[TOOL] Current fields:", currentFields);
 
-      console.log("[TOOL] Updating account with fields:", fields);
+      console.log("[TOOL] Merging updates with current fields...");
+      const updatedFields = { ...currentFields, ...fields };
 
-      const updatedRecord = await airtableBase("Accounts").update(accountRecord.id, fields);
+      console.log("[TOOL] Updating account with fields:", updatedFields);
+
+      const updatedRecord = await airtableBase("Accounts").update(accountRecord.id, updatedFields);
 
       console.log("[TOOL] Account updated successfully:", updatedRecord);
 
@@ -193,4 +192,3 @@ const modifyAccount = tool({
     }
   },
 });
-
