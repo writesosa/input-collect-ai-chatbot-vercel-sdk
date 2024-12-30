@@ -82,6 +82,7 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
+
 const createAccount = tool({
   description: "Create a new account in Wonderland and log actions.",
   parameters: z.object({
@@ -92,7 +93,13 @@ const createAccount = tool({
     console.log("[TOOL] createAccount", { name, description });
 
     try {
+      // Validate input explicitly
+      if (!name || !description) {
+        throw new Error("Name or description is missing.");
+      }
+
       // Create a new record in Airtable
+      console.log("[TOOL] Creating a new Airtable record...");
       const createdRecord = await airtableBase("Accounts").create({
         Name: name,
         Description: description,
@@ -107,18 +114,22 @@ const createAccount = tool({
     } catch (error) {
       console.error("[TOOL] Error creating account in Airtable:", error);
 
-      // Type-guard to check if error is an instance of Error
-      if (error instanceof Error) {
-        throw new Error(
-          `Failed to create account for ${name}. Error: ${error.message}`
-        );
-      } else {
-        // Fallback for non-Error type exceptions
-        throw new Error(`Failed to create account for ${name}. Unknown error occurred.`);
-      }
+      // Handle and throw detailed error
+      const errorDetails =
+        error instanceof Error
+          ? { message: error.message, stack: error.stack }
+          : { message: "Unknown error occurred.", raw: error };
+
+      throw new Error(
+        JSON.stringify({
+          error: `Failed to create account for ${name}.`,
+          details: errorDetails,
+        })
+      );
     }
   },
 });
+
 
 
 const modifyAccount = tool({
