@@ -1,3 +1,5 @@
+import { continueConversation } from "../../actions";
+
 export async function POST(req: Request) {
   console.log("[POST /api/chat] Request received");
 
