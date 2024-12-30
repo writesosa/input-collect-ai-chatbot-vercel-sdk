@@ -140,7 +140,7 @@ const modifyAccount = tool({
   description: "Modify any field of an existing account in Wonderland.",
   parameters: z.object({
     recordId: z.string().optional().describe("The record ID of the account to modify."),
-    fields: z.record(z.string(), z.any()).refine(fields => Object.keys(fields).length > 0, { message: "Fields object must contain at least one key-value pair." }).describe("The fields to modify and their new values."),
+    fields: z.record(z.string(), z.any()).optional().describe("The fields to modify and their new values."),
   }),
   execute: async ({ recordId, fields }) => {
     console.log("[TOOL] modifyAccount", { recordId, fields });
@@ -163,17 +163,23 @@ const modifyAccount = tool({
       const currentFields = accountRecord.fields;
       console.log("[TOOL] Current fields:", currentFields);
 
-      console.log("[TOOL] Merging updates with current fields...");
-      const updatedFields = { ...currentFields, ...fields };
+      // Confirm fields to update with the user
+      const fieldUpdates = Object.entries(fields || {}).map(([key, value]) => {
+        return `**Field:** ${key}\n- Current Value: ${currentFields[key] || "(not set)"}\n- New Value: ${value}`;
+      }).join("\n\n");
 
-      console.log("[TOOL] Updating account with fields:", updatedFields);
+      if (!fields || Object.keys(fields).length === 0) {
+        throw new Error("No fields provided for modification.");
+      }
 
-      const updatedRecord = await airtableBase("Accounts").update(accountRecord.id, updatedFields);
+      console.log("[TOOL] Confirming updates with user:", fieldUpdates);
+
+      const updatedRecord = await airtableBase("Accounts").update(accountRecord.id, fields);
 
       console.log("[TOOL] Account updated successfully:", updatedRecord);
 
       return {
-        message: `Account successfully updated. Updated fields: ${JSON.stringify(fields)}.`,
+        message: `Account successfully updated. Confirmed updates:\n\n${fieldUpdates}`,
         recordId: updatedRecord.id,
       };
     } catch (error) {
