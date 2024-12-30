@@ -1,6 +1,6 @@
 "use server";
 
-import { InvalidToolArgumentsError, generateText, nanoid, tool } from "ai";
+import { generateText, tool, nanoid } from "ai";
 import { z } from "zod";
 
 export interface Message {
@@ -9,28 +9,26 @@ export interface Message {
 }
 
 // Airtable API constants
-const AIRTABLE_API_KEY = "your_airtable_api_key";
-const AIRTABLE_BASE_ID = "your_airtable_base_id";
+const AIRTABLE_API_KEY = "patuiAgEvFzitXyIu.a0fed140f02983ccc3dfeed6c02913b5e2593253cb784a08c3cfd8ac96518ba0";
+const AIRTABLE_BASE_ID = "appFf0nHuVTVWRjTa";
 const AIRTABLE_ACCOUNTS_TABLE = "Accounts";
 
-export async function continueConversation(history: Message[], record: any = null) {
+export async function continueConversation(history: Message[]) {
   try {
     console.log("[LLM] continueConversation - History:", JSON.stringify(history, null, 2));
-    if (record) {
-      console.log("[LLM] Record for context:", JSON.stringify(record, null, 2));
-    }
 
     const result = await generateText({
-      model: { type: "openai", name: "gpt-4-turbo" }, // Correctly typed model parameter
+      model: "gpt-4-turbo", // OpenAI model
       system: `You are a Wonderland assistant! 
-        Reply with nicely formatted markdown. 
-        Keep your replies short and concise. 
-        If this is the first reply, send a nice welcome message.
-        If the selected account is different, mention the account or company name once.
+      Reply with nicely formatted markdown. 
+      Keep your replies short and concise. 
+      If this is the first reply send a nice welcome message.
+      If the selected Account is different mention account or company name once.
 
         Perform the following actions:
         - Create a new account in Wonderland when the user requests it.
         - Modify an existing account in Wonderland when the user requests it.
+        - Delete an existing account in Wonderland when the user requests it.
 
         When creating or modifying an account:
         - Extract the required information (e.g., account name, description, or specific fields to update) from the user's input.
@@ -38,9 +36,7 @@ export async function continueConversation(history: Message[], record: any = nul
         - Confirm the action with the user before finalizing.
         
         Log all actions and results.`,
-      messages: record
-        ? [{ role: "assistant", content: `Here's your account: ${JSON.stringify(record)}` }, ...history]
-        : history,
+      messages: history,
       tools: {
         createAccount,
         modifyAccount,
@@ -65,7 +61,7 @@ export async function continueConversation(history: Message[], record: any = nul
         ...history,
         {
           role: "assistant",
-          content: `An error occurred while processing your request. Error details: ${error.message}`,
+          content: "An error occurred while processing your request.",
         },
       ],
     };
