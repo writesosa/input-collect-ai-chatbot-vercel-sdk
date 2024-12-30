@@ -140,7 +140,18 @@ const modifyAccount = tool({
   description: "Modify any field of an existing account in Wonderland.",
   parameters: z.object({
     recordId: z.string().optional().describe("The record ID of the account to modify."),
-    fields: z.record(z.string(), z.any()).optional().describe("The fields to modify and their new values."),
+    fields: z.object({
+      Description: z.string().optional(),
+      "Client Company Name": z.string().optional(),
+      "Client URL": z.string().optional(),
+      Status: z.enum(["Active", "Disabled", "New"]).optional(),
+      Industry: z.string().optional(),
+      "Primary Contact Person": z.string().optional(),
+      "About the Client": z.string().optional(),
+      "Primary Objective": z.string().optional(),
+      "Talking Points": z.string().optional(),
+      "Contact Information": z.string().optional(),
+    }).optional().describe("The fields to modify and their new values."),
   }),
   execute: async ({ recordId, fields }) => {
     console.log("[TOOL] modifyAccount", { recordId, fields });
@@ -159,27 +170,14 @@ const modifyAccount = tool({
 
       console.log("[TOOL] Account found:", accountRecord);
 
-      console.log("[TOOL] Fetching current fields...");
-      const currentFields = accountRecord.fields;
-      console.log("[TOOL] Current fields:", currentFields);
-
-      // Confirm fields to update with the user
-      const fieldUpdates = Object.entries(fields || {}).map(([key, value]) => {
-        return `**Field:** ${key}\n- Current Value: ${currentFields[key] || "(not set)"}\n- New Value: ${value}`;
-      }).join("\n\n");
-
-      if (!fields || Object.keys(fields).length === 0) {
-        throw new Error("No fields provided for modification.");
-      }
-
-      console.log("[TOOL] Confirming updates with user:", fieldUpdates);
+      console.log("[TOOL] Updating account with fields:", fields);
 
       const updatedRecord = await airtableBase("Accounts").update(accountRecord.id, fields);
 
       console.log("[TOOL] Account updated successfully:", updatedRecord);
 
       return {
-        message: `Account successfully updated. Confirmed updates:\n\n${fieldUpdates}`,
+        message: `Account successfully updated. Updated fields: ${JSON.stringify(fields)}.`,
         recordId: updatedRecord.id,
       };
     } catch (error) {
