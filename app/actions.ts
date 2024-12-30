@@ -140,40 +140,32 @@ const modifyAccount = tool({
   description: "Modify any field of an existing account in Wonderland.",
   parameters: z.object({
     recordId: z.string().optional().describe("The record ID of the account to modify."),
-    fields: z.record(z.string(), z.any()).refine(fields => Object.keys(fields).length > 0, { message: "Fields object must contain at least one key-value pair." }).describe("The fields to modify and their new values."),
+    fields: z
+      .record(z.string(), z.any())
+      .optional()
+      .describe("The fields to modify and their new values."),
   }),
   execute: async ({ recordId, fields }) => {
     console.log("[TOOL] modifyAccount", { recordId, fields });
 
     try {
-      if (!recordId && !fields.Name) {
-        throw new Error("Either recordId or fields.Name must be provided to identify the account.");
+      if (!recordId) {
+        throw new Error("recordId is required to identify the account.");
       }
 
-      let accountRecord;
+      console.log("[TOOL] Searching by record ID...");
+      const accountRecord = await airtableBase("Accounts").find(recordId);
 
-      if (recordId) {
-        console.log("[TOOL] Searching by record ID...");
-        accountRecord = await airtableBase("Accounts").find(recordId);
-      } else {
-        console.log("[TOOL] Searching by account name...");
-        const records = await airtableBase("Accounts")
-          .select({ filterByFormula: `{Name} = "${fields.Name}"` })
-          .firstPage();
-
-        if (records.length === 0) {
-          throw new Error(`No account found with the name: ${fields.Name}`);
-        }
-
-        accountRecord = records[0];
+      if (!accountRecord) {
+        throw new Error(`No account found with the record ID: ${recordId}`);
       }
 
       console.log("[TOOL] Account found:", accountRecord);
 
-      console.log("[TOOL] Fetching current fields for validation...");
-      const currentFields = accountRecord.fields;
-
-      console.log("[TOOL] Current fields:", currentFields);
+      // If fields are not provided, throw an error
+      if (!fields || Object.keys(fields).length === 0) {
+        throw new Error("No fields provided for modification.");
+      }
 
       console.log("[TOOL] Updating account with fields:", fields);
 
@@ -201,3 +193,4 @@ const modifyAccount = tool({
     }
   },
 });
+
