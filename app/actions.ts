@@ -106,12 +106,20 @@ const createAccount = tool({
       };
     } catch (error) {
       console.error("[TOOL] Error creating account in Airtable:", error);
-      throw new Error(
-        `Failed to create account for ${name}. Error: ${error.message}`
-      );
+
+      // Type-guard to check if error is an instance of Error
+      if (error instanceof Error) {
+        throw new Error(
+          `Failed to create account for ${name}. Error: ${error.message}`
+        );
+      } else {
+        // Fallback for non-Error type exceptions
+        throw new Error(`Failed to create account for ${name}. Unknown error occurred.`);
+      }
     }
   },
 });
+
 
 const modifyAccount = tool({
   description: "Simulate modifying an account in Wonderland.",
