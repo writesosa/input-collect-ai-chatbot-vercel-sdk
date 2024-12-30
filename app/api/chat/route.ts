@@ -19,22 +19,18 @@ export async function POST(req: Request) {
       });
     }
 
-    if (!record) {
-      console.error("[POST /api/chat] No record provided.");
-      return new Response(JSON.stringify({ error: "Record is required." }), {
-        status: 400,
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-        },
-      });
+    console.log("[POST /api/chat] Processing messages:", messages);
+
+    let initialMessage = null;
+
+    if (record && record.id) {
+      console.log("[POST /api/chat] Record provided:", JSON.stringify(record, null, 2));
+      initialMessage = { role: "assistant", content: `Here's your account: ${JSON.stringify(record)}` };
+    } else {
+      console.log("[POST /api/chat] No specific record provided, proceeding with normal conversation.");
     }
 
-    console.log("[POST /api/chat] Processing record and messages:", {
-      record,
-      messages,
-    });
-
-    const result = await continueConversation([{ role: "assistant", content: `Here's your account: ${JSON.stringify(record)}` }, ...messages]);
+    const result = await continueConversation(initialMessage ? [initialMessage, ...messages] : messages);
 
     console.log("[POST /api/chat] Response from continueConversation:", JSON.stringify(result, null, 2));
 
