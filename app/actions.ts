@@ -7,7 +7,7 @@ import users from "./users.json";
 import Airtable from "airtable";
 
 export interface Message {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system";
   content: string;
 }
 
@@ -21,6 +21,7 @@ const currentUserData = {
 
 // Initialize Airtable base
 const airtableBase = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID || "missing_base_id");
+
 export async function continueConversation(history: Message[]) {
   "use server";
 
@@ -160,64 +161,6 @@ const createAccount = tool({
         fields["About the Client"] ||
         `The client specializes in ${fields.Description.toLowerCase()}. Utilizing Wonderland, the account will automate content creation and strategically distribute it across platforms to align with client goals and target audience needs.`;
 
-      // Ensure minimum 600-character recommendations for descriptions
-      fields.Description = fields.Description.padEnd(600, ".");
-
-      // Generate Primary Objective and Talking Points based on client info
-      const generatePrimaryObjective = (info: string) => {
-        return `To enhance the reach and engagement of ${info.toLowerCase()}, ensuring alignment with client goals through targeted marketing and AI-driven automation.`;
-      };
-      const generateTalkingPoints = (info: string) => {
-        return `Focus on showcasing ${info.toLowerCase()} with tailored content and innovative strategies, highlighting quality, brand identity, and audience engagement.`;
-      };
-      fields["Primary Objective"] =
-        fields["Primary Objective"] || generatePrimaryObjective(fields.Description || fields.Name || "");
-      fields["Talking Points"] =
-        fields["Talking Points"] || generateTalkingPoints(fields.Description || fields.Name || "");
-
-      // Prompt for Priority Image field if missing
-      const priorityImageOptions = [
-        "AI Generated",
-        "Stock Images",
-        "Google Images",
-        "Social Media",
-        "Uploaded Media",
-      ];
-      if (!fields["Priority Image"]) {
-        return {
-          message: `What kind of images should this account generate or display? Please choose one of the following options: ${priorityImageOptions.join(
-            ", "
-          )}`,
-        };
-      }
-      if (!priorityImageOptions.includes(fields["Priority Image"])) {
-        return {
-          message: `Invalid choice for Priority Image. Please choose from: ${priorityImageOptions.join(", ")}`,
-        };
-      }
-
-      // Prompt for Primary Contact Person if missing
-      if (!fields["Primary Contact Person"]) {
-        const suggestionMessage = primaryContactSuggestions.length > 0
-          ? `The following primary contact persons are available: ${primaryContactSuggestions.join(", ")}. Is one of them the contact person for this account, or should we add someone else?`
-          : "No existing contact persons found. Please provide a contact person for this account.";
-        return { message: suggestionMessage };
-      }
-
-      // Ask about website or social media if not provided
-      if (!fields["Client URL"]) {
-        return {
-          message: `Does this account have a website or social media account you'd like to include? If not, you can skip this step.`,
-        };
-      }
-
-      // Ask for additional contact information if not provided
-      if (!fields["Contact Information"]) {
-        return {
-          message: `Do you have any contact information for this company, such as an email, phone number, or address, to include in the content?`,
-        };
-      }
-
       // Summarize all fields before creation
       const summarizedFields = {
         Name: fields.Name,
@@ -244,26 +187,12 @@ const createAccount = tool({
     } catch (error) {
       console.error("[TOOL] Error creating account in Airtable:", {
         message: error instanceof Error ? error.message : "Unknown error",
-        stack: error instanceof Error ? error.stack : undefined,
-        raw: JSON.stringify(error, Object.getOwnPropertyNames(error)),
+        stack: error.stack,
       });
-
-      // Handle and throw detailed error
-      const errorDetails =
-        error instanceof Error
-          ? { message: error.message, stack: error.stack }
-          : { message: "Unknown error occurred.", raw: error };
-
-      throw new Error(
-        JSON.stringify({
-          error: `Failed to create account for ${fields.Name}.`,
-          details: errorDetails,
-        })
-      );
+      throw error;
     }
   },
 });
-
 
 const modifyAccount = tool({
   description: "Modify any field of an existing account in Wonderland.",
