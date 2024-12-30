@@ -9,17 +9,19 @@ export interface Message {
 }
 
 // Airtable API constants
-const AIRTABLE_API_KEY = "patuiAgEvFzitXyIu.a0fed140f02983ccc3dfeed6c02913b5e2593253cb784a08c3cfd8ac96518ba0";
-const AIRTABLE_BASE_ID = "appFf0nHuVTVWRjTa";
+const AIRTABLE_API_KEY = "your_airtable_api_key";
+const AIRTABLE_BASE_ID = "your_airtable_base_id";
 const AIRTABLE_ACCOUNTS_TABLE = "Accounts";
 
 export async function continueConversation(history: Message[], record: any = null) {
   try {
     console.log("[LLM] continueConversation - History:", JSON.stringify(history, null, 2));
-    console.log("[LLM] Record for context:", JSON.stringify(record, null, 2));
+    if (record) {
+      console.log("[LLM] Record for context:", JSON.stringify(record, null, 2));
+    }
 
     const result = await generateText({
-      model: "gpt-4o", // OpenAI model
+      model: { type: "openai", name: "gpt-4-turbo" }, // Correctly typed model parameter
       system: `You are a Wonderland assistant! 
         Reply with nicely formatted markdown. 
         Keep your replies short and concise. 
