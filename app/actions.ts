@@ -199,7 +199,7 @@ const createAccount = tool({
 
       throw new Error(
         JSON.stringify({
-          error: `Failed to create account for ${fields.Name}.",
+          error: `Failed to create account for ${fields.Name}.`,
           details: errorDetails,
         })
       );
