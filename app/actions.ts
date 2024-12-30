@@ -140,7 +140,7 @@ const modifyAccount = tool({
   description: "Modify any field of an existing account in Wonderland.",
   parameters: z.object({
     recordId: z.string().optional().describe("The record ID of the account to modify."),
-    fields: z.record(z.string(), z.any()).describe("The fields to modify and their new values."),
+    fields: z.record(z.string(), z.any()).nonempty("Fields object must contain at least one key-value pair.").describe("The fields to modify and their new values."),
   }),
   execute: async ({ recordId, fields }) => {
     console.log("[TOOL] modifyAccount", { recordId, fields });
@@ -169,6 +169,11 @@ const modifyAccount = tool({
       }
 
       console.log("[TOOL] Account found:", accountRecord);
+
+      console.log("[TOOL] Fetching current fields for validation...");
+      const currentFields = accountRecord.fields;
+
+      console.log("[TOOL] Current fields:", currentFields);
 
       console.log("[TOOL] Updating account with fields:", fields);
 
