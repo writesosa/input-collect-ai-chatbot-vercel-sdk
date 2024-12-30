@@ -202,7 +202,6 @@ const createAccount = tool({
   },
 });
 
-
 const modifyAccount = tool({
   description: "Modify any field of an existing account in Wonderland.",
   parameters: z.object({
