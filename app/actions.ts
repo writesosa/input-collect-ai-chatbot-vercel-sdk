@@ -85,6 +85,7 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
+
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -241,8 +242,6 @@ const createAccount = tool({
     }
   },
 });
-
-
 
 const modifyAccount = tool({
   description: "Modify any field of an existing account in Wonderland.",
