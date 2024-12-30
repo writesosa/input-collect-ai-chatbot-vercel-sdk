@@ -135,15 +135,17 @@ const createAccount = tool({
     }
   },
 });
+
 const modifyAccount = tool({
   description: "Modify any field of an existing account in Wonderland.",
   parameters: z.object({
     recordId: z.string().describe("The record ID of the account to modify."),
     fields: z.object({
+      Name: z.string().optional(),
       Description: z.string().optional(),
       "Client Company Name": z.string().optional(),
       "Client URL": z.string().optional(),
-      Status: z.enum(["Active", "Disabled", "New"]).optional(),
+      Status: z.string().optional(),
       Industry: z.string().optional(),
       "Primary Contact Person": z.string().optional(),
       "About the Client": z.string().optional(),
@@ -172,6 +174,22 @@ const modifyAccount = tool({
       }
 
       console.log("[TOOL] Account found:", accountRecord);
+
+      // Match Status and Industry to closest allowed values dynamically
+      const allowedStatuses = ["Active", "Disabled", "New"];
+      if (fields.Status) {
+        fields.Status = allowedStatuses.reduce((closest, current) =>
+          fields.Status!.toLowerCase().includes(current.toLowerCase()) ? current : closest
+        , allowedStatuses[0]);
+      }
+
+      const allowedIndustries = await airtableBase("Accounts").select({ fields: ["Industry"] }).all();
+      const industryOptions = allowedIndustries.map(record => record.get("Industry"));
+      if (fields.Industry && industryOptions.includes(fields.Industry)) {
+        fields.Industry = industryOptions.reduce((closest, current) =>
+          fields.Industry!.toLowerCase().includes(current.toLowerCase()) ? current : closest
+        , industryOptions[0]);
+      }
 
       console.log("[TOOL] Updating account with fields:", fields);
 
