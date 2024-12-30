@@ -24,7 +24,7 @@ export async function continueConversation(history: Message[]) {
     console.log("[LLM] continueConversation");
     const { text, toolResults } = await generateText({
       model: openai("gpt-4o"),
-      system: 'You are a Wonderland assistant! You only know things about Wonderland. Reply with nicely formatted markdown. Keep your reply short and concise. Don't overwhelm the user with too much information. 
+      system: `You are a Wonderland assistant! You only know things about Wonderland. Reply with nicely formatted markdown. Keep your reply short and concise. Don't overwhelm the user with too much information. 
         The first message will be a payload with the current record from Wonderland and is auto-generated. When you receive it, respond with a message asking the user how you can help them with the account and mention the account or company name from the record information politely.
 
         You can _only_ perform the following actions:
@@ -34,7 +34,7 @@ export async function continueConversation(history: Message[]) {
         When you are creating an account or modifying an account, interpret and clarify the user description to be clear, concise, and ensure proper capitalization for the name when confirming.
         
         Don't perform any other actions.
-        ',
+        `,
       messages: history,
       maxToolRoundtrips: 5,
       tools: {
@@ -84,14 +84,14 @@ const createAccount = tool({
     // Simulate account creation
     const newAccountNumber = nanoid();
     console.log(
-      '[SIMULATION] Account Created: Name: ${name}, Description: ${description}, Account Number: ${newAccountNumber}'
+      `[SIMULATION] Account Created: Name: ${name}, Description: ${description}, Account Number: ${newAccountNumber}`
     );
 
     // Log to Airtable using fetch API
     await fetch("https://api.airtable.com/v0/appFf0nHuVTVWRjTa/Accounts", {
       method: "POST",
       headers: {
-        Authorization: 'Bearer patuiAgEvFzitXyIu.a0fed140f02983ccc3dfeed6c02913b5e2593253cb784a08c3cfd8ac96518ba0',
+        Authorization: `Bearer patuiAgEvFzitXyIu.a0fed140f02983ccc3dfeed6c02913b5e2593253cb784a08c3cfd8ac96518ba0`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -104,7 +104,7 @@ const createAccount = tool({
     });
 
     return {
-      message: 'Successfully simulated creating an account for ${name} with the description: ${description}. Account Number: ${newAccountNumber}',
+      message: `Successfully simulated creating an account for ${name} with the description: ${description}. Account Number: ${newAccountNumber}`,
     };
   },
 });
@@ -132,10 +132,10 @@ const modifyAccount = tool({
 
     // Find the Airtable record using fetch API
     const response = await fetch(
-      'https://api.airtable.com/v0/appFf0nHuVTVWRjTa/Accounts?filterByFormula={AccountNumber}="${accountNumber}"',
+      `https://api.airtable.com/v0/appFf0nHuVTVWRjTa/Accounts?filterByFormula={AccountNumber}="${accountNumber}"`,
       {
         headers: {
-          Authorization: 'Bearer patuiAgEvFzitXyIu.a0fed140f02983ccc3dfeed6c02913b5e2593253cb784a08c3cfd8ac96518ba0',
+          Authorization: `Bearer patuiAgEvFzitXyIu.a0fed140f02983ccc3dfeed6c02913b5e2593253cb784a08c3cfd8ac96518ba0`,
         },
       }
     );
@@ -145,10 +145,10 @@ const modifyAccount = tool({
       const recordId = data.records[0].id;
 
       // Update the record
-      await fetch('https://api.airtable.com/v0/appFf0nHuVTVWRjTa/Accounts/${recordId}', {
+      await fetch(`https://api.airtable.com/v0/appFf0nHuVTVWRjTa/Accounts/${recordId}`, {
         method: "PATCH",
         headers: {
-          Authorization: 'Bearer patuiAgEvFzitXyIu.a0fed140f02983ccc3dfeed6c02913b5e2593253cb784a08c3cfd8ac96518ba0',
+          Authorization: `Bearer patuiAgEvFzitXyIu.a0fed140f02983ccc3dfeed6c02913b5e2593253cb784a08c3cfd8ac96518ba0`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -160,7 +160,7 @@ const modifyAccount = tool({
     }
 
     return {
-      message: 'Successfully simulated modifying account ${accountNumber}. Updated ${fieldToUpdate} to ${newValue}.',
+      message: `Successfully simulated modifying account ${accountNumber}. Updated ${fieldToUpdate} to ${newValue}.`,
     };
   },
 });
