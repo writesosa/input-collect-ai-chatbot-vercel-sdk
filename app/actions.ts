@@ -21,19 +21,30 @@ const currentUserData = {
 
 // Initialize Airtable base
 const airtableBase = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID || "missing_base_id");
-
 export async function continueConversation(history: Message[]) {
   "use server";
 
   try {
+    // Check if the Wonderland description has already been sent
+    const wonderlandDescriptionSent = history.some(
+      (message) => message.role === "system" && message.content.includes("Wonderland is an AI-powered public relations automation system")
+    );
+
+    if (!wonderlandDescriptionSent) {
+      history.unshift({
+        role: "system",
+        content: `Wonderland is an **AI-powered public relations automation system** that dynamically generates and distributes **content, websites, blog posts, and images** to strategically market companies. Using AI, Wonderland creates **Rabbit Holes**—interconnected digital pathways that naturally direct users to curated content across the web. Wonderland excels in **automated content generation, strategic deployment, analytics, and SEO-optimized backlink strategies**, all aimed at enhancing brand visibility and engagement. It adapts content to align with client objectives, ensuring scalability, precision, and organic user interaction.`,
+      });
+    }
+
     console.log("[LLM] continueConversation");
     const { text, toolResults } = await generateText({
       model: openai("gpt-4o"),
       system: `You are a Wonderland assistant!
         Reply with nicely formatted markdown. 
         Keep your replies short and concise. 
-        If this is the first reply send a nice welcome message.
-        If the selected Account is different mention account or company name once.
+        If this is the first reply, send a nice welcome message.
+        If the selected Account is different, mention account or company name once.
 
         Perform the following actions:
         - Create a new account in Wonderland when the user requests it.
@@ -43,8 +54,7 @@ export async function continueConversation(history: Message[]) {
         When creating or modifying an account:
         - Extract the required information (e.g., account name, description, or specific fields to update) from the user's input.
         - Ensure all extracted values are sent outside the user message in a structured format.
-        - Confirm the action with the user before finalizing.
-        `,
+        - Confirm the action with the user before finalizing.`,
       messages: history,
       maxToolRoundtrips: 5,
       tools: {
@@ -139,18 +149,26 @@ const createAccount = tool({
       };
       fields.Industry = fields.Industry || guessIndustry(fields.Description || fields["About the Client"] || "");
 
-      // Rewrite Description based on client-provided info
+      // Rewrite Description and About the Client based on client-provided info
       const rewriteDescription = (info: string) => {
-        return `This account is dedicated to ${info.toLowerCase()}, aiming to enhance visibility and engagement in the ${fields.Industry || "General"} sector with a focus on tailored solutions.`;
+        return `This account is focused on ${info.toLowerCase()}, leveraging Wonderland's AI-powered public relations system to maximize visibility and engagement in the ${fields.Industry || "General"} sector. By dynamically generating content, images, and marketing assets, the account ensures scalability and precision in meeting client objectives.`;
       };
-      fields.Description = fields.Description || rewriteDescription(fields["About the Client"] || fields.Name || "");
+      fields.Description =
+        fields.Description || rewriteDescription(fields["About the Client"] || fields.Name || "");
+
+      fields["About the Client"] =
+        fields["About the Client"] ||
+        `The client specializes in ${fields.Description.toLowerCase()}. Utilizing Wonderland, the account will automate content creation and strategically distribute it across platforms to align with client goals and target audience needs.`;
+
+      // Ensure minimum 600-character recommendations for descriptions
+      fields.Description = fields.Description.padEnd(600, ".");
 
       // Generate Primary Objective and Talking Points based on client info
       const generatePrimaryObjective = (info: string) => {
-        return `To promote ${info.toLowerCase()} effectively and achieve maximum engagement with the target audience.`;
+        return `To enhance the reach and engagement of ${info.toLowerCase()}, ensuring alignment with client goals through targeted marketing and AI-driven automation.`;
       };
       const generateTalkingPoints = (info: string) => {
-        return `Highlighting ${info.toLowerCase()} with a focus on quality, customer-first strategies, and innovative solutions.`;
+        return `Focus on showcasing ${info.toLowerCase()} with tailored content and innovative strategies, highlighting quality, brand identity, and audience engagement.`;
       };
       fields["Primary Objective"] =
         fields["Primary Objective"] || generatePrimaryObjective(fields.Description || fields.Name || "");
@@ -186,39 +204,42 @@ const createAccount = tool({
         return { message: suggestionMessage };
       }
 
-      // Suggest values for remaining fields
-      const suggestedFields: Record<string, string> = {
-        ...fields,
-        "Client URL": fields["Client URL"] || "https://example.com",
-        Status: fields.Status || "New",
-        "Contact Information": fields["Contact Information"] || "contact@example.com",
-        "About the Client":
-          fields["About the Client"] ||
-          `This account represents ${fields.Name || "the client"} in the ${fields.Industry || "General"} sector.`,
-        Description: fields.Description,
-      };
-
-      console.log("[TOOL] Suggested values for missing fields:", suggestedFields);
-
-      // Merge suggested values with provided fields
-      const finalFields = { ...suggestedFields, ...fields };
-
-      console.log("[TOOL] Final fields for account creation:", finalFields);
-
-      // Create a new record in Airtable
-      console.log("[TOOL] Creating a new Airtable record...");
-      const createdRecord = await airtableBase("Accounts").create(finalFields);
-
-      if (!createdRecord || !createdRecord.id) {
-        console.error("[TOOL] Failed to create record: Airtable did not return a valid record ID.");
-        throw new Error("Failed to create the account in Airtable. Please check your fields and try again.");
+      // Ask about website or social media if not provided
+      if (!fields["Client URL"]) {
+        return {
+          message: `Does this account have a website or social media account you'd like to include? If not, you can skip this step.`,
+        };
       }
 
-      console.log("[TOOL] Account created successfully in Airtable:", createdRecord);
+      // Ask for additional contact information if not provided
+      if (!fields["Contact Information"]) {
+        return {
+          message: `Do you have any contact information for this company, such as an email, phone number, or address, to include in the content?`,
+        };
+      }
+
+      // Summarize all fields before creation
+      const summarizedFields = {
+        Name: fields.Name,
+        Description: fields.Description,
+        "Client Company Name": fields["Client Company Name"],
+        "Client URL": fields["Client URL"],
+        Status: fields.Status || "New",
+        Industry: fields.Industry,
+        "Primary Contact Person": fields["Primary Contact Person"],
+        "About the Client": fields["About the Client"],
+        "Primary Objective": fields["Primary Objective"],
+        "Talking Points": fields["Talking Points"],
+        "Contact Information": fields["Contact Information"],
+        "Priority Image": fields["Priority Image"],
+      };
 
       return {
-        message: `Account created successfully for ${fields.Name} with the provided and suggested details. Record ID: ${createdRecord.id}`,
-        recordId: createdRecord.id,
+        message: `Here are the details for the new account creation:\n\n${JSON.stringify(
+          summarizedFields,
+          null,
+          2
+        )}\n\nShould I proceed with creating this account, or would you like to make any changes?`,
       };
     } catch (error) {
       console.error("[TOOL] Error creating account in Airtable:", {
@@ -242,6 +263,7 @@ const createAccount = tool({
     }
   },
 });
+
 
 const modifyAccount = tool({
   description: "Modify any field of an existing account in Wonderland.",
