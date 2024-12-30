@@ -19,7 +19,6 @@ const currentUserData = {
   balance: 0,
 };
 
-
 // Initialize Airtable base
 const airtableBase = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID || "missing_base_id");
 
@@ -69,7 +68,7 @@ export async function continueConversation(history: Message[]) {
     console.error("[LLM] Error in continueConversation:", {
       message: error instanceof Error ? error.message : "Unknown error",
       stack: error instanceof Error ? error.stack : undefined,
-      raw: error,
+      raw: JSON.stringify(error, Object.getOwnPropertyNames(error)),
     });
 
     return {
@@ -115,7 +114,11 @@ const createAccount = tool({
         recordId: createdRecord.id,
       };
     } catch (error) {
-      console.error("[TOOL] Error creating account in Airtable:", error);
+      console.error("[TOOL] Error creating account in Airtable:", {
+        message: error instanceof Error ? error.message : "Unknown error",
+        stack: error instanceof Error ? error.stack : undefined,
+        raw: JSON.stringify(error, Object.getOwnPropertyNames(error)),
+      });
 
       // Handle and throw detailed error
       const errorDetails =
@@ -134,45 +137,67 @@ const createAccount = tool({
 });
 
 const modifyAccount = tool({
-  description: "Simulate modifying an account in Wonderland.",
+  description: "Modify an existing account in Wonderland.",
   parameters: z.object({
-    accountNumber: z
-      .string()
-      .min(4)
-      .describe("The account number of the account to modify."),
-    fieldToUpdate: z
-      .string()
-      .min(1)
-      .describe(
-        "The field to update (e.g., name, phoneNumber, balance). Must be a valid field."
-      ),
-    newValue: z
-      .string()
-      .min(1)
-      .describe("The new value to assign to the specified field."),
+    recordId: z.string().optional().describe("The record ID of the account to modify."),
+    name: z.string().optional().describe("The name of the account holder."),
+    description: z.string().optional().describe("A description for the account."),
   }),
-  execute: async ({ accountNumber, fieldToUpdate, newValue }) => {
-    console.log("[TOOL] modifyAccount", { accountNumber, fieldToUpdate, newValue });
+  execute: async ({ recordId, name, description }) => {
+    console.log("[TOOL] modifyAccount", { recordId, name, description });
 
-    // Simulate account modification
-    console.log(
-      `[SIMULATION] Account Modified: Account Number: ${accountNumber}, Field Updated: ${fieldToUpdate}, New Value: ${newValue}`
-    );
+    try {
+      if (!recordId && !name) {
+        throw new Error("Either recordId or name must be provided to identify the account.");
+      }
 
-    // Update Airtable record
-    const records = await airtableBase("Accounts")
-      .select({ filterByFormula: `{AccountNumber} = "${accountNumber}"` })
-      .firstPage();
+      let accountRecord;
 
-    if (records.length > 0) {
-      const recordId = records[0].id;
-      await airtableBase("Accounts").update(recordId, {
-        [fieldToUpdate]: newValue,
+      if (recordId) {
+        console.log("[TOOL] Searching by record ID...");
+        accountRecord = await airtableBase("Accounts").find(recordId);
+      } else {
+        console.log("[TOOL] Searching by account name...");
+        const records = await airtableBase("Accounts")
+          .select({ filterByFormula: `{Name} = "${name}"` })
+          .firstPage();
+
+        if (records.length === 0) {
+          throw new Error(`No account found with the name: ${name}`);
+        }
+
+        accountRecord = records[0];
+      }
+
+      console.log("[TOOL] Account found:", accountRecord);
+
+      const updatedFields: Record<string, any> = {};
+      if (name) updatedFields.Name = name;
+      if (description) updatedFields.Description = description;
+
+      console.log("[TOOL] Updating account with fields:", updatedFields);
+
+      const updatedRecord = await airtableBase("Accounts").update(accountRecord.id, updatedFields);
+
+      console.log("[TOOL] Account updated successfully:", updatedRecord);
+
+      return {
+        message: `Account successfully updated. Updated fields: ${JSON.stringify(updatedFields)}.`,
+        recordId: updatedRecord.id,
+      };
+    } catch (error) {
+      console.error("[TOOL] Error modifying account in Airtable:", {
+        message: error instanceof Error ? error.message : "Unknown error",
+        stack: error instanceof Error ? error.stack : undefined,
+        raw: JSON.stringify(error, Object.getOwnPropertyNames(error)),
       });
-    }
 
-    return {
-      message: `Successfully simulated modifying account ${accountNumber}. Updated ${fieldToUpdate} to ${newValue}.`,
-    };
+      throw new Error(
+        JSON.stringify({
+          error: "Failed to modify account.",
+          details: error instanceof Error ? { message: error.message, stack: error.stack } : { raw: error },
+        })
+      );
+    }
   },
 });
