@@ -86,14 +86,13 @@ export async function OPTIONS() {
   });
 }
 
-function flattenErrorResponse(response: any): any {
+function flattenErrorResponse(response: any): Record<string, any> {
   if (typeof response === "object" && response !== null) {
-    return Object.keys(response).reduce((acc, key) => {
-      const value = response[key];
+    return Object.entries(response).reduce((acc: Record<string, any>, [key, value]) => {
       if (typeof value === "object" && value !== null) {
         const flattened = flattenErrorResponse(value);
-        Object.keys(flattened).forEach((nestedKey) => {
-          acc[`${key}.${nestedKey}`] = flattened[nestedKey];
+        Object.entries(flattened).forEach(([nestedKey, nestedValue]) => {
+          acc[`${key}.${nestedKey}`] = nestedValue;
         });
       } else {
         acc[key] = value;
