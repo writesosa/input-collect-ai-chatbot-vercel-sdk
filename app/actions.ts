@@ -3,8 +3,6 @@
 import { InvalidToolArgumentsError, generateText, nanoid, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
-import users from "./users.json";
-import Airtable from "airtable";
 
 export interface Message {
   role: "user" | "assistant";
@@ -19,9 +17,6 @@ const currentUserData = {
   balance: 0,
 };
 
-// Initialize Airtable base
-const airtableBase = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base("your_base_id");
-
 export async function continueConversation(history: Message[]) {
   "use server";
 
@@ -30,10 +25,8 @@ export async function continueConversation(history: Message[]) {
     const { text, toolResults } = await generateText({
       model: openai("gpt-4o"),
       system: `You are a Wonderland assistant! You only know things about Wonderland. Reply with nicely formatted markdown. Keep your reply short and concise. Don't overwhelm the user with too much information. 
-        The first message will be a payload with the current record from Airtable and is auto generated. When you receive it, respond with a message asking the user how you can help them with the account and mention the account or company name from the record information politely.
+        The first message will be a payload with the current record from Wonderland and is auto-generated. When you receive it, respond with a message asking the user how you can help them with the account and mention the account or company name from the record information politely.
 
-        Never mention the word Airtable, use Wonderland for user messages instead of Airtable.
-        
         You can _only_ perform the following actions:
         - createAccount: Simulate creating a new account in Wonderland. This tool and the parameters' collection must only be called if the user has said they want to create an account. Call the createAccount tool only when you have all required parameters. Otherwise, keep asking the user. Don't come up with the information yourself. Once you have the complete information, ask the user to confirm the new account creation before calling the tool by showing a summary of the information.
         - modifyAccount: Simulate modifying an account in Wonderland. This tool and the parameters must only be called if the user has indicated they wish to modify an account. Call the modifyAccount tool only when you have required information for the field to update. Otherwise, keep asking the user. Once you have the complete information, ask the user to confirm the request before calling the tool by showing the request information.
@@ -94,11 +87,20 @@ const createAccount = tool({
       `[SIMULATION] Account Created: Name: ${name}, Description: ${description}, Account Number: ${newAccountNumber}`
     );
 
-    // Log to Airtable
-    await airtableBase("Accounts").create({
-      Name: name,
-      Description: description,
-      AccountNumber: newAccountNumber,
+    // Log to Airtable using fetch API
+    await fetch("https://api.airtable.com/v0/appFf0nHuVTVWRjTa/Accounts", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer patuiAgEvFzitXyIu.a0fed140f02983ccc3dfeed6c02913b5e2593253cb784a08c3cfd8ac96518ba0`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        fields: {
+          Name: name,
+          Description: description,
+          AccountNumber: newAccountNumber,
+        },
+      }),
     });
 
     return {
@@ -128,20 +130,32 @@ const modifyAccount = tool({
   execute: async ({ accountNumber, fieldToUpdate, newValue }) => {
     console.log("[TOOL] modifyAccount", { accountNumber, fieldToUpdate, newValue });
 
-    // Simulate account modification
-    console.log(
-      `[SIMULATION] Account Modified: Account Number: ${accountNumber}, Field Updated: ${fieldToUpdate}, New Value: ${newValue}`
+    // Find the Airtable record using fetch API
+    const response = await fetch(
+      `https://api.airtable.com/v0/appFf0nHuVTVWRjTa/Accounts?filterByFormula={AccountNumber}="${accountNumber}"`,
+      {
+        headers: {
+          Authorization: `Bearer patuiAgEvFzitXyIu.a0fed140f02983ccc3dfeed6c02913b5e2593253cb784a08c3cfd8ac96518ba0`,
+        },
+      }
     );
+    const data = await response.json();
 
-    // Update Airtable record
-    const records = await airtableBase("Accounts")
-      .select({ filterByFormula: `{AccountNumber} = "${accountNumber}"` })
-      .firstPage();
+    if (data.records && data.records.length > 0) {
+      const recordId = data.records[0].id;
 
-    if (records.length > 0) {
-      const recordId = records[0].id;
-      await airtableBase("Accounts").update(recordId, {
-        [fieldToUpdate]: newValue,
+      // Update the record
+      await fetch(`https://api.airtable.com/v0/appFf0nHuVTVWRjTa/Accounts/${recordId}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer patuiAgEvFzitXyIu.a0fed140f02983ccc3dfeed6c02913b5e2593253cb784a08c3cfd8ac96518ba0`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fields: {
+            [fieldToUpdate]: newValue,
+          },
+        }),
       });
     }
 
@@ -150,35 +164,3 @@ const modifyAccount = tool({
     };
   },
 });
-
-// Event listener for chatbot container interaction
-if (typeof window !== "undefined") {
-  window.addEventListener("DOMContentLoaded", () => {
-    const chatbotContainer = document.getElementById("chatbot-container");
-
-    if (chatbotContainer) {
-      chatbotContainer.addEventListener("click", sendCurrentRecord);
-      chatbotContainer.addEventListener("mouseover", sendCurrentRecord);
-    }
-
-    async function sendCurrentRecord() {
-      try {
-        const urlParams = new URLSearchParams(window.location.search);
-        const recordId = urlParams.get("recordId");
-
-        if (recordId) {
-          const response = await fetch(
-            `https://www.wonderland.guru/accounts/account-details?recordId=${recordId}`
-          );
-          const record = await response.json();
-          console.log("[Frontend] Current record fetched:", record);
-
-          // Send record to Airtable
-          await airtableBase("Records").create(record);
-        }
-      } catch (error) {
-        console.error("[Frontend] Error fetching or sending record:", error);
-      }
-    }
-  });
-}
