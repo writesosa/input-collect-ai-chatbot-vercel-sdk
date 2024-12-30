@@ -137,18 +137,17 @@ const createAccount = tool({
 });
 
 const modifyAccount = tool({
-  description: "Modify an existing account in Wonderland.",
+  description: "Modify any field of an existing account in Wonderland.",
   parameters: z.object({
     recordId: z.string().optional().describe("The record ID of the account to modify."),
-    name: z.string().optional().describe("The name of the account holder."),
-    description: z.string().optional().describe("A description for the account."),
+    fields: z.record(z.string(), z.any()).describe("The fields to modify and their new values."),
   }),
-  execute: async ({ recordId, name, description }) => {
-    console.log("[TOOL] modifyAccount", { recordId, name, description });
+  execute: async ({ recordId, fields }) => {
+    console.log("[TOOL] modifyAccount", { recordId, fields });
 
     try {
-      if (!recordId && !name) {
-        throw new Error("Either recordId or name must be provided to identify the account.");
+      if (!recordId && !fields.Name) {
+        throw new Error("Either recordId or fields.Name must be provided to identify the account.");
       }
 
       let accountRecord;
@@ -159,11 +158,11 @@ const modifyAccount = tool({
       } else {
         console.log("[TOOL] Searching by account name...");
         const records = await airtableBase("Accounts")
-          .select({ filterByFormula: `{Name} = "${name}"` })
+          .select({ filterByFormula: `{Name} = "${fields.Name}"` })
           .firstPage();
 
         if (records.length === 0) {
-          throw new Error(`No account found with the name: ${name}`);
+          throw new Error(`No account found with the name: ${fields.Name}`);
         }
 
         accountRecord = records[0];
@@ -171,18 +170,14 @@ const modifyAccount = tool({
 
       console.log("[TOOL] Account found:", accountRecord);
 
-      const updatedFields: Record<string, any> = {};
-      if (name) updatedFields.Name = name;
-      if (description) updatedFields.Description = description;
+      console.log("[TOOL] Updating account with fields:", fields);
 
-      console.log("[TOOL] Updating account with fields:", updatedFields);
-
-      const updatedRecord = await airtableBase("Accounts").update(accountRecord.id, updatedFields);
+      const updatedRecord = await airtableBase("Accounts").update(accountRecord.id, fields);
 
       console.log("[TOOL] Account updated successfully:", updatedRecord);
 
       return {
-        message: `Account successfully updated. Updated fields: ${JSON.stringify(updatedFields)}.`,
+        message: `Account successfully updated. Updated fields: ${JSON.stringify(fields)}.`,
         recordId: updatedRecord.id,
       };
     } catch (error) {
