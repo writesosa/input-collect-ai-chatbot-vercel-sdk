@@ -123,24 +123,20 @@ const createAccount = tool({
         .map((record) => record.get("Primary Contact Person"))
         .filter((value): value is string => typeof value === "string");
 
-      const contactInfoSuggestions = existingRecords
-        .map((record) => record.get("Contact Information"))
-        .filter((value): value is string => typeof value === "string");
-
-      // Fetch available industry options from Airtable
-      const allowedIndustries = await airtableBase("Accounts").select({ fields: ["Industry"] }).all();
-      const industryOptions = allowedIndustries
-        .map((record) => record.get("Industry"))
-        .filter((value): value is string => typeof value === "string");
-
       // Guess Industry based on client information
       const guessIndustry = (info: string) => {
+        if (/jeep|car|vehicle|automobile/i.test(info)) return "Automotive";
         if (/dog|pet/i.test(info)) return "Pet Care";
         if (/legal|law/i.test(info)) return "Legal";
-        if (/dent/i.test(info)) return "Dental";
         return "General";
       };
       fields.Industry = fields.Industry || guessIndustry(fields.Description || fields["About the Client"] || "");
+
+      // Rewrite Description based on client-provided info
+      const rewriteDescription = (info: string) => {
+        return `This account is dedicated to ${info.toLowerCase()}, aiming to enhance visibility and engagement in the ${fields.Industry || "General"} sector with a focus on tailored solutions.`;
+      };
+      fields.Description = fields.Description || rewriteDescription(fields["About the Client"] || fields.Name || "");
 
       // Prompt for Primary Contact Person if missing
       if (!fields["Primary Contact Person"]) {
@@ -150,58 +146,19 @@ const createAccount = tool({
         return { message: suggestionMessage };
       }
 
-      // Prompt for Contact Information if missing
-      if (!fields["Contact Information"]) {
-        const suggestionMessage = contactInfoSuggestions.length > 0
-          ? `The following contact details are available: ${contactInfoSuggestions.join(", ")}. Would you like to use one of these, or provide new contact information (email, phone, website, etc.)?`
-          : "No existing contact information found. Please provide contact details for this account.";
-        return { message: suggestionMessage };
-      }
-
-      // Rewrite Description based on client-provided info
-      const rewriteDescription = (info: string) => {
-        return `This account represents ${fields.Name || "the client"}, focusing on ${info.toLowerCase()}. It aims to provide innovative and tailored solutions in the ${fields.Industry || "General"} industry.`;
-      };
-      fields.Description = fields.Description || rewriteDescription(fields["About the Client"] || fields.Name || "");
-
-      // Rewrite Primary Objective and Talking Points based on client description
-      const generatePrimaryObjective = (info: string) =>
-        `To deliver exceptional value and meet objectives by focusing on ${info.toLowerCase()}.`;
-      const generateTalkingPoints = (info: string) =>
-        `Emphasize innovation, quality, and a client-first approach to ${info.toLowerCase()}.`;
-
-      const primaryObjective =
-        fields["Primary Objective"] || generatePrimaryObjective(fields.Description || fields["About the Client"] || "");
-      const talkingPoints =
-        fields["Talking Points"] || generateTalkingPoints(fields.Description || fields["About the Client"] || "");
-
       // Suggest values for remaining fields
       const suggestedFields: Record<string, string> = {
         ...fields,
         "Client URL": fields["Client URL"] || "https://example.com",
         Status: fields.Status || "New",
-        Industry: fields.Industry || "General",
+        "Contact Information": fields["Contact Information"] || "contact@example.com",
         "About the Client":
           fields["About the Client"] ||
-          `This account represents ${fields.Name || "a client"} in the ${fields.Industry || "General"} sector.`,
-        "Primary Objective": primaryObjective,
-        "Talking Points": talkingPoints,
-        "Contact Information": fields["Contact Information"] || "contact@example.com",
+          `This account represents ${fields.Name || "the client"} in the ${fields.Industry || "General"} sector.`,
         Description: fields.Description,
       };
 
       console.log("[TOOL] Suggested values for missing fields:", suggestedFields);
-
-      // Check if there are missing fields to confirm with the user
-      const missingFields = Object.keys(suggestedFields).filter((key) => !fields[key as keyof typeof fields]);
-
-      if (missingFields.length > 0) {
-        return {
-          message: `Here are the suggested values for the new account based on the provided information:
-          ${JSON.stringify(suggestedFields, null, 2)}
-          Would you like to proceed with these values, or update any field?`,
-        };
-      }
 
       // Merge suggested values with provided fields
       const finalFields = { ...suggestedFields, ...fields };
@@ -211,6 +168,11 @@ const createAccount = tool({
       // Create a new record in Airtable
       console.log("[TOOL] Creating a new Airtable record...");
       const createdRecord = await airtableBase("Accounts").create(finalFields);
+
+      if (!createdRecord || !createdRecord.id) {
+        console.error("[TOOL] Failed to create record: Airtable did not return a valid record ID.");
+        throw new Error("Failed to create the account in Airtable. Please check your fields and try again.");
+      }
 
       console.log("[TOOL] Account created successfully in Airtable:", createdRecord);
 
@@ -240,6 +202,7 @@ const createAccount = tool({
     }
   },
 });
+
 
 
 const modifyAccount = tool({
