@@ -32,8 +32,8 @@ export async function continueConversation(history: Message[]) {
       system: `You are a Wonderland assistant!
         Reply with nicely formatted markdown. 
         Keep your replies short and concise. 
-        If this is the first message of the session reply with "How can I assist you today?"
-        If the selected Account has changed mention account or company name once (except for the first message with the payload).
+        If this is the first reply send a nice welcome message.
+        If the selected Account is different mention account or company name once.
 
         Perform the following actions:
         - Create a new account in Wonderland when the user requests it.
@@ -87,31 +87,37 @@ export async function continueConversation(history: Message[]) {
 }
 
 const createAccount = tool({
-  description: "Create a new account in Wonderland and log actions.",
+  description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
-    name: z.string().min(1).describe("The name of the account holder."),
-    description: z.string().min(1).describe("A description for the account."),
+    Name: z.string().min(1).describe("The name of the account holder."),
+    Description: z.string().min(1).describe("A description for the account."),
+    "Client Company Name": z.string().optional().describe("The name of the client company."),
+    "Client URL": z.string().optional().describe("The client's URL."),
+    Status: z.string().optional().describe("The status of the account."),
+    Industry: z.string().optional().describe("The industry of the client."),
+    "Primary Contact Person": z.string().optional().describe("The primary contact person."),
+    "About the Client": z.string().optional().describe("Information about the client."),
+    "Primary Objective": z.string().optional().describe("The primary objective of the account."),
+    "Talking Points": z.string().optional().describe("Key talking points for the account."),
+    "Contact Information": z.string().optional().describe("Contact information for the client."),
   }),
-  execute: async ({ name, description }) => {
-    console.log("[TOOL] createAccount", { name, description });
+  execute: async (fields) => {
+    console.log("[TOOL] createAccount", fields);
 
     try {
       // Validate input explicitly
-      if (!name || !description) {
-        throw new Error("Name or description is missing.");
+      if (!fields.Name || !fields.Description) {
+        throw new Error("Name and Description are required fields.");
       }
 
       // Create a new record in Airtable
       console.log("[TOOL] Creating a new Airtable record...");
-      const createdRecord = await airtableBase("Accounts").create({
-        Name: name,
-        Description: description,
-      });
+      const createdRecord = await airtableBase("Accounts").create(fields);
 
       console.log("[TOOL] Account created successfully in Airtable:", createdRecord);
 
       return {
-        message: `Account created successfully for ${name} with the description: ${description}. Record ID: ${createdRecord.id}`,
+        message: `Account created successfully for ${fields.Name} with the provided details. Record ID: ${createdRecord.id}`,
         recordId: createdRecord.id,
       };
     } catch (error) {
@@ -129,7 +135,7 @@ const createAccount = tool({
 
       throw new Error(
         JSON.stringify({
-          error: `Failed to create account for ${name}.`,
+          error: `Failed to create account for ${fields.Name}.`,
           details: errorDetails,
         })
       );
