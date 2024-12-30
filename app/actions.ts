@@ -13,22 +13,24 @@ const AIRTABLE_API_KEY = "patuiAgEvFzitXyIu.a0fed140f02983ccc3dfeed6c02913b5e259
 const AIRTABLE_BASE_ID = "appFf0nHuVTVWRjTa";
 const AIRTABLE_ACCOUNTS_TABLE = "Accounts";
 
-export async function continueConversation(history: Message[]) {
+export async function continueConversation(history: Message[], record: any = null) {
   try {
     console.log("[LLM] continueConversation - History:", JSON.stringify(history, null, 2));
+    if (record) {
+      console.log("[LLM] Record for context:", JSON.stringify(record, null, 2));
+    }
 
     const result = await generateText({
       model: "gpt-4-turbo", // OpenAI model
       system: `You are a Wonderland assistant! 
-      Reply with nicely formatted markdown. 
-      Keep your replies short and concise. 
-      If this is the first reply send a nice welcome message.
-      If the selected Account is different mention account or company name once.
+        Reply with nicely formatted markdown. 
+        Keep your replies short and concise. 
+        If this is the first reply, send a nice welcome message.
+        If the selected account is different, mention the account or company name once.
 
         Perform the following actions:
         - Create a new account in Wonderland when the user requests it.
         - Modify an existing account in Wonderland when the user requests it.
-        - Delete an existing account in Wonderland when the user requests it.
 
         When creating or modifying an account:
         - Extract the required information (e.g., account name, description, or specific fields to update) from the user's input.
@@ -36,7 +38,9 @@ export async function continueConversation(history: Message[]) {
         - Confirm the action with the user before finalizing.
         
         Log all actions and results.`,
-      messages: history,
+      messages: record
+        ? [{ role: "assistant", content: `Here's your account: ${JSON.stringify(record)}` }, ...history]
+        : history,
       tools: {
         createAccount,
         modifyAccount,
@@ -61,7 +65,7 @@ export async function continueConversation(history: Message[]) {
         ...history,
         {
           role: "assistant",
-          content: "An error occurred while processing your request.",
+          content: `An error occurred while processing your request. Error details: ${error.message}`,
         },
       ],
     };
