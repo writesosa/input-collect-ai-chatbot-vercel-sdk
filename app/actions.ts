@@ -184,7 +184,7 @@ const modifyAccount = tool({
       }
 
       const allowedIndustries = await airtableBase("Accounts").select({ fields: ["Industry"] }).all();
-      const industryOptions = allowedIndustries.map(record => record.get("Industry"));
+      const industryOptions = allowedIndustries.map(record => record.get("Industry")?.toString() || "");
       if (fields.Industry && industryOptions.includes(fields.Industry)) {
         fields.Industry = industryOptions.reduce((closest, current) =>
           fields.Industry!.toLowerCase().includes(current.toLowerCase()) ? current : closest
