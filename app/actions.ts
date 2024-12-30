@@ -83,7 +83,7 @@ export async function continueConversation(history: Message[]) {
 }
 
 const createAccount = tool({
-  description: "Simulate creating a new account in Wonderland.",
+  description: "Create a new account in Wonderland and log actions.",
   parameters: z.object({
     name: z.string().min(1).describe("The name of the account holder."),
     description: z.string().min(1).describe("A description for the account."),
@@ -91,22 +91,25 @@ const createAccount = tool({
   execute: async ({ name, description }) => {
     console.log("[TOOL] createAccount", { name, description });
 
-    // Simulate account creation
-    const newAccountNumber = nanoid();
-    console.log(
-      `[SIMULATION] Account Created: Name: ${name}, Description: ${description}, Account Number: ${newAccountNumber}`
-    );
+    try {
+      // Create a new record in Airtable
+      const createdRecord = await airtableBase("Accounts").create({
+        Name: name,
+        Description: description,
+      });
 
-    // Log to Airtable
-    await airtableBase("Accounts").create({
-      Name: name,
-      Description: description,
-      AccountNumber: newAccountNumber,
-    });
+      console.log("[TOOL] Account created successfully in Airtable:", createdRecord);
 
-    return {
-      message: `Successfully simulated creating an account for ${name} with the description: ${description}. Account Number: ${newAccountNumber}`,
-    };
+      return {
+        message: `Account created successfully for ${name} with the description: ${description}. Record ID: ${createdRecord.id}`,
+        recordId: createdRecord.id,
+      };
+    } catch (error) {
+      console.error("[TOOL] Error creating account in Airtable:", error);
+      throw new Error(
+        `Failed to create account for ${name}. Error: ${error.message}`
+      );
+    }
   },
 });
 

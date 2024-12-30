@@ -1,5 +1,3 @@
-import { continueConversation } from "../../actions";
-
 export async function POST(req: Request) {
   console.log("[POST /api/chat] Request received");
 
@@ -21,12 +19,15 @@ export async function POST(req: Request) {
 
     if (!record || !record.type) {
       console.error("[POST /api/chat] No valid record provided.");
-      return new Response(JSON.stringify({ error: "Record with valid type is required." }), {
-        status: 400,
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-        },
-      });
+      return new Response(
+        JSON.stringify({ error: "Record with valid type is required." }),
+        {
+          status: 400,
+          headers: {
+            "Access-Control-Allow-Origin": "*",
+          },
+        }
+      );
     }
 
     console.log("[POST /api/chat] Processing record and messages:", {
@@ -39,7 +40,10 @@ export async function POST(req: Request) {
       ...messages,
     ]);
 
-    console.log("[POST /api/chat] Response from continueConversation:", JSON.stringify(result, null, 2));
+    console.log(
+      "[POST /api/chat] Response from continueConversation:",
+      JSON.stringify(result, null, 2)
+    );
 
     return new Response(JSON.stringify(result), {
       headers: {
@@ -51,22 +55,35 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     console.error("[POST /api/chat] Error:", error);
-    return new Response(JSON.stringify({ error: "An error occurred." }), {
-      status: 500,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-      },
-    });
+
+    // Push detailed error to the frontend
+    return new Response(
+      JSON.stringify({
+        error: "An error occurred.",
+        details: error.message,
+        stack: error.stack,
+      }),
+      {
+        status: 500,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+        },
+      }
+    );
   }
 }
 
-export async function OPTIONS() {
-  return new Response(null, {
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-      "Access-Control-Max-Age": "86400",
-    },
+// Push logs from server to frontend
+function displayServerLogs(logData) {
+  const messagesContainer = document.getElementById("chatbot-messages");
+  const logElement = document.createElement("div");
+  logElement.className = "log";
+  logElement.textContent = `[Server Log]: ${logData}`;
+  messagesContainer.appendChild(logElement);
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("log", (event) => {
+    displayServerLogs(event.detail);
   });
 }
