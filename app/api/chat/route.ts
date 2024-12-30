@@ -77,7 +77,16 @@ export async function POST(req: Request) {
         );
       }
 
-      const accountsSummary = accounts.map((account) => ({
+      // Define type for accounts
+      type Account = {
+        id: string;
+        fields: {
+          Name: string;
+          "Client File": string;
+        };
+      };
+
+      const accountsSummary = accounts.map((account: Account) => ({
         recordId: account.id,
         accountName: account.fields["Name"],
         clientFile: account.fields["Client File"],
