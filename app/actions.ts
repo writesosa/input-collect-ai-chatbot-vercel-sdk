@@ -23,12 +23,15 @@ export async function continueConversation(history: Message[], record: any = nul
       : null;
 
     const result = await generateText({
-      model: "gpt-4-turbo", // OpenAI model
+      model: {
+        type: "openai-chat", // Specify the model type
+        name: "gpt-4-turbo", // Specify the model name
+      },
       system: `You are a Wonderland assistant! 
-      Reply with nicely formatted markdown. 
-      Keep your replies short and concise. 
-      If this is the first reply send a nice welcome message.
-      If the selected Account is different mention account or company name once.
+        Reply with nicely formatted markdown. 
+        Keep your replies short and concise. 
+        If this is the first reply send a nice welcome message.
+        If the selected Account is different mention account or company name once.
 
         Perform the following actions:
         - Create a new account in Wonderland when the user requests it.
@@ -71,88 +74,3 @@ export async function continueConversation(history: Message[], record: any = nul
     };
   }
 }
-
-const createAccount = tool({
-  description: "Create a new account in Wonderland.",
-  parameters: z.object({
-    name: z.string().min(1).describe("The name of the account holder."),
-    description: z.string().min(1).describe("A description for the account."),
-  }),
-  execute: async ({ name, description }) => {
-    console.log("[TOOL] createAccount - Parameters:", { name, description });
-
-    try {
-      const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_ACCOUNTS_TABLE}`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${AIRTABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          fields: {
-            Name: name,
-            Description: description,
-            AccountNumber: nanoid(),
-          },
-        }),
-      });
-
-      if (!response.ok) {
-        const errorDetails = await response.json();
-        throw new Error(`Failed to create account. HTTP Status: ${response.status}, Details: ${JSON.stringify(errorDetails)}`);
-      }
-
-      const data = await response.json();
-      console.log("[TOOL] createAccount - Success:", JSON.stringify(data, null, 2));
-
-      return {
-        message: `Successfully created a new account for ${name} with the description: ${description}.`,
-      };
-    } catch (error) {
-      console.error("[TOOL] createAccount - Error:", error);
-      return { message: `Failed to create account: ${error.message}` };
-    }
-  },
-});
-
-const modifyAccount = tool({
-  description: "Modify an existing account in Wonderland.",
-  parameters: z.object({
-    recordId: z.string().min(1).describe("The Airtable Record ID for the account."),
-    fieldToUpdate: z.string().min(1).describe("The field to update (e.g., Name, Description)."),
-    newValue: z.string().min(1).describe("The new value to assign to the specified field."),
-  }),
-  execute: async ({ recordId, fieldToUpdate, newValue }) => {
-    console.log("[TOOL] modifyAccount - Parameters:", { recordId, fieldToUpdate, newValue });
-
-    try {
-      const response = await fetch(`https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${AIRTABLE_ACCOUNTS_TABLE}/${recordId}`, {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${AIRTABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          fields: {
-            [fieldToUpdate]: newValue,
-          },
-        }),
-      });
-
-      if (!response.ok) {
-        const errorDetails = await response.json();
-        throw new Error(`Failed to modify account. HTTP Status: ${response.status}, Details: ${JSON.stringify(errorDetails)}`);
-      }
-
-      const data = await response.json();
-      console.log("[TOOL] modifyAccount - Success:", JSON.stringify(data, null, 2));
-
-      return {
-        message: `Successfully updated the ${fieldToUpdate} to "${newValue}" for the account.`,
-      };
-    } catch (error) {
-      console.error("[TOOL] modifyAccount - Error:", error);
-      return { message: `Failed to modify account: ${error.message}` };
-    }
-  },
-});
