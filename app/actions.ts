@@ -135,11 +135,10 @@ const createAccount = tool({
     }
   },
 });
-
 const modifyAccount = tool({
   description: "Modify any field of an existing account in Wonderland.",
   parameters: z.object({
-    recordId: z.string().optional().describe("The record ID of the account to modify."),
+    recordId: z.string().describe("The record ID of the account to modify."),
     fields: z.object({
       Description: z.string().optional(),
       "Client Company Name": z.string().optional(),
@@ -151,7 +150,11 @@ const modifyAccount = tool({
       "Primary Objective": z.string().optional(),
       "Talking Points": z.string().optional(),
       "Contact Information": z.string().optional(),
-    }).optional().describe("The fields to modify and their new values."),
+    })
+      .partial()
+      .refine((obj) => Object.keys(obj).length > 0, {
+        message: "At least one field must be provided to update.",
+      }),
   }),
   execute: async ({ recordId, fields }) => {
     console.log("[TOOL] modifyAccount", { recordId, fields });
@@ -196,3 +199,4 @@ const modifyAccount = tool({
     }
   },
 });
+
