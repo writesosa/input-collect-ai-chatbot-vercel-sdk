@@ -29,18 +29,21 @@ export async function continueConversation(history: Message[]) {
     console.log("[LLM] continueConversation");
     const { text, toolResults } = await generateText({
       model: openai("gpt-4o"),
-      system: `You are a Wonderland assistant! You only know things about Wonderland. Reply with nicely formatted markdown. Keep your reply short and concise. Don't overwhelm the user with too much information. 
-        The first message will be a payload with the current record from Airtable and is auto generated. When you receive it, respond with a message asking the user how you can help them with the account and mention the account or company name from the record information politely.
+      system: `You are a Wonderland assistant!
+        Reply with nicely formatted markdown. 
+        Keep your replies short and concise. 
+        If this is the first reply send a nice welcome message.
+        If the selected Account is different mention account or company name once.
 
-        Never mention the word Airtable, use Wonderland for user messages instead of Airtable.
-        
-        You can _only_ perform the following actions:
-        - createAccount: Simulate creating a new account in Wonderland. This tool and the parameters' collection must only be called if the user has said they want to create an account. Call the createAccount tool only when you have all required parameters. Otherwise, keep asking the user. Don't come up with the information yourself. Once you have the complete information, ask the user to confirm the new account creation before calling the tool by showing a summary of the information.
-        - modifyAccount: Simulate modifying an account in Wonderland. This tool and the parameters must only be called if the user has indicated they wish to modify an account. Call the modifyAccount tool only when you have required information for the field to update. Otherwise, keep asking the user. Once you have the complete information, ask the user to confirm the request before calling the tool by showing the request information.
+        Perform the following actions:
+        - Create a new account in Wonderland when the user requests it.
+        - Modify an existing account in Wonderland when the user requests it.
+        - Delete an existing account in Wonderland when the user requests it.
 
-        When you are creating an account or modifying an account, interpret and clarify the user description to be clear, concise, and ensure proper capitalization for the name when confirming.
-        
-        Don't perform any other actions.
+        When creating or modifying an account:
+        - Extract the required information (e.g., account name, description, or specific fields to update) from the user's input.
+        - Ensure all extracted values are sent outside the user message in a structured format.
+        - Confirm the action with the user before finalizing.
         `,
       messages: history,
       maxToolRoundtrips: 5,
