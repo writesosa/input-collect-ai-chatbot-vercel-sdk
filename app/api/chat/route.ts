@@ -47,7 +47,7 @@ export async function POST(req: Request) {
       JSON.stringify(result, null, 2)
     );
 
-    return new Response(JSON.stringify(result), {
+    return new Response(JSON.stringify(flattenErrorResponse(result)), {
       headers: {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -60,11 +60,11 @@ export async function POST(req: Request) {
 
     // Push detailed error to the frontend
     return new Response(
-      JSON.stringify({
+      JSON.stringify(flattenErrorResponse({
         error: "An error occurred.",
         details: error instanceof Error ? error.message : "Unknown error",
         stack: error instanceof Error ? error.stack : undefined,
-      }),
+      })),
       {
         status: 500,
         headers: {
@@ -84,4 +84,22 @@ export async function OPTIONS() {
       "Access-Control-Max-Age": "86400",
     },
   });
+}
+
+function flattenErrorResponse(response: any): any {
+  if (typeof response === "object" && response !== null) {
+    return Object.keys(response).reduce((acc, key) => {
+      const value = response[key];
+      if (typeof value === "object" && value !== null) {
+        const flattened = flattenErrorResponse(value);
+        Object.keys(flattened).forEach((nestedKey) => {
+          acc[`${key}.${nestedKey}`] = flattened[nestedKey];
+        });
+      } else {
+        acc[key] = value;
+      }
+      return acc;
+    }, {});
+  }
+  return response;
 }
