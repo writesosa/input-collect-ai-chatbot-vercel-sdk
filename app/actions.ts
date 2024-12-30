@@ -19,8 +19,9 @@ const currentUserData = {
   balance: 0,
 };
 
+
 // Initialize Airtable base
-const airtableBase = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base("your_base_id");
+const airtableBase = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID || "missing_base_id");
 
 export async function continueConversation(history: Message[]) {
   "use server";
