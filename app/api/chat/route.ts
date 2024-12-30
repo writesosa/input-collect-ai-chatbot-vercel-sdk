@@ -64,6 +64,7 @@ export async function POST(req: Request) {
         error: "An error occurred.",
         details: error instanceof Error ? error.message : "Unknown error",
         stack: error instanceof Error ? error.stack : undefined,
+        raw: error, // Add raw error details
       })),
       {
         status: 500,
