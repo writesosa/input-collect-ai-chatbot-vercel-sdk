@@ -117,7 +117,9 @@ const createAccount = tool({
 
       // Fetch existing accounts to suggest primary contact person
       const existingRecords = await airtableBase("Accounts").select().firstPage();
-      const primaryContactSuggestions = existingRecords.map((record) => record.get("Primary Contact Person"));
+      const primaryContactSuggestions = existingRecords
+        .map((record) => record.get("Primary Contact Person"))
+        .filter((value): value is string => typeof value === "string");
 
       // Fetch available industry options from Airtable
       const allowedIndustries = await airtableBase("Accounts").select({ fields: ["Industry"] }).all();
@@ -154,7 +156,7 @@ const createAccount = tool({
       console.log("[TOOL] Suggested values for missing fields:", suggestedFields);
 
       // Check if there are missing fields to confirm with the user
-      const missingFields = Object.keys(suggestedFields).filter((key) => !(fields as any)[key]);
+      const missingFields = Object.keys(suggestedFields).filter((key) => !fields[key as keyof typeof fields]);
 
       if (missingFields.length > 0) {
         return {
@@ -201,6 +203,7 @@ const createAccount = tool({
     }
   },
 });
+
 
 const modifyAccount = tool({
   description: "Modify any field of an existing account in Wonderland.",
