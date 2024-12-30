@@ -1,7 +1,5 @@
 "use server";
 
-"use server";
-
 import { InvalidToolArgumentsError, generateText, nanoid, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
@@ -115,7 +113,7 @@ const createAccount = tool({
       }
 
       // Title case the Name field
-      fields.Name = fields.Name.replace(/\b\w/g, (char) => char.toUpperCase());
+      fields.Name = fields.Name.replace(/\b\w/g, (char: string) => char.toUpperCase());
 
       // Initialize suggestions
       const suggestions: Record<string, string> = {};
@@ -212,8 +210,6 @@ const createAccount = tool({
     }
   },
 });
-
-
 
 const modifyAccount = tool({
   description: "Modify any field of an existing account in Wonderland.",
