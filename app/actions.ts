@@ -50,6 +50,7 @@ export async function continueConversation(history: Message[]) {
       tools: {
         createAccount,
         modifyAccount,
+        deleteAccount,
       },
     });
 
@@ -211,6 +212,54 @@ const modifyAccount = tool({
       throw new Error(
         JSON.stringify({
           error: "Failed to modify account.",
+          details: error instanceof Error ? { message: error.message, stack: error.stack } : { raw: error },
+        })
+      );
+    }
+  },
+});
+
+const deleteAccount = tool({
+  description: "Delete an existing account in Wonderland by changing its status to 'Deleted'.",
+  parameters: z.object({
+    recordId: z.string().describe("The record ID of the account to delete."),
+  }),
+  execute: async ({ recordId }) => {
+    console.log("[TOOL] deleteAccount", { recordId });
+
+    try {
+      if (!recordId) {
+        throw new Error("recordId is required to identify the account.");
+      }
+
+      console.log("[TOOL] Searching by record ID...");
+      const accountRecord = await airtableBase("Accounts").find(recordId);
+
+      if (!accountRecord) {
+        throw new Error(`No account found with the record ID: ${recordId}`);
+      }
+
+      console.log("[TOOL] Account found:", accountRecord);
+
+      console.log("[TOOL] Changing account status to 'Deleted'...");
+      const updatedRecord = await airtableBase("Accounts").update(accountRecord.id, { Status: "Deleted" });
+
+      console.log("[TOOL] Account status updated successfully:", updatedRecord);
+
+      return {
+        message: `Account with record ID ${recordId} has been successfully marked as 'Deleted'.`,
+        recordId: updatedRecord.id,
+      };
+    } catch (error) {
+      console.error("[TOOL] Error deleting account in Airtable:", {
+        message: error instanceof Error ? error.message : "Unknown error",
+        stack: error instanceof Error ? error.stack : undefined,
+        raw: JSON.stringify(error, Object.getOwnPropertyNames(error)),
+      });
+
+      throw new Error(
+        JSON.stringify({
+          error: "Failed to delete account.",
           details: error instanceof Error ? { message: error.message, stack: error.stack } : { raw: error },
         })
       );
