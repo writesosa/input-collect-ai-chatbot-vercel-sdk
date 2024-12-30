@@ -62,8 +62,8 @@ export async function POST(req: Request) {
     return new Response(
       JSON.stringify({
         error: "An error occurred.",
-        details: error.message,
-        stack: error.stack,
+        details: error instanceof Error ? error.message : "Unknown error",
+        stack: error instanceof Error ? error.stack : undefined,
       }),
       {
         status: 500,
@@ -75,17 +75,13 @@ export async function POST(req: Request) {
   }
 }
 
-// Push logs from server to frontend
-function displayServerLogs(logData) {
-  const messagesContainer = document.getElementById("chatbot-messages");
-  const logElement = document.createElement("div");
-  logElement.className = "log";
-  logElement.textContent = `[Server Log]: ${logData}`;
-  messagesContainer.appendChild(logElement);
-}
-
-if (typeof window !== "undefined") {
-  window.addEventListener("log", (event) => {
-    displayServerLogs(event.detail);
+export async function OPTIONS() {
+  return new Response(null, {
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Max-Age": "86400",
+    },
   });
 }
