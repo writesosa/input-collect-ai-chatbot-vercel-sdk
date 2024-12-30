@@ -19,9 +19,22 @@ export async function POST(req: Request) {
       });
     }
 
-    console.log("[POST /api/chat] Processing record and messages:", { record, messages });
+    if (!record) {
+      console.error("[POST /api/chat] No record provided.");
+      return new Response(JSON.stringify({ error: "Record is required." }), {
+        status: 400,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
+    }
 
-    const result = await continueConversation(messages, record);
+    console.log("[POST /api/chat] Processing record and messages:", {
+      record,
+      messages,
+    });
+
+    const result = await continueConversation([{ role: "assistant", content: `Here's your account: ${JSON.stringify(record)}` }, ...messages]);
 
     console.log("[POST /api/chat] Response from continueConversation:", JSON.stringify(result, null, 2));
 
@@ -35,7 +48,7 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     console.error("[POST /api/chat] Error:", error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: "An error occurred." }), {
       status: 500,
       headers: {
         "Access-Control-Allow-Origin": "*",
