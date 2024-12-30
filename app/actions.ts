@@ -110,14 +110,40 @@ const createAccount = tool({
         throw new Error("Name and Description are required fields.");
       }
 
+      // Title case the Name field
+      fields.Name = fields.Name.replace(/\b\w/g, (char) => char.toUpperCase());
+
+      // Suggest values for missing fields
+      const suggestedFields = {
+        "Client Company Name": fields["Client Company Name"] || "Default Company Name",
+        "Client URL": fields["Client URL"] || "https://example.com",
+        Status: fields.Status || "New",
+        Industry: fields.Industry || "General",
+        "Primary Contact Person": fields["Primary Contact Person"] || "John Doe",
+        "About the Client": fields["About the Client"] || "Default client information.",
+        "Primary Objective": fields["Primary Objective"] || "Increase engagement.",
+        "Talking Points": fields["Talking Points"] || "Focus on customer satisfaction.",
+        "Contact Information": fields["Contact Information"] || "contact@example.com",
+        Description:
+          fields.Description ||
+          `This is a new account for ${fields.Name}, established to support their primary objectives in the ${fields.Industry || "General"} industry.`,
+      };
+
+      console.log("[TOOL] Suggested values for missing fields:", suggestedFields);
+
+      // Merge suggested values with provided fields
+      const finalFields = { ...suggestedFields, ...fields };
+
+      console.log("[TOOL] Final fields for account creation:", finalFields);
+
       // Create a new record in Airtable
       console.log("[TOOL] Creating a new Airtable record...");
-      const createdRecord = await airtableBase("Accounts").create(fields);
+      const createdRecord = await airtableBase("Accounts").create(finalFields);
 
       console.log("[TOOL] Account created successfully in Airtable:", createdRecord);
 
       return {
-        message: `Account created successfully for ${fields.Name} with the provided details. Record ID: ${createdRecord.id}`,
+        message: `Account created successfully for ${fields.Name} with the provided and suggested details. Record ID: ${createdRecord.id}`,
         recordId: createdRecord.id,
       };
     } catch (error) {
