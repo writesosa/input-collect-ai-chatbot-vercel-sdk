@@ -136,7 +136,6 @@ const createAccount = tool({
     }
   },
 });
-
 const modifyAccount = tool({
   description: "Modify any field of an existing account in Wonderland.",
   parameters: z.object({
@@ -180,16 +179,21 @@ const modifyAccount = tool({
       const allowedStatuses = ["Active", "Disabled", "New"];
       if (fields.Status) {
         fields.Status = allowedStatuses.reduce((closest, current) =>
-          fields.Status!.toLowerCase().includes(current.toLowerCase()) ? current : closest
-        , allowedStatuses[0]);
+          fields.Status!.toLowerCase().includes(current.toLowerCase()) ? current : closest,
+          allowedStatuses[0]
+        );
       }
 
       const allowedIndustries = await airtableBase("Accounts").select({ fields: ["Industry"] }).all();
-      const industryOptions = allowedIndustries.map(record => record.get("Industry")?.toString() || "");
+      const industryOptions = allowedIndustries
+        .map((record) => record.get("Industry"))
+        .filter((value) => typeof value === "string") as string[];
+
       if (fields.Industry && industryOptions.includes(fields.Industry)) {
         fields.Industry = industryOptions.reduce((closest, current) =>
-          fields.Industry!.toLowerCase().includes(current.toLowerCase()) ? current : closest
-        , industryOptions[0]);
+          fields.Industry!.toLowerCase().includes(current.toLowerCase()) ? current : closest,
+          industryOptions[0]
+        );
       }
 
       console.log("[TOOL] Updating account with fields:", fields);
@@ -218,6 +222,7 @@ const modifyAccount = tool({
     }
   },
 });
+
 
 const deleteAccount = tool({
   description: "Delete an existing account in Wonderland by changing its status to 'Deleted'.",
