@@ -89,8 +89,8 @@ export async function continueConversation(history: Message[]) {
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
-    Name: z.string().min(1).describe("The name of the account holder."),
-    Description: z.string().min(1).describe("A description for the account."),
+    Name: z.string().optional().describe("The name of the account holder."),
+    Description: z.string().optional().describe("A description for the account."),
     "Client Company Name": z.string().optional().describe("The name of the client company."),
     "Client URL": z.string().optional().describe("The client's URL."),
     Status: z.string().optional().describe("The status of the account."),
@@ -105,9 +105,11 @@ const createAccount = tool({
     console.log("[TOOL] createAccount", fields);
 
     try {
-      // Validate input explicitly
-      if (!fields.Name || !fields.Description) {
-        throw new Error("Name and Description are required fields.");
+      // If Name is missing, prompt the user for it
+      if (!fields.Name) {
+        return {
+          message: "Please provide the name of the account holder to proceed.",
+        };
       }
 
       // Title case the Name field
@@ -130,6 +132,17 @@ const createAccount = tool({
       };
 
       console.log("[TOOL] Suggested values for missing fields:", suggestedFields);
+
+      // Check if there are missing fields to confirm with the user
+      const missingFields = Object.keys(suggestedFields).filter((key) => !fields[key]);
+
+      if (missingFields.length > 0) {
+        return {
+          message: `The following fields are missing and have been auto-generated: ${missingFields.join(", ")}. Here are the suggested values:
+          ${JSON.stringify(suggestedFields, null, 2)}
+          Would you like to proceed with these values, or update any field?`,
+        };
+      }
 
       // Merge suggested values with provided fields
       const finalFields = { ...suggestedFields, ...fields };
