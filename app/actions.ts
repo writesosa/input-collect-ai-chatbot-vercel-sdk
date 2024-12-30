@@ -85,7 +85,6 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
-
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -115,59 +114,22 @@ const createAccount = tool({
       // Title case the Name field
       fields.Name = fields.Name.replace(/\b\w/g, (char: string) => char.toUpperCase());
 
-      // Initialize suggestions
-      const suggestions: Record<string, string> = {};
-
-      // Prompt for missing Company Name
-      if (!fields["Client Company Name"]) {
-        return {
-          message: "What is the company name for this account?",
-        };
-      }
-      suggestions["Client Company Name"] = fields["Client Company Name"];
-
-      // Prompt for missing "About the Client"
-      if (!fields["About the Client"]) {
-        return {
-          message: "Can you tell me a little about the client?",
-        };
-      }
-      suggestions["About the Client"] = fields["About the Client"];
-
-      // Fetch available industry options from Airtable
+      // Fetch available industry options
       const allowedIndustries = await airtableBase("Accounts").select({ fields: ["Industry"] }).all();
       const industryOptions = allowedIndustries
         .map((record) => record.get("Industry"))
         .filter((value): value is string => typeof value === "string");
 
-      // Prompt for Industry if missing
-      if (!fields.Industry) {
-        return {
-          message: `What industry is the client in? Here are some suggestions: ${industryOptions.join(", ")}`,
-        };
-      }
-      suggestions.Industry = fields.Industry;
-
-      // Fetch existing accounts to suggest primary contact person
-      const existingRecords = await airtableBase("Accounts").select().firstPage();
-      const primaryContactSuggestions = existingRecords
-        .map((record) => record.get("Primary Contact Person"))
-        .filter((value): value is string => typeof value === "string");
-
-      suggestions["Primary Contact Person"] =
-        fields["Primary Contact Person"] ||
-        (primaryContactSuggestions.length > 0 ? primaryContactSuggestions[0] : "John Doe");
-
-      // Generate "About the Client" if still missing
-      const aboutTheClient =
-        fields["About the Client"] ||
-        `This account represents ${fields.Name} in the ${fields.Industry || "General"} sector. The client specializes in unique and innovative solutions tailored to industry needs.`;
-
-      // Suggest values for remaining fields
+      // Suggest and auto-generate missing fields
       const suggestedFields: Record<string, string> = {
-        ...suggestions,
+        "Client Company Name": fields["Client Company Name"] || "Default Company Name",
         "Client URL": fields["Client URL"] || "https://example.com",
         Status: fields.Status || "New",
+        Industry: fields.Industry || (industryOptions.length > 0 ? industryOptions[0] : "General"),
+        "Primary Contact Person": fields["Primary Contact Person"] || "John Doe",
+        "About the Client":
+          fields["About the Client"] ||
+          `This account represents ${fields.Name}, focusing on innovative and client-specific solutions.`,
         "Primary Objective":
           fields["Primary Objective"] ||
           "To achieve a high level of customer satisfaction and engagement.",
@@ -177,17 +139,30 @@ const createAccount = tool({
         "Contact Information": fields["Contact Information"] || "contact@example.com",
         Description:
           fields.Description ||
-          `This is a newly created account for ${fields.Name}, established to support their objectives in the ${fields.Industry || "General"} industry with a focus on excellence.`,
+          `This is a newly created account for ${fields.Name}, established to support their objectives in the ${fields.Industry || "General"} industry.`,
       };
 
-      console.log("[TOOL] Suggested values for missing fields:", suggestedFields);
+      console.log("[TOOL] Suggested values for account creation:", suggestedFields);
+
+      // Confirm with user for final details
+      if (Object.keys(fields).length < Object.keys(suggestedFields).length) {
+        return {
+          message: `Here are the auto-generated suggestions for the missing details:
+          ${JSON.stringify(suggestedFields, null, 2)}
+          Would you like to proceed with these values, or update any field?`,
+        };
+      }
+
+      // Create a new record in Airtable
+      console.log("[TOOL] Creating a new Airtable record with final values...");
+      const createdRecord = await airtableBase("Accounts").create(suggestedFields);
+
+      console.log("[TOOL] Account created successfully in Airtable:", createdRecord);
 
       return {
-        message: `Here are the suggested values for the new account creation based on the provided information:
-        ${JSON.stringify(suggestedFields, null, 2)}
-        Would you like to proceed with these values, or update any field?`,
+        message: `Account created successfully for ${fields.Name}. Record ID: ${createdRecord.id}`,
+        recordId: createdRecord.id,
       };
-
     } catch (error) {
       console.error("[TOOL] Error creating account in Airtable:", {
         message: error instanceof Error ? error.message : "Unknown error",
@@ -210,6 +185,7 @@ const createAccount = tool({
     }
   },
 });
+
 
 const modifyAccount = tool({
   description: "Modify any field of an existing account in Wonderland.",
