@@ -3,30 +3,37 @@
 import { InvalidToolArgumentsError, generateText, nanoid, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
+import users from "./users.json";
 import Airtable from "airtable";
 
 export interface Message {
-  role: "user" | "assistant" | "system";
+  role: "user" | "assistant";
   content: string;
 }
+
+// Simulated user data for logging and updates
+const currentUserData = {
+  name: "",
+  accountNumber: "",
+  phoneNumber: "",
+  balance: 0,
+};
 
 // Initialize Airtable base
 const airtableBase = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base("your_base_id");
 
-// Function to handle continuing a conversation
 export async function continueConversation(history: Message[]) {
   "use server";
 
   try {
     console.log("[LLM] continueConversation");
-
     const { text, toolResults } = await generateText({
       model: openai("gpt-4o"),
       system: `You are a Wonderland assistant!
         Reply with nicely formatted markdown. 
         Keep your replies short and concise. 
-        If this is the first reply, send a warm welcome message.
-        If multiple accounts are provided, list them in a clear, structured format.
+        If this is the first reply send a nice welcome message.
+        If the selected Account is different mention account or company name once.
 
         Perform the following actions:
         - Create a new account in Wonderland when the user requests it.
@@ -37,7 +44,7 @@ export async function continueConversation(history: Message[]) {
         - Extract the required information (e.g., account name, description, or specific fields to update) from the user's input.
         - Ensure all extracted values are sent outside the user message in a structured format.
         - Confirm the action with the user before finalizing.
-      `,
+        `,
       messages: history,
       maxToolRoundtrips: 5,
       tools: {
@@ -59,24 +66,22 @@ export async function continueConversation(history: Message[]) {
     };
   } catch (error) {
     if (error instanceof InvalidToolArgumentsError) {
-      console.error("[continueConversation] Invalid tool arguments:", error.toJSON());
+      console.log(error.toJSON());
     } else {
-      console.error("[continueConversation] Error:", error);
+      console.log(error);
     }
-
     return {
       messages: [
         ...history,
         {
-          role: "assistant",
-          content: "An error occurred while processing your request. Please try again.",
+          role: "assistant" as const,
+          content: "There's a problem executing the request. Please try again.",
         },
       ],
     };
   }
 }
 
-// Tool to create a new account
 const createAccount = tool({
   description: "Simulate creating a new account in Wonderland.",
   parameters: z.object({
@@ -86,11 +91,13 @@ const createAccount = tool({
   execute: async ({ name, description }) => {
     console.log("[TOOL] createAccount", { name, description });
 
+    // Simulate account creation
     const newAccountNumber = nanoid();
     console.log(
       `[SIMULATION] Account Created: Name: ${name}, Description: ${description}, Account Number: ${newAccountNumber}`
     );
 
+    // Log to Airtable
     await airtableBase("Accounts").create({
       Name: name,
       Description: description,
@@ -98,12 +105,11 @@ const createAccount = tool({
     });
 
     return {
-      message: `Successfully created a new account for ${name} with the description: "${description}". Account Number: ${newAccountNumber}`,
+      message: `Successfully simulated creating an account for ${name} with the description: ${description}. Account Number: ${newAccountNumber}`,
     };
   },
 });
 
-// Tool to modify an existing account
 const modifyAccount = tool({
   description: "Simulate modifying an account in Wonderland.",
   parameters: z.object({
@@ -125,39 +131,69 @@ const modifyAccount = tool({
   execute: async ({ accountNumber, fieldToUpdate, newValue }) => {
     console.log("[TOOL] modifyAccount", { accountNumber, fieldToUpdate, newValue });
 
-    const records = await airtableBase("Accounts")
-      .select({ filterByFormula: `{AccountNumber} = "${accountNumber}"` })
-      .firstPage();
-
-    if (records.length === 0) {
-      throw new Error(`No account found with Account Number: ${accountNumber}`);
-    }
-
-    const recordId = records[0].id;
-    await airtableBase("Accounts").update(recordId, {
-      [fieldToUpdate]: newValue,
-    });
-
+    // Simulate account modification
     console.log(
       `[SIMULATION] Account Modified: Account Number: ${accountNumber}, Field Updated: ${fieldToUpdate}, New Value: ${newValue}`
     );
 
+    // Update Airtable record
+    const records = await airtableBase("Accounts")
+      .select({ filterByFormula: `{AccountNumber} = "${accountNumber}"` })
+      .firstPage();
+
+    if (records.length > 0) {
+      const recordId = records[0].id;
+      await airtableBase("Accounts").update(recordId, {
+        [fieldToUpdate]: newValue,
+      });
+    }
+
     return {
-      message: `Successfully updated account ${accountNumber}. Changed ${fieldToUpdate} to "${newValue}".`,
+      message: `Successfully simulated modifying account ${accountNumber}. Updated ${fieldToUpdate} to ${newValue}.`,
     };
   },
 });
 
-// Helper function to log user interaction on the frontend
-export async function logUserInteraction(interaction: string, recordId: string | null = null) {
-  console.log("[User Interaction] Logging interaction:", interaction, "Record ID:", recordId);
+// Event listener for chatbot container interaction
+if (typeof window !== "undefined") {
+  window.addEventListener("DOMContentLoaded", () => {
+    const chatbotContainer = document.getElementById("chatbot-container");
 
-  const log = {
-    Interaction: interaction,
-    RecordID: recordId || "N/A",
-    Timestamp: new Date().toISOString(),
-  };
+    if (chatbotContainer) {
+      chatbotContainer.addEventListener("click", sendCurrentRecord);
+      chatbotContainer.addEventListener("mouseover", sendCurrentRecord);
+    }
 
-  await airtableBase("InteractionLogs").create(log);
-  console.log("[User Interaction] Logged interaction successfully.");
+    async function sendCurrentRecord() {
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const recordId = urlParams.get("recordId");
+
+        const type = recordId ? "accounts" : "home";
+
+        if (recordId) {
+          const response = await fetch(
+            `https://www.wonderland.guru/accounts/account-details?recordId=${recordId}`
+          );
+          const record = await response.json();
+
+          const filteredRecord = {
+            recordId: record.id,
+            accountName: record.fields["Name"],
+            clientFile: record.fields["Client File"],
+          };
+
+          console.log("[Frontend] Current record fetched:", filteredRecord);
+
+          // Send record to Airtable
+          await airtableBase("Records").create(filteredRecord);
+        } else {
+          console.log("[Frontend] Sending page type only:", type);
+          await airtableBase("Records").create({ type });
+        }
+      } catch (error) {
+        console.error("[Frontend] Error fetching or sending record:", error);
+      }
+    }
+  });
 }
