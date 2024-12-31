@@ -84,6 +84,9 @@ const createAccount = tool({
     Description: z.string().optional().describe("A description for the account."),
     "Client Company Name": z.string().optional().describe("The name of the client company."),
     "Client URL": z.string().optional().describe("The client's URL."),
+    "Instagram": z.string().optional().describe("The Instagram handle of the client."),
+    "Facebook": z.string().optional().describe("The Facebook page URL of the client."),
+    "Blog": z.string().optional().describe("The blog URL of the client."),
     Status: z.string().optional().describe("The status of the account."),
     Industry: z.string().optional().describe("The industry of the client."),
     "Primary Contact Person": z.string().optional().describe("The primary contact person."),
@@ -122,12 +125,18 @@ const createAccount = tool({
 
       // Guess Industry based on client information
       const guessIndustry = (info: string) => {
-        if (/jeep|car|vehicle|automobile/i.test(info)) return "Automotive";
-        if (/dog|pet/i.test(info)) return "Pet Care";
-        if (/legal|law/i.test(info)) return "Legal";
-        return "General";
+        const matches = industryOptions.filter((industry) => new RegExp(industry, "i").test(info));
+        return matches.length > 0 ? matches[0] : "General";
       };
       fields.Industry = fields.Industry || guessIndustry(fields.Description || fields["About the Client"] || "");
+
+      if (fields.Industry === "General") {
+        logs.push("[TOOL] Unable to determine industry. Asking user...");
+        return {
+          message: "I couldn't determine the industry. Could you specify it? Available options are: " + industryOptions.join(", "),
+          logs,
+        };
+      }
 
       logs.push(`[TOOL] Industry guessed: ${fields.Industry}`);
 
@@ -146,6 +155,34 @@ const createAccount = tool({
 
       logs.push("[TOOL] Primary Objective and Talking Points generated.");
 
+      // Check Priority Image and Prompt user if not set
+      const priorityImageOptions = ["AI Generated", "Google Images", "Stock Images", "Uploaded Media", "Social Media"];
+      if (!fields["Priority Image"]) {
+        const priorityPrompt = `Please choose a Priority Image type for the account. Available options are: ${priorityImageOptions.join(", ")}.`;
+        logs.push(priorityPrompt);
+        return { message: priorityPrompt, logs };
+      }
+
+      // Check for optional URLs and social fields
+      const urlFields = ["Client URL", "Instagram", "Facebook", "Blog"];
+      const urlRegex = /(https?:\/\/)?([\w.-]+)(\.\w+)([\w\/-]*)?/;
+
+      urlFields.forEach((field) => {
+        if (!fields[field]) {
+          logs.push(`[TOOL] ${field} not provided. Asking user...`);
+          return {
+            message: `Do you have a ${field} to add? If yes, please provide it in the format of a valid link.`,
+            logs,
+          };
+        } else if (!urlRegex.test(fields[field]!)) {
+          logs.push(`[TOOL] Invalid ${field} provided. Asking user to correct...`);
+          return {
+            message: `${field} seems invalid. Could you provide it again in a valid link format?`,
+            logs,
+          };
+        }
+      });
+
       // Finalize fields
       const finalFields = {
         ...fields,
@@ -155,22 +192,10 @@ const createAccount = tool({
 
       logs.push("[TOOL] Final fields prepared for Airtable creation:", JSON.stringify(finalFields, null, 2));
 
-      // Create Airtable record
-      logs.push("[TOOL] Creating record in Airtable...");
-      const createdRecord = await airtableBase("Accounts").create(finalFields);
-
-      if (!createdRecord || !createdRecord.id) {
-        logs.push("[TOOL] Airtable record creation failed.");
-        throw new Error("Failed to create the account in Airtable.");
-      }
-
-      logs.push(`[TOOL] Account created successfully with Record ID: ${createdRecord.id}`);
-
-      return {
-        message: `Account created successfully for ${fields.Name}. Record ID: ${createdRecord.id}`,
-        recordId: createdRecord.id,
-        logs,
-      };
+      // Summarize changes and confirm
+      const summary = `Summary of changes:\n\nFields provided:\n${JSON.stringify(fields, null, 2)}\n\nFields generated:\n- Industry: ${fields.Industry}\n- About the Client: ${fields["About the Client"]}\n- Primary Objective: ${fields["Primary Objective"]}\n- Talking Points: ${fields["Talking Points"]}\n\nDo you want to create the account with these details? (yes/no)`;
+      logs.push(summary);
+      return { message: summary, logs };
     } catch (error) {
       logs.push("[TOOL] Error during account creation:", error instanceof Error ? error.message : JSON.stringify(error));
       throw { message: "Account creation failed. Check logs for details.", logs };
