@@ -84,33 +84,64 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
-
-
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
-    Name: z.string().optional().describe("The name of the account holder."),
-    Description: z.string().optional().describe("A description for the account."),
-    "Client Company Name": z.string().optional().describe("The name of the client company."),
-    "Client URL": z.string().optional().describe("The client's URL."),
-    Status: z.string().optional().describe("The status of the account."),
-    Industry: z.string().optional().describe("The industry of the client."),
-    "Primary Contact Person": z.string().optional().describe("The primary contact person."),
-    "About the Client": z.string().optional().describe("Information about the client."),
-    "Primary Objective": z.string().optional().describe("The primary objective of the account."),
-    "Talking Points": z.string().optional().describe("Key talking points for the account."),
-    "Contact Information": z.string().optional().describe("Contact information for the client."),
-    "Priority Image": z.string().optional().describe("The type of images this account should generate or display."),
-    Instagram: z.string().optional().describe("The Instagram URL for the client."),
-    Facebook: z.string().optional().describe("The Facebook URL for the client."),
-    Blog: z.string().optional().describe("The Blog URL for the client."),
-    "Other Social Accounts": z.string().optional().describe("Other social accounts for the client."),
+    Name: z.string().optional(),
+    Description: z.string().optional(),
+    "Client Company Name": z.string().optional(),
+    "Client URL": z.string().optional(),
+    Status: z.string().optional(),
+    Industry: z.string().optional(),
+    "Primary Contact Person": z.string().optional(),
+    "About the Client": z.string().optional(),
+    "Primary Objective": z.string().optional(),
+    "Talking Points": z.string().optional(),
+    "Contact Information": z.string().optional(),
+    "Priority Image": z.string().optional(),
+    Instagram: z.string().optional(),
+    Facebook: z.string().optional(),
+    Blog: z.string().optional(),
+    "Other Social Accounts": z.string().optional(),
   }),
   execute: async (fields) => {
     const logs: string[] = [];
     try {
       logs.push("[TOOL] Starting account creation process...");
       logs.push("[TOOL] Initial fields received: " + JSON.stringify(fields, null, 2));
+
+      // Identify missing fields
+      const missingFields = Object.keys(fields).filter((key) => !fields[key]);
+      if (missingFields.length > 0) {
+        logs.push(`[TOOL] Missing fields detected: ${missingFields.join(", ")}`);
+
+        const suggestions = await generateText({
+          model: openai("gpt-4o"),
+          system: `You are a Wonderland assistant. Suggest values for the following missing fields based on the provided account details.`,
+          messages: [
+            {
+              role: "user",
+              content: `Missing fields: ${missingFields.join(", ")}\nProvided fields: ${JSON.stringify(
+                fields,
+                null,
+                2
+              )}`,
+            },
+          ],
+        });
+
+        logs.push(`[TOOL] Suggested values for missing fields: ${JSON.stringify(suggestions)}`);
+        return {
+          message: `The following fields are missing: ${missingFields.join(
+            ", "
+          )}. Here are the suggested values:\n\n${JSON.stringify(
+            suggestions,
+            null,
+            2
+          )}\n\nWould you like to proceed with these suggestions?`,
+          logs,
+        };
+      }
 
       // Ensure Name and Client Company Name consistency
       if (!fields.Name && fields["Client Company Name"]) {
@@ -119,12 +150,12 @@ const createAccount = tool({
         fields["Client Company Name"] = fields.Name;
       }
 
-      // Title case the Name field
+      // Format Name field to title case
       if (fields.Name) {
         fields.Name = fields.Name.replace(/\b\w/g, (char) => char.toUpperCase());
       }
 
-      logs.push("[TOOL] Updated Name and Client Company Name: " + fields.Name);
+      logs.push(`[TOOL] Updated Name and Client Company Name: ${fields.Name}`);
 
       // Fetch available industry options from Airtable
       logs.push("[TOOL] Fetching available industries from Airtable...");
@@ -135,7 +166,7 @@ const createAccount = tool({
 
       logs.push("[TOOL] Available industries: " + JSON.stringify(industryOptions));
 
-      // Guess Industry based on client information
+      // Guess Industry based on available data
       const guessIndustry = (info: string) => {
         const lowerInfo = info.toLowerCase();
         const matchedIndustry = industryOptions.find((industry) =>
@@ -145,9 +176,9 @@ const createAccount = tool({
       };
       fields.Industry = fields.Industry || guessIndustry(fields.Description || fields["About the Client"] || "");
 
-      logs.push("[TOOL] Guessed Industry: " + fields.Industry);
+      logs.push(`[TOOL] Guessed Industry: ${fields.Industry}`);
 
-      // Rewrite "About the Client"
+      // Rewrite "About the Client" if not provided
       fields["About the Client"] =
         fields["About the Client"] ||
         `The client specializes in ${fields.Description?.toLowerCase()}. Utilizing Wonderland, the account will automate content creation and strategically distribute it across platforms to align with client goals and target audience needs.`;
@@ -155,16 +186,11 @@ const createAccount = tool({
       logs.push("[TOOL] About the Client: " + fields["About the Client"]);
 
       // Generate Primary Objective and Talking Points
-      const generatePrimaryObjective = (info: string) => {
-        return `To enhance the reach and engagement of ${info.toLowerCase()}, ensuring alignment with client goals through targeted marketing and AI-driven automation.`;
-      };
-      const generateTalkingPoints = (info: string) => {
-        return [
-          `Showcase expertise in ${info.toLowerCase()}.`,
-          "Highlight innovative solutions for target audiences.",
-          "Focus on building trust and brand identity.",
-        ].join("\n");
-      };
+      const generatePrimaryObjective = (info: string) =>
+        `To enhance the reach and engagement of ${info.toLowerCase()}, ensuring alignment with client goals through targeted marketing and AI-driven automation.`;
+      const generateTalkingPoints = (info: string) =>
+        `Focus on showcasing ${info.toLowerCase()} with tailored content and innovative strategies, highlighting quality, brand identity, and audience engagement.`;
+
       fields["Primary Objective"] =
         fields["Primary Objective"] || generatePrimaryObjective(fields.Description || fields.Name || "the client");
       fields["Talking Points"] =
@@ -173,7 +199,7 @@ const createAccount = tool({
       logs.push("[TOOL] Primary Objective: " + fields["Primary Objective"]);
       logs.push("[TOOL] Talking Points: " + fields["Talking Points"]);
 
-      // Ensure minimum 600-character recommendations for descriptions
+      // Finalize Description field
       fields.Description =
         fields.Description ||
         `This account is focused on ${fields.Name?.toLowerCase() || "the client"}, ensuring tailored solutions for the ${fields.Industry || "General"} sector. Utilizing Wonderland, it maximizes visibility and engagement for strategic growth.`;
@@ -181,14 +207,7 @@ const createAccount = tool({
 
       logs.push("[TOOL] Final Description: " + fields.Description);
 
-      // Prompt for Priority Image field if missing
-      if (!fields["Priority Image"]) {
-        return {
-          message: `What kind of images should this account generate or display? Please choose one of the following options: AI Generated, Stock Images, Google Images, Social Media, Uploaded Media.`,
-        };
-      }
-
-      // Summarize all fields before confirmation
+      // Summarize fields for confirmation
       const summarizedFields = {
         Name: fields.Name || "Not provided",
         Description: fields.Description || "Not provided",
@@ -202,39 +221,35 @@ const createAccount = tool({
         "Talking Points": fields["Talking Points"] || "Not provided",
         "Contact Information": fields["Contact Information"] || "Not provided",
         "Priority Image": fields["Priority Image"] || "Not provided",
-        Instagram: fields.Instagram || "Not provided",
-        Facebook: fields.Facebook || "Not provided",
-        Blog: fields.Blog || "Not provided",
-        "Other Social Accounts": fields["Other Social Accounts"] || "Not provided",
       };
 
-      logs.push("[TOOL] Summarized fields for confirmation: " + JSON.stringify(summarizedFields, null, 2));
+      logs.push("[TOOL] Finalized fields: " + JSON.stringify(summarizedFields, null, 2));
 
-      // Create the account in Airtable
+      // Create account in Airtable
       logs.push("[TOOL] Creating account in Airtable...");
       const createdRecord = await airtableBase("Accounts").create(fields);
 
       if (!createdRecord || !createdRecord.id) {
-        logs.push("[TOOL] Failed to create account: Airtable did not return a valid record ID.");
         throw new Error("Failed to create the account in Airtable.");
       }
 
       logs.push("[TOOL] Account created successfully with Record ID: " + createdRecord.id);
 
       return {
-        message: `Account created successfully for ${fields.Name}. Record ID: ${createdRecord.id}`,
-        logs,
+        message: `Account "${fields.Name}" created successfully with Record ID: ${createdRecord.id}`,
         recordId: createdRecord.id,
+        logs,
       };
     } catch (error) {
-      logs.push("[TOOL] Error during account creation: " + (error instanceof Error ? error.message : JSON.stringify(error)));
+      logs.push("[TOOL] Error during account creation: " + JSON.stringify(error));
       throw {
-        message: "Failed to create account. Check logs for details.",
+        message: "Account creation failed. Check logs for details.",
         logs,
       };
     }
   },
 });
+
 
 
 const modifyAccount = tool({
