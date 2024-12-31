@@ -76,7 +76,6 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
-// `createAccount` logic
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -155,35 +154,30 @@ const createAccount = tool({
 
       logs.push("[TOOL] Primary Objective and Talking Points generated.");
 
-      // Check Priority Image and Prompt user if not set
-      const priorityImageOptions = ["AI Generated", "Google Images", "Stock Images", "Uploaded Media", "Social Media"];
-      if (!fields["Priority Image"]) {
-        const priorityPrompt = `Please choose a Priority Image type for the account. Available options are: ${priorityImageOptions.join(", ")}.`;
-        logs.push(priorityPrompt);
-        return { message: priorityPrompt, logs };
-      }
-
-     // Check for optional URLs and social fields
-      const urlFields = ["Client URL", "Instagram", "Facebook", "Blog"] as const; // Define as a tuple of constant strings
+      // Check for optional URLs and social fields
+      const urlFields = ["Client URL", "Instagram", "Facebook", "Blog"] as const;
       const urlRegex = /(https?:\/\/)?([\w.-]+)(\.\w+)([\w\/-]*)?/;
 
+      const missingOrInvalidUrls: string[] = [];
       urlFields.forEach((field) => {
-        const value = fields[field as keyof typeof fields]; // Assert the key type
+        const value = fields[field as keyof typeof fields];
         if (!value) {
-          logs.push(`[TOOL] ${field} not provided. Asking user...`);
-          throw {
-            message: `Do you have a ${field} to add? If yes, please provide it in the format of a valid link.`,
-            logs,
-          };
+          logs.push(`[TOOL] ${field} not provided.`);
+          missingOrInvalidUrls.push(field);
         } else if (!urlRegex.test(value)) {
-          logs.push(`[TOOL] Invalid ${field} provided. Asking user to correct...`);
-          throw {
-            message: `${field} seems invalid. Could you provide it again in a valid link format?`,
-            logs,
-          };
+          logs.push(`[TOOL] Invalid ${field} provided: ${value}`);
+          missingOrInvalidUrls.push(field);
         }
       });
 
+      if (missingOrInvalidUrls.length > 0) {
+        const promptMessage = `The following fields are missing or invalid: ${missingOrInvalidUrls.join(", ")}. Please provide valid values for these fields.`;
+        logs.push(promptMessage);
+        return {
+          message: promptMessage,
+          logs,
+        };
+      }
 
       // Finalize fields
       const finalFields = {
@@ -204,7 +198,6 @@ const createAccount = tool({
     }
   },
 });
-
 
 
 const modifyAccount = tool({
