@@ -47,14 +47,20 @@ export async function POST(req: Request) {
       JSON.stringify(result, null, 2)
     );
 
-    return new Response(JSON.stringify(flattenErrorResponse(result)), {
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
-        "Content-Type": "application/json",
-      },
-    });
+    return new Response(
+      JSON.stringify({
+        ...flattenErrorResponse(result),
+        logs: result.logs || [], // Include logs in the response
+      }),
+      {
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type",
+          "Content-Type": "application/json",
+        },
+      }
+    );
   } catch (error) {
     console.error("[POST /api/chat] Error:", error);
 
@@ -64,7 +70,7 @@ export async function POST(req: Request) {
         error: "An error occurred.",
         details: error instanceof Error ? error.message : "Unknown error",
         stack: error instanceof Error ? error.stack : undefined,
-        raw: error, // Add raw error details
+        raw: error,
       })),
       {
         status: 500,
