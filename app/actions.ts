@@ -17,52 +17,83 @@ let currentRecordId: string | null = null;
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
-  let progressTracker = { description: false, website: false, objectives: false };
+
+  let progressTracker = {
+    name: false,
+    description: false,
+    website: false,
+    objectives: false,
+  };
+
+  const updateProgressTracker = (field) => {
+    if (progressTracker.hasOwnProperty(field)) progressTracker[field] = true;
+  };
+
+  const allFieldsComplete = () => Object.values(progressTracker).every((status) => status);
+
+  const getNextPrompt = (fields, tracker, accountName) => {
+    if (!tracker.description) return `Could you provide a brief description of the company "${accountName}" and its industry?`;
+    if (!tracker.website) return `Could you share the company's website and any social media links?`;
+    if (!tracker.objectives) return `Could you share any major talking points and primary objectives for "${accountName}"?`;
+    return "";
+  };
 
   try {
     logs.push("[LLM] Starting continueConversation...");
     console.log("[LLM] Starting continueConversation...");
 
-    // Detect fields from user messages
-    for (const msg of history) {
-      if (msg.role === "user") {
-        if (!fieldsToUpdate.Name && msg.content.toLowerCase().includes("called")) {
-          fieldsToUpdate.Name = toTitleCase(msg.content.match(/called\s(.+)/i)?.[1] || "");
-        }
-        if (!fieldsToUpdate.Description && msg.content.toLowerCase().includes("about")) {
-          fieldsToUpdate.Description = msg.content.match(/about\s(.+)/i)?.[1];
-          progressTracker.description = true;
-        }
-        if (!fieldsToUpdate["Client URL"] && msg.content.toLowerCase().includes("website")) {
-          fieldsToUpdate["Client URL"] = msg.content.match(/website\s+is\s+(\S+)/i)?.[1];
-          progressTracker.website = true;
-        }
-      }
+    const detectIntentWithLLM = async (history) => {
+      const { text } = await generateText({
+        model: openai("gpt-4o"),
+        system: `You are a Wonderland assistant!\n          Reply with nicely formatted markdown.\n          Keep your replies short and concise.\n          If this is the first reply, send a nice welcome message.\n          If the selected Account is different, mention the account or company name once.\n          \n          Perform the following actions:\n          - Create a new account in Wonderland when the user requests it.\n          - Modify an existing account in Wonderland when the user requests it.\n          - Delete an existing account in Wonderland when the user requests it.\n          - Synchronize all fields dynamically in real-time as new information becomes available.\n          - Validate actions to ensure they are successfully executed in Airtable.\n          - Confirm the current record being worked on, including the Record ID.\n          - After creating an account, follow up with prompts for more details:\n            1. Ask for a brief description of the company and the industry.\n            2. Request the company's website and any social media links.\n            3. Ask about major talking points and primary objectives.`,
+        messages: [
+          ...history,
+          { role: "assistant", content: "What would you like to do: create, modify, or delete an account?" },
+        ],
+        maxTokens: 50,
+      });
+      return text.toLowerCase().includes("create") || text.toLowerCase().includes("make")
+        ? "create"
+        : text.toLowerCase().includes("modify") || text.toLowerCase().includes("edit")
+        ? "modify"
+        : text.toLowerCase().includes("delete") || text.toLowerCase().includes("remove")
+        ? "delete"
+        : "unknown";
+    };
+
+    const intent = await detectIntentWithLLM(history);
+
+    if (intent === "unknown") {
+      return {
+        messages: [
+          ...history,
+          {
+            role: "assistant",
+            content: "What would you like to do: create, modify, or delete an account?",
+          },
+        ],
+        logs,
+      };
     }
 
-    // Ensure draft record is created when Name is detected
-    if (fieldsToUpdate.Name && !currentRecordId) {
-      logs.push(`[LLM] Detected account name: ${fieldsToUpdate.Name}`);
-      console.log(`[LLM] Detected account name: ${fieldsToUpdate.Name}`);
-
+    if (intent === "create" && !currentRecordId) {
+      logs.push("[LLM] Creating new account...");
       const createResponse = await createAccount.execute({
-        Name: fieldsToUpdate.Name,
-        "Priority Image Type": "AI Generated", // Default value
+        Name: fieldsToUpdate.Name || "Unnamed Account",
+        "Priority Image Type": "AI Generated",
       });
 
       if (createResponse.recordId) {
         currentRecordId = createResponse.recordId;
         logs.push(`[TOOL] Draft created with Record ID: ${currentRecordId}`);
+        progressTracker.name = true;
       } else {
         throw new Error("Failed to create draft account.");
       }
     }
 
-    // Dynamically update fields in Airtable for the current record
-    if (currentRecordId && Object.keys(fieldsToUpdate).length > 0) {
-      logs.push(`[TOOL] Updating record ID ${currentRecordId} with new fields...`);
-      console.log(`[TOOL] Updating record ID ${currentRecordId} with new fields:`, fieldsToUpdate);
-
+    if (intent === "modify" && currentRecordId) {
+      logs.push(`[LLM] Modifying account with Record ID: ${currentRecordId}`);
       const modifyResponse = await modifyAccount.execute({
         recordId: currentRecordId,
         fields: fieldsToUpdate,
@@ -75,65 +106,14 @@ export async function continueConversation(history: Message[]) {
       logs.push(`[TOOL] Fields updated successfully for Record ID: ${currentRecordId}`);
     }
 
-    // Process LLM message and handle follow-up prompts
-    let assistantResponse = "";
-    if (!progressTracker.description) {
-      assistantResponse = `I have the name "${fieldsToUpdate.Name}". Could you give me a little description about the company and the industry?`;
-    } else if (!progressTracker.website) {
-      assistantResponse = `Could you provide the company's website URL and any social media links for "${fieldsToUpdate.Name}"?`;
-    } else if (!progressTracker.objectives) {
-      assistantResponse = `Could you share any major talking points and primary objectives for "${fieldsToUpdate.Name}"?`;
-    } else {
-      assistantResponse = `The account "${fieldsToUpdate.Name}" has been updated with the provided details. Would you like to finalize and create the account as active?`;
-    }
-
-    const { text, toolResults } = await generateText({
-      model: openai("gpt-4o"),
-      system: `You are a Wonderland assistant!
-        Reply with nicely formatted markdown. 
-        Keep your replies short and concise. 
-        If this is the first reply, send a nice welcome message.
-        If the selected Account is different, mention the account or company name once.
-
-        Perform the following actions:
-        - Create a new account in Wonderland when the user requests it.
-        - Modify an existing account in Wonderland when the user requests it.
-        - Synchronize all fields dynamically in real-time as new information becomes available.
-        - Validate actions to ensure they are successfully executed in Airtable.
-        - Confirm the current record being worked on, including the Record ID.
-        - After creating an account, follow up with prompts for more details:
-          1. Ask for a brief description of the company and the industry.
-          2. Request the company's website and any social media links.
-          3. Ask about major talking points and primary objectives.`,
-      messages: history,
-      maxToolRoundtrips: 5,
-      tools: {
-        createAccount,
-        modifyAccount,
-        deleteAccount,
-      },
-    });
-
-    logs.push("[LLM] Conversation processed successfully.");
-    console.log("[LLM] Conversation processed successfully.");
-
-    // Collect tool logs
-    toolResults.forEach((toolResult) => {
-      if (toolResult.result && toolResult.result.logs) {
-        toolResult.result.logs.forEach((log: string) => {
-          logs.push(log);
-          console.log("[TOOL LOG]", log);
-        });
-      }
-    });
+    const nextPrompt = allFieldsComplete()
+      ? `The account "${fieldsToUpdate.Name}" has been updated with the provided details. Would you like to finalize and create the account as active?`
+      : getNextPrompt(fieldsToUpdate, progressTracker, fieldsToUpdate.Name);
 
     return {
       messages: [
         ...history,
-        {
-          role: "assistant",
-          content: assistantResponse || text || toolResults.map((toolResult) => toolResult.result.message).join("\n"),
-        },
+        { role: "assistant", content: nextPrompt },
       ],
       logs,
     };
@@ -146,15 +126,14 @@ export async function continueConversation(history: Message[]) {
         ...history,
         {
           role: "assistant",
-          content: `An error occurred: ${
-            error instanceof Error ? error.message : "Unknown error"
-          }`,
+          content: `An error occurred: ${error instanceof Error ? error.message : "Unknown error"}`,
         },
       ],
       logs,
     };
   }
 }
+
 
 // Helper: Convert string to Title Case
 const toTitleCase = (str: string): string =>
