@@ -19,36 +19,22 @@ export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
 
-  interface ProgressTracker {
-    name: boolean;
-    description: boolean;
-    website: boolean;
-    objectives: boolean;
-  }
-
-  interface FieldsToUpdate {
-    name?: string;
-    description?: string;
-    website?: string;
-    objectives?: string;
-  }
-
-  let progressTracker: ProgressTracker = {
+  let progressTracker = {
     name: false,
     description: false,
     website: false,
     objectives: false,
   };
 
-  const responseCache = new Set<string>(); // To track recent user responses
+  const responseCache = new Set(); // To track recent user responses
 
-  const updateProgressTracker = (field: keyof ProgressTracker) => {
-    if (field in progressTracker) progressTracker[field] = true;
+  const updateProgressTracker = (field: string) => {
+    if (progressTracker.hasOwnProperty(field)) progressTracker[field] = true;
   };
 
-  const allFieldsComplete = (): boolean => Object.values(progressTracker).every((status) => status);
+  const allFieldsComplete = () => Object.values(progressTracker).every((status) => status);
 
-  const getNextPrompt = (fields: FieldsToUpdate, tracker: ProgressTracker, accountName: string | undefined): string => {
+  const getNextPrompt = (fields: Record<string, any>, tracker: typeof progressTracker, accountName: string) => {
     if (!tracker.description) return `Could you provide a brief description of the company "${accountName}" and its industry?`;
     if (!tracker.website) return `Could you share the company's website and any social media links?`;
     if (!tracker.objectives) return `Could you share any major talking points and primary objectives for "${accountName}"?`;
@@ -59,43 +45,33 @@ export async function continueConversation(history: Message[]) {
     logs.push("[LLM] Starting continueConversation...");
     console.log("[LLM] Starting continueConversation...");
 
-    const detectIntentWithLLM = async (history: Message[]): Promise<string> => {
+    const detectIntentWithLLM = async (history: Message[]) => {
       const { text } = await generateText({
         model: openai("gpt-4o"),
-        system: `You are a Wonderland assistant!\n          Reply with nicely formatted markdown.\n          Keep your replies short and concise.\n          If this is the first reply, send a nice welcome message.\n          If the selected Account is different, mention the account or company name once.\n          \n          Perform the following actions:\n          - Create a new account in Wonderland when the user requests it.\n          - Modify an existing account in Wonderland when the user requests it.\n          - Delete an existing account in Wonderland when the user requests it.\n          - Synchronize all fields dynamically in real-time as new information becomes available.\n          - Validate actions to ensure they are successfully executed in Airtable.\n          - Confirm the current record being worked on, including the Record ID.\n          - After creating an account, follow up with prompts for more details:\n            1. Ask for a brief description of the company and the industry.\n            2. Request the company's website and any social media links.\n            3. Ask about major talking points and primary objectives.`,
-        messages: [
-          ...history,
-          { role: "assistant", content: "What would you like to do: create, modify, or delete an account?" },
-        ],
-        maxTokens: 50,
+        system: `You are a Wonderland assistant!\n          Reply with nicely formatted markdown.\n          Keep your replies short and concise.\n          If this is the first reply, send a nice welcome message.\n          If the selected Account is different, mention the account or company name once.\n          \n          Perform the following actions:\n          - Respond to user queries to clarify their intent (e.g., create, modify, delete, or other actions).\n          - Provide examples of what actions the user can take, such as "create an account," "modify an account," or "delete an account."\n          - Once the user's intent is clear, proceed with the appropriate workflow.`,
+        messages: history,
+        maxTokens: 100,
       });
-      return text.toLowerCase().includes("create") || text.toLowerCase().includes("make")
-        ? "create"
-        : text.toLowerCase().includes("modify") || text.toLowerCase().includes("edit")
-        ? "modify"
-        : text.toLowerCase().includes("delete") || text.toLowerCase().includes("remove")
-        ? "delete"
-        : "unknown";
+      return text.trim();
     };
 
+    const latestUserMessage = history.filter((msg) => msg.role === "user").pop()?.content;
     const intent = await detectIntentWithLLM(history);
 
-    if (intent === "unknown") {
+    if (!intent) {
       return {
         messages: [
           ...history,
           {
             role: "assistant",
-            content: "What would you like to do: create, modify, or delete an account?",
+            content: "I can help you with actions like creating, modifying, or deleting an account. What would you like to do? For example, you could say, 'create a new account for XYZ' or 'modify the account for ABC.'",
           },
         ],
         logs,
       };
     }
 
-    const latestUserMessage = history.filter((msg) => msg.role === "user").pop()?.content;
-
-    if (latestUserMessage && responseCache.has(latestUserMessage)) {
+    if (responseCache.has(latestUserMessage)) {
       return {
         messages: [
           ...history,
@@ -108,11 +84,11 @@ export async function continueConversation(history: Message[]) {
       };
     }
 
-    if (latestUserMessage) responseCache.add(latestUserMessage);
+    responseCache.add(latestUserMessage);
 
-    if (intent === "create" && !currentRecordId) {
+    if (intent.toLowerCase().includes("create") && !currentRecordId) {
       logs.push("[LLM] Creating new account...");
-      const accountName = fieldsToUpdate.name || "Unnamed Account";
+      const accountName = fieldsToUpdate.Name || "Unnamed Account";
 
       const createResponse = await createAccount.execute({
         Name: accountName,
@@ -122,13 +98,13 @@ export async function continueConversation(history: Message[]) {
       if (createResponse.recordId) {
         currentRecordId = createResponse.recordId;
         logs.push(`[TOOL] Draft created with Record ID: ${currentRecordId}`);
-        updateProgressTracker("name");
+        progressTracker.name = true;
       } else {
         throw new Error("Failed to create draft account.");
       }
     }
 
-    if (intent === "modify" && currentRecordId) {
+    if (intent.toLowerCase().includes("modify") && currentRecordId) {
       logs.push(`[LLM] Modifying account with Record ID: ${currentRecordId}`);
       const modifyResponse = await modifyAccount.execute({
         recordId: currentRecordId,
@@ -143,8 +119,8 @@ export async function continueConversation(history: Message[]) {
     }
 
     const nextPrompt = allFieldsComplete()
-      ? `The account "${fieldsToUpdate.name}" has been updated with the provided details. Would you like to finalize and create the account as active?`
-      : getNextPrompt(fieldsToUpdate, progressTracker, fieldsToUpdate.name);
+      ? `The account "${fieldsToUpdate.Name}" has been updated with the provided details. Would you like to finalize and create the account as active?`
+      : getNextPrompt(fieldsToUpdate, progressTracker, fieldsToUpdate.Name || "Unnamed Account");
 
     return {
       messages: [
