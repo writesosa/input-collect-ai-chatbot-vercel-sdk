@@ -76,7 +76,6 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
-
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -123,6 +122,11 @@ const createAccount = tool({
         .map((record) => record.get("Industry"))
         .filter((value): value is string => typeof value === "string");
 
+      if (industryOptions.length === 0) {
+        logs.push("[TOOL] No industries found in Airtable.");
+        throw { message: "No industries available in Airtable.", logs };
+      }
+
       // Guess Industry based on client information
       const guessIndustry = (info: string) => {
         const matches = industryOptions.filter((industry) => new RegExp(industry, "i").test(info));
@@ -163,24 +167,14 @@ const createAccount = tool({
         return { message: priorityPrompt, logs };
       }
 
-      // Check for optional URLs and social fields
+      // Collect optional URLs
       const urlFields: (keyof typeof fields)[] = ["Client URL", "Instagram", "Facebook", "Blog"];
-      const urlRegex = /(https?:\/\/)?([\w.-]+)(\.\w+)([\w\/-]*)?/;
+      const missingUrls = urlFields.filter((field) => !fields[field]);
 
-      for (const field of urlFields) {
-        if (!fields[field]) {
-          logs.push(`[TOOL] ${field} not provided. Asking user...`);
-          return {
-            message: `Do you have any of the following to add? ${urlFields.join(", ")}. Please provide them in the appropriate format.`,
-            logs,
-          };
-        } else if (!urlRegex.test(fields[field]!)) {
-          logs.push(`[TOOL] Invalid ${field} provided. Asking user to correct...`);
-          return {
-            message: `${field} seems invalid. Could you provide it again in a valid link format?`,
-            logs,
-          };
-        }
+      if (missingUrls.length > 0) {
+        const urlPrompt = `Do you have any of the following to add? ${missingUrls.join(", ")}. Please provide them in the appropriate format if available.`;
+        logs.push(urlPrompt);
+        return { message: urlPrompt, logs };
       }
 
       // Finalize fields
@@ -193,8 +187,8 @@ const createAccount = tool({
       logs.push("[TOOL] Final fields prepared for Airtable creation:", JSON.stringify(finalFields, null, 2));
 
       // Summarize changes and confirm
-      const summary = `Summary of changes:\n\nFields provided:\n${JSON.stringify(fields, null, 2)}\n\nFields generated:\n- Industry: ${fields.Industry}\n- About the Client: ${fields["About the Client"]}\n- Primary Objective: ${fields["Primary Objective"]}\n- Talking Points: ${fields["Talking Points"]}\n\nDo you want to create the account with these details? (yes/no)`;
-      logs.push(summary);
+      const summary = `### Account Summary\n\n**Provided Fields:**\n${JSON.stringify(fields, null, 2)}\n\n**Generated Fields:**\n- Industry: ${fields.Industry}\n- About the Client: ${fields["About the Client"]}\n- Primary Objective: ${fields["Primary Objective"]}\n- Talking Points: ${fields["Talking Points"]}\n\nWould you like to create the account with these details? (yes/no)`;
+      logs.push("[TOOL] Summary prepared:", summary);
       return { message: summary, logs };
     } catch (error) {
       logs.push("[TOOL] Error during account creation:", error instanceof Error ? error.message : JSON.stringify(error));
@@ -202,6 +196,7 @@ const createAccount = tool({
     }
   },
 });
+
 
 
 const modifyAccount = tool({
