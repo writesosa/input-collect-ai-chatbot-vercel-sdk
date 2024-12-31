@@ -33,6 +33,7 @@ export async function continueConversation(history: Message[]) {
         - Delete an existing account in Wonderland when the user requests it.
 
         When creating or modifying an account:
+        - Create the account in Draft status as soon as the Name or Client Company Name is known.
         - Extract the required information (e.g., account name, description, or specific fields to update) from the user's input.
         - Ensure all extracted values are sent outside the user message in a structured format.
         - Confirm the action with the user before finalizing.`,
@@ -88,7 +89,6 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
-
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
