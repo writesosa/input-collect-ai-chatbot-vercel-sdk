@@ -81,6 +81,8 @@ export async function continueConversation(history: Message[]) {
         - Modify an existing account in Wonderland when the user requests it.
         - Delete an existing account in Wonderland when the user requests it.
         - Switch to a different account by looking up records based on a specific field and value.
+        - Answer questions you know about Wonderland.
+        - When the request is unknown prompt the user for more information to establish intent.
 
         When creating, modifying, or switching accounts:
         - Confirm the action with the user before finalizing.
