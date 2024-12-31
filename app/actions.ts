@@ -1,19 +1,4 @@
-"use server";
 
-import { InvalidToolArgumentsError, generateText, tool } from "ai";
-import { openai } from "@ai-sdk/openai";
-import { z } from "zod";
-import Airtable from "airtable";
-
-// Initialize Airtable base
-const airtableBase = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID || "missing_base_id");
-
-export interface Message {
-  role: "user" | "assistant";
-  content: string;
-}
-
-let currentRecordId: string | null = null;
 "use server";
 
 import { InvalidToolArgumentsError, generateText, tool } from "ai";
