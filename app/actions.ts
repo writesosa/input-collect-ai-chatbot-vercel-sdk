@@ -13,18 +13,6 @@ export interface Message {
   content: string;
 }
 
-// Helper: Convert string to Title Case
-const toTitleCase = (str: string): string =>
-  str.replace(/\w\S*/g, (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
-
-// Helper: Simulated confirmation function
-async function confirmAccountChanges(recordId: string): Promise<boolean> {
-  console.log(`[CONFIRMATION] Confirming account changes for Record ID: ${recordId}`);
-  // Simulated confirmation logic. Replace with actual UI handling if necessary.
-  return true;
-}
-
-// Main Conversation Handling
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   let draftCreated = false;
@@ -80,25 +68,53 @@ export async function continueConversation(history: Message[]) {
       console.log("[TOOL] Fields updated successfully:", modifyResponse);
     }
 
-    // Confirm and finalize draft
-    if (recordId) {
-      const confirmationResponse = await confirmAccountChanges(recordId);
-      if (confirmationResponse) {
-        await airtableBase("Accounts").update(recordId, { Status: "New" });
-        logs.push("[LLM] Account status updated to 'New'.");
-        console.log("[LLM] Account status updated to 'New'.");
-      } else {
-        logs.push("[LLM] User declined to finalize account.");
-        console.log("[LLM] User declined to finalize account.");
+    // Process LLM message
+    const { text, toolResults } = await generateText({
+      model: openai("gpt-4o"),
+      system: `You are a Wonderland assistant!
+        Reply with nicely formatted markdown. 
+        Keep your replies short and concise. 
+        If this is the first reply, send a nice welcome message.
+        If the selected Account is different, mention the account or company name once.
+
+        Perform the following actions:
+        - Create a new account in Wonderland when the user requests it.
+        - Modify an existing account in Wonderland when the user requests it.
+        - Delete an existing account in Wonderland when the user requests it.
+
+        When creating or modifying an account:
+        - Create the account in Draft status as soon as the Name or Client Company Name is known.
+        - Extract the required information (e.g., account name, description, or specific fields to update) from the user's input.
+        - Ensure all extracted values are sent outside the user message in a structured format.
+        - Confirm the action with the user before finalizing.`,
+      messages: history,
+      maxToolRoundtrips: 5,
+      tools: {
+        createAccount,
+        modifyAccount,
+        deleteAccount,
+      },
+    });
+
+    logs.push("[LLM] Conversation processed successfully.");
+    console.log("[LLM] Conversation processed successfully.");
+
+    // Collect tool logs
+    toolResults.forEach((toolResult) => {
+      if (toolResult.result && toolResult.result.logs) {
+        toolResult.result.logs.forEach((log: string) => {
+          logs.push(log);
+          console.log("[TOOL LOG]", log);
+        });
       }
-    }
+    });
 
     return {
       messages: [
         ...history,
         {
           role: "assistant",
-          content: "Draft creation process completed.",
+          content: text || toolResults.map((toolResult) => toolResult.result.message).join("\n"),
         },
       ],
       logs,
@@ -121,6 +137,10 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
+
+// Helper: Convert string to Title Case
+const toTitleCase = (str: string): string =>
+  str.replace(/\w\S*/g, (word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
 
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
