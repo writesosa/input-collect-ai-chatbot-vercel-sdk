@@ -162,26 +162,27 @@ const createAccount = tool({
         logs.push(priorityPrompt);
         return { message: priorityPrompt, logs };
       }
+// Check for optional URLs and social fields
+const urlFields = ["Client URL", "Instagram", "Facebook", "Blog"];
+const urlRegex = /(https?:\/\/)?([\w.-]+)(\.\w+)([\w\/-]*)?/;
 
-      // Check for optional URLs and social fields
-      const urlFields = ["Client URL", "Instagram", "Facebook", "Blog"];
-      const urlRegex = /(https?:\/\/)?([\w.-]+)(\.\w+)([\w\/-]*)?/;
+urlFields.forEach((field) => {
+  const value = fields[field as keyof typeof fields]; // Explicitly assert the field type
+  if (!value) {
+    logs.push(`[TOOL] ${field} not provided. Asking user...`);
+    return {
+      message: `Do you have a ${field} to add? If yes, please provide it in the format of a valid link.`,
+      logs,
+    };
+  } else if (!urlRegex.test(value)) {
+    logs.push(`[TOOL] Invalid ${field} provided. Asking user to correct...`);
+    return {
+      message: `${field} seems invalid. Could you provide it again in a valid link format?`,
+      logs,
+    };
+  }
+});
 
-      urlFields.forEach((field) => {
-        if (!fields[field]) {
-          logs.push(`[TOOL] ${field} not provided. Asking user...`);
-          return {
-            message: `Do you have a ${field} to add? If yes, please provide it in the format of a valid link.`,
-            logs,
-          };
-        } else if (!urlRegex.test(fields[field]!)) {
-          logs.push(`[TOOL] Invalid ${field} provided. Asking user to correct...`);
-          return {
-            message: `${field} seems invalid. Could you provide it again in a valid link format?`,
-            logs,
-          };
-        }
-      });
 
       // Finalize fields
       const finalFields = {
