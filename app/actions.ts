@@ -17,24 +17,31 @@ export interface Message {
 let currentRecordId: string | null = null;
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
-  const fieldsToUpdate: Record<string, any> = {};
+  const fieldsToUpdate: Record<string, string | undefined> = {};
 
-  let progressTracker = {
+  // Allow dynamic keys with boolean values
+  let progressTracker: { [key: string]: boolean } = {
     name: false,
     description: false,
     website: false,
     objectives: false,
   };
 
-  const responseCache = new Set(); // To track recent user responses
+  const responseCache = new Set<string>(); // Track recent user responses
 
   const updateProgressTracker = (field: string) => {
-    if (progressTracker.hasOwnProperty(field)) progressTracker[field] = true;
+    if (field in progressTracker) {
+      progressTracker[field] = true;
+    }
   };
 
   const allFieldsComplete = () => Object.values(progressTracker).every((status) => status);
 
-  const getNextPrompt = (fields: Record<string, any>, tracker: typeof progressTracker, accountName: string) => {
+  const getNextPrompt = (
+    fields: Record<string, string | undefined>,
+    tracker: typeof progressTracker,
+    accountName: string
+  ): string => {
     if (!tracker.description) return `Could you provide a brief description of the company "${accountName}" and its industry?`;
     if (!tracker.website) return `Could you share the company's website and any social media links?`;
     if (!tracker.objectives) return `Could you share any major talking points and primary objectives for "${accountName}"?`;
@@ -43,23 +50,24 @@ export async function continueConversation(history: Message[]) {
 
   try {
     logs.push("[LLM] Starting continueConversation...");
-    console.log("[LLM] Starting continueConversation...");
 
     const detectIntentWithLLM = async (history: Message[]) => {
       const { text } = await generateText({
         model: openai("gpt-4o"),
-        system: `You are a Wonderland assistant, an AI-powered public relations automation system. You help users dynamically create, modify, or delete accounts and assist with content creation for marketing campaigns.
-          Respond with formatted markdown. Clarify intent dynamically based on user input by asking guiding questions like:
-          - Would you like to create, modify, or delete an account?
-          - Examples: "Create an account for ABC", "Modify the account for XYZ", or "Delete the account for DEF."
-          Once intent is clear, proceed with the requested workflow.`,
+        system: `You are a Wonderland assistant, an AI-powered public relations automation system. 
+          Help users create, modify, or delete accounts, and assist with content creation. 
+          Clarify intent when necessary, and ask guiding questions with examples:
+          - Create an account for XYZ.
+          - Modify the account for ABC.
+          - Delete the account for DEF.
+          If intent is unclear, prompt the user for clarification.`,
         messages: history,
         maxTokens: 100,
       });
       return text.trim();
     };
 
-    const latestUserMessage = history.filter((msg) => msg.role === "user").pop()?.content;
+    const latestUserMessage = history.filter((msg) => msg.role === "user").pop()?.content || "";
     const intent = await detectIntentWithLLM(history);
 
     if (!intent) {
@@ -68,7 +76,7 @@ export async function continueConversation(history: Message[]) {
           ...history,
           {
             role: "assistant",
-            content: "I can assist with creating, modifying, or deleting accounts. Could you clarify what you would like to do? For example, 'Create an account for XYZ' or 'Modify the account for ABC.'",
+            content: "I can help you with actions like creating, modifying, or deleting an account. Could you clarify what you would like to do?",
           },
         ],
         logs,
@@ -102,7 +110,7 @@ export async function continueConversation(history: Message[]) {
       if (createResponse.recordId) {
         currentRecordId = createResponse.recordId;
         logs.push(`[TOOL] Draft created with Record ID: ${currentRecordId}`);
-        progressTracker.name = true;
+        updateProgressTracker("name");
       } else {
         throw new Error("Failed to create draft account.");
       }
@@ -135,7 +143,6 @@ export async function continueConversation(history: Message[]) {
     };
   } catch (error) {
     logs.push("[LLM] Error during conversation:", error instanceof Error ? error.message : JSON.stringify(error));
-    console.error("[LLM] Error during conversation:", error);
 
     return {
       messages: [
