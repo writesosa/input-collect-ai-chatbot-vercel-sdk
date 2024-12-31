@@ -9,7 +9,7 @@ import Airtable from "airtable";
 const airtableBase = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID || "missing_base_id");
 
 export interface Message {
-  role: "user" | "assistant";
+  role: "user";
   content: string;
 }
 
@@ -27,7 +27,7 @@ export async function continueConversation(history: Message[]) {
     history.forEach((msg) => {
       if (msg.role === "user") {
         if (!fieldsToUpdate.Name && msg.content.toLowerCase().includes("called")) {
-          fieldsToUpdate.Name = msg.content.match(/called\s(.+)/i)?.[1];
+          fieldsToUpdate.Name = toTitleCase(msg.content.match(/called\s(.+)/i)?.[1] || "");
         }
         if (!fieldsToUpdate.Description && msg.content.toLowerCase().includes("about")) {
           fieldsToUpdate.Description = msg.content.match(/about\s(.+)/i)?.[1];
@@ -35,20 +35,14 @@ export async function continueConversation(history: Message[]) {
       }
     });
 
-    // Convert Name to title case
-    if (fieldsToUpdate.Name) {
-      fieldsToUpdate.Name = fieldsToUpdate.Name.replace(/\w\S*/g, (word) =>
-        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-      );
-    }
-
-    // Check if Name is detected and create a draft account
+    // Ensure draft record is created when Name is detected
     if (fieldsToUpdate.Name && !draftCreated) {
       logs.push(`[LLM] Detected account name: ${fieldsToUpdate.Name}`);
       console.log(`[LLM] Detected account name: ${fieldsToUpdate.Name}`);
 
       const createResponse = await createAccount.execute({
         Name: fieldsToUpdate.Name,
+        "Priority Image Type": "AI Generated", // Default value
       });
 
       recordId = createResponse.recordId || null;
@@ -57,10 +51,10 @@ export async function continueConversation(history: Message[]) {
       logs.push(`[TOOL] Draft created with Record ID: ${recordId}`);
     }
 
-    // Update additional fields incrementally if the draft exists
+    // Update additional fields incrementally
     if (recordId && Object.keys(fieldsToUpdate).length > 1) {
       const updateFields = { ...fieldsToUpdate };
-      delete updateFields.Name; // Avoid updating Name again
+      delete updateFields.Name;
 
       logs.push("[TOOL] Updating draft record with new fields:", JSON.stringify(updateFields, null, 2));
       console.log("[TOOL] Updating draft record with new fields:", updateFields);
@@ -74,24 +68,11 @@ export async function continueConversation(history: Message[]) {
       console.log("[TOOL] Fields updated successfully:", modifyResponse);
     }
 
+    // Process LLM message
     const { text, toolResults } = await generateText({
       model: openai("gpt-4o"),
-      system: `You are a Wonderland assistant!
-        Reply with nicely formatted markdown. 
-        Keep your replies short and concise. 
-        If this is the first reply, send a nice welcome message.
-        If the selected Account is different, mention the account or company name once.
-
-        Perform the following actions:
-        - Create a new account in Wonderland when the user requests it.
-        - Modify an existing account in Wonderland when the user requests it.
-        - Delete an existing account in Wonderland when the user requests it.
-
-        When creating or modifying an account:
-        - Create the account in Draft status as soon as the Name or Client Company Name is known.
-        - Extract the required information (e.g., account name, description, or specific fields to update) from the user's input.
-        - Ensure all extracted values are sent outside the user message in a structured format.
-        - Confirm the action with the user before finalizing.`,
+      system: `You are a Wonderland assistant...
+        ...`,
       messages: history,
       maxToolRoundtrips: 5,
       tools: {
@@ -104,7 +85,7 @@ export async function continueConversation(history: Message[]) {
     logs.push("[LLM] Conversation processed successfully.");
     console.log("[LLM] Conversation processed successfully.");
 
-    // Collect TOOL logs
+    // Collect tool logs
     toolResults.forEach((toolResult) => {
       if (toolResult.result && toolResult.result.logs) {
         toolResult.result.logs.forEach((log: string) => {
@@ -119,12 +100,10 @@ export async function continueConversation(history: Message[]) {
         ...history,
         {
           role: "assistant",
-          content:
-            text ||
-            toolResults.map((toolResult) => toolResult.result.message).join("\n"),
+          content: text || toolResults.map((toolResult) => toolResult.result.message).join("\n"),
         },
       ],
-      logs, // Include all logs in the response
+      logs,
     };
   } catch (error) {
     logs.push("[LLM] Error during conversation:", error instanceof Error ? error.message : JSON.stringify(error));
@@ -135,7 +114,7 @@ export async function continueConversation(history: Message[]) {
         ...history,
         {
           role: "assistant",
-          content: `There's a problem executing the request. Please try again. Error details: ${
+          content: `An error occurred: ${
             error instanceof Error ? error.message : "Unknown error"
           }`,
         },
@@ -144,6 +123,11 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
+
+// Helper: Convert string to Title Case
+const toTitleCase = (str: string): string =>
+  str.replace(/\w\S*/g, (word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
+
 
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
@@ -170,9 +154,6 @@ const createAccount = tool({
       logs.push("[TOOL] Initial fields received:", JSON.stringify(fields, null, 2));
 
       // Convert Name and Client Company Name to Title Case
-      const toTitleCase = (str: string) =>
-        str.replace(/\w\S*/g, (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
-
       if (fields.Name) fields.Name = toTitleCase(fields.Name);
       if (fields["Client Company Name"]) fields["Client Company Name"] = toTitleCase(fields["Client Company Name"]);
 
@@ -185,23 +166,10 @@ const createAccount = tool({
         };
       }
 
-      // Fetch allowed values for Priority Image Type
-      const allowedPriorityImageTypes = ["AI Generated", "Google Images", "Stock Images", "Uploaded Media", "Social Media"];
-
       // Set default value for Priority Image Type if not provided
       if (!fields["Priority Image Type"]) {
         fields["Priority Image Type"] = "AI Generated";
         logs.push("[TOOL] Defaulted Priority Image Type to 'AI Generated'.");
-      }
-
-      // Validate Priority Image Type
-      if (!allowedPriorityImageTypes.includes(fields["Priority Image Type"])) {
-        return {
-          message: `The provided Priority Image Type "${fields["Priority Image Type"]}" is not valid. Please choose one of the following: ${allowedPriorityImageTypes.join(
-            ", "
-          )}.`,
-          logs,
-        };
       }
 
       // Create draft account immediately if it doesn't already exist
@@ -214,8 +182,6 @@ const createAccount = tool({
 
         logs.push(`[TOOL] Created draft account with Record ID: ${recordId}`);
         console.log(`[TOOL] Created draft account with Record ID: ${recordId}`);
-      } else {
-        logs.push(`[TOOL] Record already exists with Record ID: ${recordId}`);
       }
 
       // Auto-generate missing fields
@@ -269,7 +235,6 @@ const createAccount = tool({
       logs.push("[TOOL] Error during account creation:", error instanceof Error ? error.message : JSON.stringify(error));
       console.error("[TOOL] Error during account creation:", error);
 
-      // Return the error message from Airtable (or other sources)
       const errorMessage =
         error instanceof Error ? error.message : typeof error === "object" ? JSON.stringify(error) : "Unknown error";
 
@@ -280,6 +245,7 @@ const createAccount = tool({
     }
   },
 });
+
 
 const modifyAccount = tool({
   description: "Modify any field of an existing account in Wonderland.",
