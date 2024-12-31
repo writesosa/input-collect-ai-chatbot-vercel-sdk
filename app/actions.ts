@@ -108,7 +108,8 @@ const createAccount = tool({
     "Other Social Accounts": z.string().optional().describe("Other social accounts for the client."),
   }),
   execute: async (fields) => {
-    console.log("[TOOL] createAccount", fields);
+    console.log("[TOOL] Starting account creation process...");
+    console.log("[TOOL] Initial fields received:", JSON.stringify(fields, null, 2));
 
     try {
       // Ensure Name and Client Company Name consistency
@@ -123,11 +124,16 @@ const createAccount = tool({
         fields.Name = fields.Name.replace(/\b\w/g, (char) => char.toUpperCase());
       }
 
+      console.log("[TOOL] Updated Name and Client Company Name:", fields.Name, fields["Client Company Name"]);
+
       // Fetch available industry options from Airtable
+      console.log("[TOOL] Fetching available industries from Airtable...");
       const allowedIndustries = await airtableBase("Accounts").select({ fields: ["Industry"] }).all();
       const industryOptions = allowedIndustries
         .map((record) => record.get("Industry"))
         .filter((value): value is string => typeof value === "string");
+
+      console.log("[TOOL] Available industries:", industryOptions);
 
       // Guess Industry based on client information
       const guessIndustry = (info: string) => {
@@ -139,10 +145,14 @@ const createAccount = tool({
       };
       fields.Industry = fields.Industry || guessIndustry(fields.Description || fields["About the Client"] || "");
 
+      console.log("[TOOL] Guessed Industry:", fields.Industry);
+
       // Rewrite "About the Client"
       fields["About the Client"] =
         fields["About the Client"] ||
         `The client specializes in ${fields.Description?.toLowerCase()}. Utilizing Wonderland, the account will automate content creation and strategically distribute it across platforms to align with client goals and target audience needs.`;
+
+      console.log("[TOOL] About the Client:", fields["About the Client"]);
 
       // Generate Primary Objective and Talking Points
       const generatePrimaryObjective = (info: string) => {
@@ -160,11 +170,16 @@ const createAccount = tool({
       fields["Talking Points"] =
         fields["Talking Points"] || generateTalkingPoints(fields.Description || fields.Name || "the client");
 
+      console.log("[TOOL] Primary Objective:", fields["Primary Objective"]);
+      console.log("[TOOL] Talking Points:", fields["Talking Points"]);
+
       // Ensure minimum 600-character recommendations for descriptions
       fields.Description =
         fields.Description ||
         `This account is focused on ${fields.Name?.toLowerCase() || "the client"}, ensuring tailored solutions for the ${fields.Industry || "General"} sector. Utilizing Wonderland, it maximizes visibility and engagement for strategic growth.`;
       fields.Description = fields.Description.padEnd(600, ".");
+
+      console.log("[TOOL] Final Description:", fields.Description);
 
       // Prompt for Priority Image field if missing
       const priorityImageOptions = [
@@ -202,40 +217,41 @@ const createAccount = tool({
         "Other Social Accounts": fields["Other Social Accounts"] || "Not provided",
       };
 
-      console.log("[TOOL] Suggested values for missing fields:", summarizedFields);
+      console.log("[TOOL] Summarized fields for confirmation:", summarizedFields);
 
-      // Prompt user to confirm the fields
+      // Confirm with the user
       return {
-        message: `Here's the summarized information for the new account:\n\n${JSON.stringify(
+        message: `Here are the details for the new account:\n\n${JSON.stringify(
           summarizedFields,
           null,
           2
         )}\n\nShould I proceed with creating this account?`,
       };
 
-      // Merge suggested values with provided fields
-      const finalFields = { ...summarizedFields, ...fields };
+      // Create the account in Airtable
+      console.log("[TOOL] Creating account in Airtable...");
+      const createdRecord = await airtableBase("Accounts").create(fields);
 
-      console.log("[TOOL] Final fields for account creation:", finalFields);
+      if (!createdRecord || !createdRecord.id) {
+        console.error("[TOOL] Failed to create account: Airtable did not return a valid record ID.");
+        throw new Error("Failed to create the account in Airtable.");
+      }
 
-      // Create a new record in Airtable
-      console.log("[TOOL] Creating a new Airtable record...");
-      const createdRecord = await airtableBase("Accounts").create(finalFields);
-
-      console.log("[TOOL] Account created successfully in Airtable:", createdRecord);
+      console.log("[TOOL] Account created successfully with Record ID:", createdRecord.id);
 
       return {
-        message: `Account created successfully for ${fields.Name} with the provided and suggested details. Record ID: ${createdRecord.id}`,
+        message: `Account created successfully for ${fields.Name}. Record ID: ${createdRecord.id}`,
         recordId: createdRecord.id,
       };
     } catch (error) {
-      console.error("[TOOL] Error creating account in Airtable:", error);
+      console.error("[TOOL] Error during account creation:", error);
 
-      throw new Error(`Failed to create account. Error: ${error instanceof Error ? error.message : "Unknown error"}`);
+      throw new Error(
+        `Failed to create account. Error: ${error instanceof Error ? error.message : JSON.stringify(error)}`
+      );
     }
   },
 });
-
 
 const modifyAccount = tool({
   description: "Modify any field of an existing account in Wonderland.",
