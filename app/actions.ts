@@ -251,14 +251,6 @@ const processUserInput = async (userInput: string, logs: string[]) => {
   return isUpdated;
 };
 
-const validateURL = (url: string): string | null => {
-  try {
-    const validUrl = new URL(url.startsWith("http") ? url : `https://${url}`);
-    return validUrl.href;
-  } catch {
-    return null;
-  }
-};
 
 
 // Helper: Convert string to Title Case
