@@ -92,13 +92,13 @@ export async function continueConversation(history: Message[]) {
       logs.push("[LLM] Account creation detected. Processing...");
 
       const userMessage = history[history.length - 1]?.content.trim() || "";
-
-      if (!currentRecordId && creationProgress === null) {
-  // Check if Name or Client Company Name is already provided
+if (!currentRecordId && creationProgress === null) {
   const userMessage = history[history.length - 1]?.content.trim();
+
+  // Check if the Name field is provided
   if (!fieldsToUpdate.Name && !fieldsToUpdate["Client Company Name"]) {
     if (userMessage) {
-      fieldsToUpdate.Name = userMessage; // Assume the input is the name, validate if needed
+      fieldsToUpdate.Name = userMessage; // Assume user input is the name
       logs.push(`[LLM] Name provided: ${userMessage}`);
     } else {
       logs.push("[LLM] Missing Name or Client Company Name. Prompting user...");
@@ -115,7 +115,7 @@ export async function continueConversation(history: Message[]) {
     }
   }
 
-  // Proceed to create a draft account if name is available
+  // Proceed to create a draft account
   logs.push("[LLM] Creating a new draft record...");
   const createResponse = await createAccount.execute({
     Name: fieldsToUpdate.Name || fieldsToUpdate["Client Company Name"],
@@ -126,7 +126,7 @@ export async function continueConversation(history: Message[]) {
   if (createResponse.recordId) {
     currentRecordId = createResponse.recordId;
     logs.push(`[LLM] Draft record created with ID: ${currentRecordId}`);
-    creationProgress = 0; // Start the flow
+    creationProgress = 0; // Start the creation flow
   } else {
     logs.push("[LLM] Failed to create a draft record. Exiting process.");
     return {
@@ -139,76 +139,86 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
-
-      if (creationProgress === 0) {
-        const inputs = userMessage.split(",").map((input) => input.trim());
-        for (const input of inputs) {
-          const url = validateURL(input);
-          if (url) {
-            if (!fieldsToUpdate.Website && url.includes("www")) fieldsToUpdate.Website = url;
-            else if (!fieldsToUpdate.Instagram && url.includes("instagram.com"))
-              fieldsToUpdate.Instagram = url;
-            else if (!fieldsToUpdate.Facebook && url.includes("facebook.com"))
-              fieldsToUpdate.Facebook = url;
-            else if (!fieldsToUpdate.Blog) fieldsToUpdate.Blog = url;
-          }
-        }
-
-        if (currentRecordId) {
-          await modifyAccount.execute({ recordId: currentRecordId, fields: cleanFields(fieldsToUpdate) });
-          logs.push("[LLM] Website and Social Links updated.");
-        }
-
-        creationProgress++;
-      } else if (creationProgress === 1) {
-        fieldsToUpdate.Description = userMessage || "No description provided.";
-
-        if (currentRecordId) {
-          await modifyAccount.execute({
-            recordId: currentRecordId,
-            fields: { Description: fieldsToUpdate.Description },
-          });
-          logs.push("[LLM] Description updated.");
-        }
-
-        creationProgress++;
-      } else if (creationProgress === 2) {
-        fieldsToUpdate["Talking Points"] = userMessage || "No talking points provided.";
-
-        if (currentRecordId) {
-          await modifyAccount.execute({
-            recordId: currentRecordId,
-            fields: { "Talking Points": fieldsToUpdate["Talking Points"] },
-          });
-          logs.push("[LLM] Talking Points updated.");
-        }
-
-        creationProgress = null; // End of flow
-      }
-
-      questionToAsk = getNextQuestion(fieldsToUpdate, logs);
-
-      if (questionToAsk) {
-        logs.push(`[LLM] Asking next question: ${questionToAsk}`);
-        return {
-          messages: [...history, { role: "assistant", content: questionToAsk }],
-          logs,
-        };
-      }
-
-      if (currentRecordId && creationProgress === null) {
-        logs.push(`[LLM] All details captured. Updating record ID: ${currentRecordId} to New status.`);
-        await modifyAccount.execute({
-          recordId: currentRecordId,
-          fields: { Status: "New" },
-        });
-        logs.push(`[TOOL] Record ID: ${currentRecordId} transitioned to New status.`);
+// Ensure the record is created before proceeding
+if (currentRecordId) {
+  if (creationProgress === 0) {
+    const inputs = userMessage.split(",").map((input) => input.trim());
+    for (const input of inputs) {
+      const url = validateURL(input);
+      if (url) {
+        if (!fieldsToUpdate.Website && url.includes("www")) fieldsToUpdate.Website = url;
+        else if (!fieldsToUpdate.Instagram && url.includes("instagram.com"))
+          fieldsToUpdate.Instagram = url;
+        else if (!fieldsToUpdate.Facebook && url.includes("facebook.com"))
+          fieldsToUpdate.Facebook = url;
+        else if (!fieldsToUpdate.Blog) fieldsToUpdate.Blog = url;
       }
     }
+
+    try {
+      await modifyAccount.execute({
+        recordId: currentRecordId,
+        fields: cleanFields(fieldsToUpdate),
+      });
+      logs.push("[LLM] Website and Social Links updated.");
+    } catch (error) {
+      logs.push(`[LLM] Error updating Website and Social Links: ${error.message}`);
+    }
+
+    creationProgress++;
+  } else if (creationProgress === 1) {
+    fieldsToUpdate.Description = userMessage || "No description provided.";
+
+    try {
+      await modifyAccount.execute({
+        recordId: currentRecordId,
+        fields: { Description: fieldsToUpdate.Description },
+      });
+      logs.push("[LLM] Description updated.");
+    } catch (error) {
+      logs.push(`[LLM] Error updating Description: ${error.message}`);
+    }
+
+    creationProgress++;
+  } else if (creationProgress === 2) {
+    fieldsToUpdate["Talking Points"] = userMessage || "No talking points provided.";
+
+    try {
+      await modifyAccount.execute({
+        recordId: currentRecordId,
+        fields: { "Talking Points": fieldsToUpdate["Talking Points"] },
+      });
+      logs.push("[LLM] Talking Points updated.");
+    } catch (error) {
+      logs.push(`[LLM] Error updating Talking Points: ${error.message}`);
+    }
+
+    creationProgress = null; // End of flow
+  }
+} else {
+  logs.push("[LLM] No record ID found. Unable to proceed with modifications.");
+}
+
+questionToAsk = getNextQuestion(fieldsToUpdate, logs);
+
+if (questionToAsk) {
+  logs.push(`[LLM] Asking next question: ${questionToAsk}`);
+  return {
+    messages: [...history, { role: "assistant", content: questionToAsk }],
+    logs,
+  };
+}
+
+if (currentRecordId && creationProgress === null) {
+  logs.push(`[LLM] All details captured. Updating record ID: ${currentRecordId} to New status.`);
+  try {
+    await modifyAccount.execute({
+      recordId: currentRecordId,
+      fields: { Status: "New" },
+    });
+    logs.push(`[TOOL] Record ID: ${currentRecordId} transitioned to New status.`);
   } catch (error) {
-    logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
-    console.error("[LLM] Error during conversation:", error);
-    return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
+    logs.push(`[LLM] Error updating status to New: ${error.message}`);
   }
 }
 
