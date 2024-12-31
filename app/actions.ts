@@ -88,7 +88,6 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
-
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -96,17 +95,11 @@ const createAccount = tool({
     Description: z.string().optional().describe("A description for the account."),
     "Client Company Name": z.string().optional().describe("The name of the client company."),
     "Client URL": z.string().optional().describe("The client's URL."),
-    Instagram: z.string().optional().describe("The Instagram handle of the client."),
-    Facebook: z.string().optional().describe("The Facebook page URL of the client."),
-    Blog: z.string().optional().describe("The blog URL of the client."),
-    Status: z.string().optional().describe("The status of the account."),
     Industry: z.string().optional().describe("The industry of the client."),
     "Primary Contact Person": z.string().optional().describe("The primary contact person."),
     "About the Client": z.string().optional().describe("Information about the client."),
     "Primary Objective": z.string().optional().describe("The primary objective of the account."),
     "Talking Points": z.string().optional().describe("Key talking points for the account."),
-    "Contact Information": z.string().optional().describe("Contact information for the client."),
-    "Priority Image": z.string().optional().describe("The type of images this account should generate or display."),
   }),
   execute: async (fields) => {
     const logs: string[] = [];
@@ -168,7 +161,7 @@ const createAccount = tool({
 
       // Continue gathering information
       return {
-        message: `Great! The draft account for "${accountName}" has been initialized. Feel free to provide additional details such as description, industry, or social media links, and I'll update it.`,
+        message: `The draft account for "${accountName}" has been initialized. Feel free to provide additional details such as description, industry, or contact person, and I'll update it.`,
         recordId,
         logs,
       };
