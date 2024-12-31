@@ -61,7 +61,8 @@ if (result && result.logs && Array.isArray(result.logs)) {
     return new Response(
       JSON.stringify({
         ...flattenErrorResponse(result),
-        logs: result.logs || logs,
+logs: (result && result.logs) || logs,
+
         structuredLogs,
       }),
       {
