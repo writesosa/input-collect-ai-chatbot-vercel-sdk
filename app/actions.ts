@@ -55,15 +55,15 @@ export async function continueConversation(history: Message[]) {
       const updateFields = { ...fieldsToUpdate };
       delete updateFields.Name;
 
-      logs.push("[TOOL] Updating draft record with new fields:", JSON.stringify(updateFields, null, 2));
-      console.log("[TOOL] Updating draft record with new fields:", updateFields);
+      logs.push(`[TOOL] Updating record with ID: ${currentRecordId}`);
+      console.log("[TOOL] Updating record with fields:", updateFields);
 
       const modifyResponse = await modifyAccount.execute({
         recordId: currentRecordId,
         fields: updateFields,
       });
 
-      logs.push("[TOOL] Fields updated successfully:", JSON.stringify(modifyResponse));
+      logs.push(`[TOOL] Fields updated successfully for Record ID: ${currentRecordId}`);
       console.log("[TOOL] Fields updated successfully:", modifyResponse);
     }
 
@@ -136,6 +136,29 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
+
+// ModifyAccount
+const modifyAccount = tool({
+  execute: async ({ recordId, fields }) => {
+    if (recordId !== currentRecordId) {
+      throw new Error(`Attempting to modify the wrong record. Expected: ${currentRecordId}, Provided: ${recordId}`);
+    }
+    // Ensure currentRecordId is updated after success
+    currentRecordId = recordId;
+  },
+});
+
+// DeleteAccount
+const deleteAccount = tool({
+  execute: async ({ recordId }) => {
+    if (recordId !== currentRecordId) {
+      throw new Error(`Attempting to delete the wrong record. Expected: ${currentRecordId}, Provided: ${recordId}`);
+    }
+    // Ensure currentRecordId is cleared after deletion
+    currentRecordId = null;
+  },
+});
+
 
 // Helper: Convert string to Title Case
 const toTitleCase = (str: string): string =>
@@ -230,8 +253,6 @@ const createAccount = tool({
 });
 
 
-
-
 const modifyAccount = tool({
   description: "Modify any field of an existing account in Wonderland.",
   parameters: z.object({
@@ -259,6 +280,13 @@ const modifyAccount = tool({
     try {
       logs.push("[TOOL] Starting modifyAccount...");
       logs.push(`Record ID: ${recordId}, Fields: ${JSON.stringify(fields)}`);
+
+      // Ensure the record ID matches the currentRecordId
+      if (recordId !== currentRecordId) {
+        throw new Error(
+          `Attempting to modify the wrong record. Expected: ${currentRecordId}, Provided: ${recordId}`
+        );
+      }
 
       if (!recordId) {
         throw new Error("recordId is required to identify the account.");
@@ -298,6 +326,9 @@ const modifyAccount = tool({
 
       logs.push("[TOOL] Account updated successfully:", JSON.stringify(updatedRecord, null, 2));
 
+      // Update currentRecordId to reflect the updated record
+      currentRecordId = updatedRecord.id;
+
       return {
         message: `Account successfully updated. Updated fields: ${JSON.stringify(fields)}.`,
         recordId: updatedRecord.id,
@@ -321,6 +352,13 @@ const deleteAccount = tool({
       logs.push("[TOOL] Starting deleteAccount...");
       logs.push(`Record ID: ${recordId}`);
 
+      // Ensure the record ID matches the currentRecordId
+      if (recordId !== currentRecordId) {
+        throw new Error(
+          `Attempting to delete the wrong record. Expected: ${currentRecordId}, Provided: ${recordId}`
+        );
+      }
+
       if (!recordId) {
         throw new Error("recordId is required to identify the account.");
       }
@@ -337,6 +375,9 @@ const deleteAccount = tool({
       const updatedRecord = await airtableBase("Accounts").update(accountRecord.id, { Status: "Deleted" });
 
       logs.push("[TOOL] Account status updated successfully:", JSON.stringify(updatedRecord, null, 2));
+
+      // Clear currentRecordId since the record has been deleted
+      currentRecordId = null;
 
       return {
         message: `Account with record ID ${recordId} has been successfully marked as 'Deleted'.`,
