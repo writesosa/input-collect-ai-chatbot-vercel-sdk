@@ -149,15 +149,16 @@ const createAccount = tool({
       fields.Industry = fields.Industry || guessIndustry(fields.Description || fields["About the Client"] || "");
 
       // Generate default values for missing fields
+      const nameLowercase = fields.Name ? fields.Name.toLowerCase() : "this account";
       fields.Description =
         fields.Description ||
-        `This account focuses on ${fields.Name?.toLowerCase() || "services"}, tailored for the ${fields.Industry || "General"} sector.`;
+        `This account is focused on ${nameLowercase}, ensuring tailored solutions for the ${fields.Industry || "General"} sector. Utilizing Wonderland, it maximizes visibility and engagement for strategic growth.`;
       fields["About the Client"] =
         fields["About the Client"] ||
         `The client specializes in ${fields.Description.toLowerCase()}. Leveraging Wonderland, the account will strategically enhance visibility and engagement.`;
       fields["Primary Objective"] =
         fields["Primary Objective"] ||
-        `To amplify ${fields.Name?.toLowerCase() || "brand"} visibility using Wonderland's AI-driven content generation and strategic marketing tools.`;
+        `To amplify ${nameLowercase} visibility using Wonderland's AI-driven content generation and strategic marketing tools.`;
       fields["Talking Points"] =
         fields["Talking Points"] ||
         `1. Highlight the innovative offerings of ${fields.Name || "the client"}.\n2. Emphasize trust and quality.\n3. Showcase value-added services.`;
@@ -198,7 +199,6 @@ const createAccount = tool({
           2
         )}\n\nShould I proceed with creating this account?`,
       };
-
     } catch (error) {
       console.error("[TOOL] Error creating account in Airtable:", error);
 
