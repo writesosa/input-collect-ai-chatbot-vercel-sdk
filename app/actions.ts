@@ -133,100 +133,52 @@ const createAccount = tool({
         fields.Name = fields.Name.replace(/\b\w/g, (char) => char.toUpperCase());
       }
 
-      // Ensure minimum 600-character recommendations for descriptions
-      const accountName = fields.Name || "this account";
-      fields.Description =
-        fields.Description ||
-        `This account is focused on ${accountName.toLowerCase()}, ensuring tailored solutions for the ${
-          fields.Industry || "General"
-        } sector. Utilizing Wonderland, it maximizes visibility and engagement for strategic growth.`;
-
-      fields.Description = fields.Description.padEnd(600, ".");
-
-      // Fetch existing records for suggestions
-      const existingRecords = await airtableBase("Accounts").select().firstPage();
-      const primaryContactSuggestions = existingRecords
-        .map((record) => record.get("Primary Contact Person"))
-        .filter((value): value is string => typeof value === "string");
-
-      // Fetch available industry options from Airtable
+      // Fetch available industry options and guess industry
       const allowedIndustries = await airtableBase("Accounts").select({ fields: ["Industry"] }).all();
       const industryOptions = allowedIndustries
         .map((record) => record.get("Industry"))
         .filter((value): value is string => typeof value === "string");
 
-      // Guess Industry based on client information
       const guessIndustry = (info: string) => {
+        if (/lawyer|legal|attorney/i.test(info)) return "Legal";
         if (/jeep|car|vehicle|automobile/i.test(info)) return "Automotive";
         if (/dog|pet/i.test(info)) return "Pet Care";
-        if (/legal|law/i.test(info)) return "Legal";
         if (/dentist|dental/i.test(info)) return "Healthcare";
         return "General";
       };
       fields.Industry = fields.Industry || guessIndustry(fields.Description || fields["About the Client"] || "");
 
-      // Rewrite "About the Client"
+      // Generate default values for missing fields
+      fields.Description =
+        fields.Description ||
+        `This account focuses on ${fields.Name?.toLowerCase() || "services"}, tailored for the ${fields.Industry || "General"} sector.`;
       fields["About the Client"] =
         fields["About the Client"] ||
-        `The client specializes in ${fields.Description.toLowerCase()}. Utilizing Wonderland, the account will automate content creation and strategically distribute it across platforms to align with client goals and target audience needs.`;
-
-      // Generate Primary Objective and Talking Points
-      const generatePrimaryObjective = (info: string) => {
-        return `To enhance the reach and engagement of ${info.toLowerCase()}, ensuring alignment with client goals through targeted marketing and AI-driven automation.`;
-      };
-      const generateTalkingPoints = (info: string) => {
-        return `Focus on showcasing ${info.toLowerCase()} with tailored content and innovative strategies, highlighting quality, brand identity, and audience engagement.`;
-      };
+        `The client specializes in ${fields.Description.toLowerCase()}. Leveraging Wonderland, the account will strategically enhance visibility and engagement.`;
       fields["Primary Objective"] =
-        fields["Primary Objective"] || generatePrimaryObjective(fields.Description || accountName);
+        fields["Primary Objective"] ||
+        `To amplify ${fields.Name?.toLowerCase() || "brand"} visibility using Wonderland's AI-driven content generation and strategic marketing tools.`;
       fields["Talking Points"] =
-        fields["Talking Points"] || generateTalkingPoints(fields.Description || accountName);
+        fields["Talking Points"] ||
+        `1. Highlight the innovative offerings of ${fields.Name || "the client"}.\n2. Emphasize trust and quality.\n3. Showcase value-added services.`;
+      fields.Status = fields.Status || "New";
+      fields["Priority Image"] = fields["Priority Image"] || "AI Generated";
+      fields["Client URL"] = fields["Client URL"] || "Not provided";
+      fields["Contact Information"] = fields["Contact Information"] || "Not provided";
+      fields.Instagram = fields.Instagram || "Not provided";
+      fields.Facebook = fields.Facebook || "Not provided";
+      fields.Blog = fields.Blog || "Not provided";
+      fields["Other Social Accounts"] = fields["Other Social Accounts"] || "Not provided";
 
-      // Prompt for Priority Image field if missing
-      const priorityImageOptions = [
-        "AI Generated",
-        "Stock Images",
-        "Google Images",
-        "Social Media",
-        "Uploaded Media",
-      ];
-      if (!fields["Priority Image"]) {
-        return {
-          message: `What kind of images should this account generate or display? Please choose one of the following options: ${priorityImageOptions.join(
-            ", "
-          )}`,
-        };
-      }
-      if (!priorityImageOptions.includes(fields["Priority Image"])) {
-        return {
-          message: `Invalid choice for Priority Image. Please choose from: ${priorityImageOptions.join(", ")}`,
-        };
-      }
-
-      // Prompt for Primary Contact Person if missing
-      if (!fields["Primary Contact Person"]) {
-        const suggestionMessage = primaryContactSuggestions.length > 0
-          ? `The following primary contact persons are available: ${primaryContactSuggestions.join(", ")}. Is one of them the contact person for this account, or should we add someone else?`
-          : "No existing contact persons found. Please provide a contact person for this account.";
-        return { message: suggestionMessage };
-      }
-
-      // Ask about website or social accounts if not provided
-      if (!fields["Client URL"] && !fields.Instagram && !fields.Facebook && !fields.Blog && !fields["Other Social Accounts"]) {
-        return {
-          message: `Does this account have a website or social media account you'd like to include? If so, please provide the details.`,
-        };
-      }
-
-      // Summarize all fields before creation
+      // Summarize all fields
       const summarizedFields = {
         Name: fields.Name,
         Description: fields.Description,
         "Client Company Name": fields["Client Company Name"],
         "Client URL": fields["Client URL"],
-        Status: fields.Status || "New",
+        Status: fields.Status,
         Industry: fields.Industry,
-        "Primary Contact Person": fields["Primary Contact Person"],
+        "Primary Contact Person": fields["Primary Contact Person"] || "Not provided",
         "About the Client": fields["About the Client"],
         "Primary Objective": fields["Primary Objective"],
         "Talking Points": fields["Talking Points"],
@@ -238,29 +190,17 @@ const createAccount = tool({
         "Other Social Accounts": fields["Other Social Accounts"],
       };
 
-      console.log("[TOOL] Final fields for account creation:", summarizedFields);
-
-      // Create a new record in Airtable
-      const createdRecord = await airtableBase("Accounts").create(summarizedFields);
-
-      if (!createdRecord || !createdRecord.id) {
-        throw new Error("Failed to create the account in Airtable. Please check your fields and try again.");
-      }
-
-      console.log("[TOOL] Account created successfully in Airtable:", createdRecord);
-
+      // Final confirmation before creating the record
       return {
-        message: `Account created successfully for ${fields.Name} with the following details:\n\n${JSON.stringify(
+        message: `Here are the details for the new account creation:\n\n${JSON.stringify(
           summarizedFields,
           null,
           2
-        )}`,
+        )}\n\nShould I proceed with creating this account?`,
       };
+
     } catch (error) {
-      console.error("[TOOL] Error creating account in Airtable:", {
-        message: error instanceof Error ? error.message : "Unknown error",
-        stack: error instanceof Error ? error.stack : undefined,
-      });
+      console.error("[TOOL] Error creating account in Airtable:", error);
 
       throw new Error(`Failed to create account. Error: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
