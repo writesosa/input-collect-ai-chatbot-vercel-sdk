@@ -137,28 +137,6 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
-// ModifyAccount
-const modifyAccount = tool({
-  execute: async ({ recordId, fields }) => {
-    if (recordId !== currentRecordId) {
-      throw new Error(`Attempting to modify the wrong record. Expected: ${currentRecordId}, Provided: ${recordId}`);
-    }
-    // Ensure currentRecordId is updated after success
-    currentRecordId = recordId;
-  },
-});
-
-// DeleteAccount
-const deleteAccount = tool({
-  execute: async ({ recordId }) => {
-    if (recordId !== currentRecordId) {
-      throw new Error(`Attempting to delete the wrong record. Expected: ${currentRecordId}, Provided: ${recordId}`);
-    }
-    // Ensure currentRecordId is cleared after deletion
-    currentRecordId = null;
-  },
-});
-
 
 // Helper: Convert string to Title Case
 const toTitleCase = (str: string): string =>
