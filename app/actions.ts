@@ -85,7 +85,6 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
-
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -215,16 +214,13 @@ const createAccount = tool({
 
       console.log("[TOOL] Final summarized fields:", summarizedFields);
 
-      // Confirm details with the user
       return {
         message: `Here's the information for the new account creation:\n\n${JSON.stringify(
           summarizedFields,
           null,
           2
         )}\n\nShould I proceed with creating this account, or would you like to make any changes?`,
-        data: summarizedFields,
       };
-
     } catch (error) {
       console.error("[TOOL] Error creating account in Airtable:", error);
 
