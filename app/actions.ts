@@ -89,72 +89,57 @@ export async function continueConversation(history: Message[]) {
 
     // Handle account creation logic
     if (userIntent === "account_creation") {
-      logs.push("[LLM] Account creation detected. Processing...");
+  logs.push("[LLM] Account creation intent detected. Starting account creation...");
 
-      const userMessage = history[history.length - 1]?.content.trim() || "";
+  // Initialize creationProgress if null
+  if (creationProgress === null) {
+    creationProgress = 0; // Start with the first question
+    logs.push("[LLM] Initialized creationProgress to 0.");
+  }
 
-      // Extract account details from the user message
-      if (creationProgress !== null) {
-        if (creationProgress === 0) {
-          const inputs = userMessage.split(",").map((input) => input.trim());
-          for (const input of inputs) {
-            const url = validateURL(input);
-            if (url) {
-              if (!fieldsToUpdate.Website && url.includes("www")) fieldsToUpdate.Website = url;
-              else if (!fieldsToUpdate.Instagram && url.includes("instagram.com"))
-                fieldsToUpdate.Instagram = url;
-              else if (!fieldsToUpdate.Facebook && url.includes("facebook.com"))
-                fieldsToUpdate.Facebook = url;
-              else if (!fieldsToUpdate.Blog) fieldsToUpdate.Blog = url;
-            }
-          }
-          await modifyAccount.execute({ recordId: currentRecordId!, fields: cleanFields(fieldsToUpdate) });
-          logs.push("[LLM] Website and Social Links updated.");
-          creationProgress++;
-        } else if (creationProgress === 1) {
-          fieldsToUpdate.Description = userMessage || "No description provided.";
-          await modifyAccount.execute({
-            recordId: currentRecordId!,
-            fields: { Description: fieldsToUpdate.Description },
-          });
-          logs.push("[LLM] Description updated.");
-          creationProgress++;
-        } else if (creationProgress === 2) {
-          fieldsToUpdate["Talking Points"] = userMessage || "No talking points provided.";
-          await modifyAccount.execute({
-            recordId: currentRecordId!,
-            fields: { "Talking Points": fieldsToUpdate["Talking Points"] },
-          });
-          logs.push("[LLM] Talking Points updated.");
-          creationProgress = null; // End of flow
-        }
-      }
+  // Process questions based on creationProgress
+  if (creationProgress === 0) {
+    // Ask for website or social links
+    questionToAsk = "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?";
+    logs.push(`[LLM] Asking question 1: ${questionToAsk}`);
+    return {
+      messages: [...history, { role: "assistant", content: questionToAsk }],
+      logs,
+    };
+  } else if (creationProgress === 1) {
+    // Ask for description
+    questionToAsk = "Can you tell me more about the company, including its industry, purpose, or mission?";
+    logs.push(`[LLM] Asking question 2: ${questionToAsk}`);
+    return {
+      messages: [...history, { role: "assistant", content: questionToAsk }],
+      logs,
+    };
+  } else if (creationProgress === 2) {
+    // Ask for talking points
+    questionToAsk = "What are the major objectives or talking points you'd like to achieve with Wonderland?";
+    logs.push(`[LLM] Asking question 3: ${questionToAsk}`);
+    return {
+      messages: [...history, { role: "assistant", content: questionToAsk }],
+      logs,
+    };
+  }
 
-      questionToAsk = getNextQuestion(fieldsToUpdate, logs);
+  // Finalize account creation after all questions
+  if (creationProgress === null) {
+    logs.push("[LLM] All questions completed. Finalizing account creation...");
+    const accountResponse = await createAccount.execute(fieldsToUpdate);
+    logs.push(...accountResponse.logs);
 
-      if (questionToAsk) {
-        logs.push(`[LLM] Asking next question: ${questionToAsk}`);
-        return {
-          messages: [...history, { role: "assistant", content: questionToAsk }],
-          logs,
-        };
-      }
-
-      if (currentRecordId && creationProgress === null) {
-        logs.push(`[LLM] All details captured. Updating record ID: ${currentRecordId} to New status.`);
-        await modifyAccount.execute({
-          recordId: currentRecordId,
-          fields: { Status: "New" },
-        });
-        logs.push(`[TOOL] Record ID: ${currentRecordId} transitioned to New status.`);
-      }
-    }
-  } catch (error) {
-    logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
-    console.error("[LLM] Error during conversation:", error);
-    return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
+    return {
+      messages: [
+        ...history,
+        { role: "assistant", content: `Account "${fieldsToUpdate.Name}" created successfully.` },
+      ],
+      logs,
+    };
   }
 }
+
 
 const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | null => {
   if (
