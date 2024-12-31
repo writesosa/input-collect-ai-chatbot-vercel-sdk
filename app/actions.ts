@@ -32,6 +32,9 @@ export async function continueConversation(history: Message[]) {
         if (!fieldsToUpdate.Description && msg.content.toLowerCase().includes("about")) {
           fieldsToUpdate.Description = msg.content.match(/about\s(.+)/i)?.[1];
         }
+        if (!fieldsToUpdate["Client URL"] && msg.content.toLowerCase().includes("website")) {
+          fieldsToUpdate["Client URL"] = msg.content.match(/website\s+is\s+(\S+)/i)?.[1];
+        }
       }
     }
 
@@ -45,26 +48,29 @@ export async function continueConversation(history: Message[]) {
         "Priority Image Type": "AI Generated", // Default value
       });
 
-      currentRecordId = createResponse.recordId || null;
-
-      logs.push(`[TOOL] Draft created with Record ID: ${currentRecordId}`);
+      if (createResponse.recordId) {
+        currentRecordId = createResponse.recordId;
+        logs.push(`[TOOL] Draft created with Record ID: ${currentRecordId}`);
+      } else {
+        throw new Error("Failed to create draft account.");
+      }
     }
 
-    // Update additional fields incrementally
-    if (currentRecordId && Object.keys(fieldsToUpdate).length > 1) {
-      const updateFields = { ...fieldsToUpdate };
-      delete updateFields.Name;
-
-      logs.push(`[TOOL] Updating record with ID: ${currentRecordId}`);
-      console.log("[TOOL] Updating record with fields:", updateFields);
+    // Dynamically update fields in Airtable for the current record
+    if (currentRecordId && Object.keys(fieldsToUpdate).length > 0) {
+      logs.push(`[TOOL] Updating record ID ${currentRecordId} with new fields...`);
+      console.log(`[TOOL] Updating record ID ${currentRecordId} with new fields:`, fieldsToUpdate);
 
       const modifyResponse = await modifyAccount.execute({
         recordId: currentRecordId,
-        fields: updateFields,
+        fields: fieldsToUpdate,
       });
 
+      if (modifyResponse.recordId !== currentRecordId) {
+        throw new Error("Record ID mismatch during update.");
+      }
+
       logs.push(`[TOOL] Fields updated successfully for Record ID: ${currentRecordId}`);
-      console.log("[TOOL] Fields updated successfully:", modifyResponse);
     }
 
     // Process LLM message
@@ -79,22 +85,17 @@ export async function continueConversation(history: Message[]) {
         Perform the following actions:
         - Create a new account in Wonderland when the user requests it.
         - Modify an existing account in Wonderland when the user requests it.
-        - Delete an existing account in Wonderland when the user requests it.
-        - Switch to a different account by looking up records based on a specific field and value.
-
-        When creating, modifying, or switching accounts:
-        - Confirm the action with the user before finalizing.
-        - Provide clear feedback on the current record being worked on, including its Record ID.`,
+        - Synchronize all fields dynamically in real-time as new information becomes available.
+        - Validate actions to ensure they are successfully executed in Airtable.
+        - Confirm the current record being worked on, including the Record ID.`,
       messages: history,
       maxToolRoundtrips: 5,
       tools: {
         createAccount,
         modifyAccount,
         deleteAccount,
-        switchRecord,
       },
     });
-
 
     logs.push("[LLM] Conversation processed successfully.");
     console.log("[LLM] Conversation processed successfully.");
@@ -137,6 +138,7 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
+
 
 
 // Helper: Convert string to Title Case
