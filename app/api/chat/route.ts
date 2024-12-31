@@ -1,5 +1,3 @@
-import { continueConversation } from "../../actions";
-
 export async function POST(req: Request) {
   console.log("[POST /api/chat] Request received");
 
@@ -42,15 +40,12 @@ export async function POST(req: Request) {
       ...messages,
     ]);
 
-    console.log(
-      "[POST /api/chat] Response from continueConversation:",
-      JSON.stringify(result, null, 2)
-    );
+    console.log("[POST /api/chat] Logs:", JSON.stringify(result.logs || [], null, 2));
 
     return new Response(
       JSON.stringify({
         ...flattenErrorResponse(result),
-        logs: result.logs || [], // Include logs in the response
+        logs: result.logs || [],
       }),
       {
         headers: {
@@ -64,7 +59,6 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error("[POST /api/chat] Error:", error);
 
-    // Push detailed error to the frontend
     return new Response(
       JSON.stringify(flattenErrorResponse({
         error: "An error occurred.",
@@ -80,32 +74,4 @@ export async function POST(req: Request) {
       }
     );
   }
-}
-
-export async function OPTIONS() {
-  return new Response(null, {
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-      "Access-Control-Max-Age": "86400",
-    },
-  });
-}
-
-function flattenErrorResponse(response: any): Record<string, any> {
-  if (typeof response === "object" && response !== null) {
-    return Object.entries(response).reduce((acc: Record<string, any>, [key, value]) => {
-      if (typeof value === "object" && value !== null) {
-        const flattened = flattenErrorResponse(value);
-        Object.entries(flattened).forEach(([nestedKey, nestedValue]) => {
-          acc[`${key}.${nestedKey}`] = nestedValue;
-        });
-      } else {
-        acc[key] = value;
-      }
-      return acc;
-    }, {});
-  }
-  return response;
 }

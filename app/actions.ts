@@ -21,12 +21,12 @@ const currentUserData = {
 
 // Initialize Airtable base
 const airtableBase = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID || "missing_base_id");
-
 export async function continueConversation(history: Message[]) {
   "use server";
 
+  const logs: string[] = [];
   try {
-    console.log("[LLM] continueConversation");
+    logs.push("[LLM] continueConversation: Starting...");
     const { text, toolResults } = await generateText({
       model: openai("gpt-4o"),
       system: `You are a Wonderland assistant!
@@ -43,8 +43,7 @@ export async function continueConversation(history: Message[]) {
         When creating or modifying an account:
         - Extract the required information (e.g., account name, description, or specific fields to update) from the user's input.
         - Ensure all extracted values are sent outside the user message in a structured format.
-        - Confirm the action with the user before finalizing.
-        `,
+        - Confirm the action with the user before finalizing.`,
       messages: history,
       maxToolRoundtrips: 5,
       tools: {
@@ -54,37 +53,37 @@ export async function continueConversation(history: Message[]) {
       },
     });
 
-    return {
-      messages: [
-        ...history,
-        {
-          role: "assistant" as const,
-          content:
-            text ||
-            toolResults.map((toolResult) => toolResult.result).join("\n"),
-        },
-      ],
-    };
-  } catch (error) {
-    console.error("[LLM] Error in continueConversation:", {
-      message: error instanceof Error ? error.message : "Unknown error",
-      stack: error instanceof Error ? error.stack : undefined,
-      raw: JSON.stringify(error, Object.getOwnPropertyNames(error)),
-    });
+    logs.push("[LLM] Conversation processed successfully.");
 
     return {
       messages: [
         ...history,
         {
-          role: "assistant" as const,
+          role: "assistant",
+          content:
+            text ||
+            toolResults.map((toolResult) => toolResult.result).join("\n"),
+        },
+      ],
+      logs,
+    };
+  } catch (error) {
+    logs.push("[LLM] Error in continueConversation:", error instanceof Error ? error.message : JSON.stringify(error));
+    return {
+      messages: [
+        ...history,
+        {
+          role: "assistant",
           content: `There's a problem executing the request. Please try again. Error details: ${
             error instanceof Error ? error.message : "Unknown error"
           }`,
         },
       ],
+      logs,
     };
   }
 }
+
 
 
 const createAccount = tool({
