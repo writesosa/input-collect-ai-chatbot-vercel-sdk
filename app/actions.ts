@@ -75,7 +75,7 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
-// `createAccount` logic
+
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -127,46 +127,44 @@ const createAccount = tool({
         throw { message: "No industries available in Airtable.", logs };
       }
 
-      if (!fields.Industry) {
+      if (!fields.Industry || !industryOptions.includes(fields.Industry)) {
         return {
-          message: `Please select the industry for this account. Options: ${industryOptions.join(", ")}.`,
+          message: `The provided industry (${fields.Industry || "None"}) is not recognized. Please select one of the following industries: ${industryOptions.join(", ")}.`,
           logs,
         };
       }
 
-      logs.push(`[TOOL] Industry set to: ${fields.Industry}`);
+      logs.push(`[TOOL] Industry confirmed as: ${fields.Industry}`);
 
-      // Collect missing optional fields
-      const optionalFields: Array<keyof typeof fields> = ["Client URL", "Instagram", "Facebook", "Blog"];
-      const missingFields = optionalFields.filter((field) => !fields[field]);
+      // Rewrite "About the Client"
+      fields["About the Client"] =
+        fields["About the Client"] ||
+        `The client specializes in ${fields.Description?.toLowerCase()}. Utilizing Wonderland, the account will automate content creation and strategically distribute it across platforms to align with client goals and target audience needs.`;
 
-      if (missingFields.length > 0) {
-        const urlPrompt = `Do you have any of the following to add? ${missingFields.join(", ")}. Please provide them if available.`;
-        logs.push("[TOOL] Prompting user for missing optional fields.");
-        return { message: urlPrompt, logs };
-      }
+      logs.push("[TOOL] About the Client rewritten.");
 
-      // Prepare fields for Airtable creation
-      const finalFields = {
-        ...fields,
-        Status: fields.Status || "New",
-        Description: fields.Description || `This account is focused on ${fields.Name || "the client"}.`,
-      };
+      // Generate Primary Objective and Talking Points
+      fields["Primary Objective"] =
+        fields["Primary Objective"] || `To enhance visibility for ${fields.Name || "the client"} in ${fields.Industry}.`;
+      fields["Talking Points"] =
+        fields["Talking Points"] || `Focus on innovation and engagement for ${fields.Name || "the client"}.`;
 
-      logs.push("[TOOL] Final fields prepared for Airtable creation:", JSON.stringify(finalFields, null, 2));
+      logs.push("[TOOL] Primary Objective and Talking Points generated.");
 
-      // Create account in Airtable
-      const createdRecord = await airtableBase("Accounts").create(finalFields);
-      if (!createdRecord || !createdRecord.id) {
-        logs.push("[TOOL] Airtable creation failed.");
-        throw { message: "Failed to create account in Airtable.", logs };
-      }
-
-      logs.push("[TOOL] Account successfully created in Airtable:", JSON.stringify(createdRecord, null, 2));
-
-      // Summarize created account
-      const summary = `### Account Created Successfully\n\n**Provided Fields:**\n${JSON.stringify(fields, null, 2)}\n\n**Generated Fields:**\n- Status: ${finalFields.Status}\n- Description: ${finalFields.Description}\n\n**Record ID:** ${createdRecord.id}`;
+      // Prompt for confirmation with all fields
+      const summary = `
+### Please confirm the details before creating the account:
+- **Name**: ${fields.Name}
+- **Description**: ${fields.Description}
+- **Industry**: ${fields.Industry}
+- **About the Client**: ${fields["About the Client"]}
+- **Primary Objective**: ${fields["Primary Objective"]}
+- **Talking Points**: ${fields["Talking Points"]}
+Do you want to create the account with these details? (yes/no)
+      `;
+      logs.push("[TOOL] Prompting user for confirmation.");
       return { message: summary, logs };
+
     } catch (error) {
       logs.push("[TOOL] Error during account creation:", error instanceof Error ? error.message : JSON.stringify(error));
       throw { message: "Account creation failed. Check logs for details.", logs };
