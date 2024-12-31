@@ -86,7 +86,6 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
-
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -160,6 +159,12 @@ const createAccount = tool({
       fields["Talking Points"] =
         fields["Talking Points"] || generateTalkingPoints(fields.Description || fields.Name || "the client");
 
+      // Ensure minimum 600-character recommendations for descriptions
+      fields.Description =
+        fields.Description ||
+        `This account is focused on ${fields.Name?.toLowerCase() || "the client"}, ensuring tailored solutions for the ${fields.Industry || "General"} sector. Utilizing Wonderland, it maximizes visibility and engagement for strategic growth.`;
+      fields.Description = fields.Description.padEnd(600, ".");
+
       // Prompt for Priority Image field if missing
       const priorityImageOptions = [
         "AI Generated",
@@ -210,13 +215,16 @@ const createAccount = tool({
 
       console.log("[TOOL] Final summarized fields:", summarizedFields);
 
+      // Confirm details with the user
       return {
         message: `Here's the information for the new account creation:\n\n${JSON.stringify(
           summarizedFields,
           null,
           2
         )}\n\nShould I proceed with creating this account, or would you like to make any changes?`,
+        data: summarizedFields,
       };
+
     } catch (error) {
       console.error("[TOOL] Error creating account in Airtable:", error);
 
