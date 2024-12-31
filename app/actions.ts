@@ -178,8 +178,6 @@ const createAccount = tool({
   },
 });
 
-
-
 const modifyAccount = tool({
   description: "Modify any field of an existing account in Wonderland.",
   parameters: z.object({
@@ -203,21 +201,22 @@ const modifyAccount = tool({
       }),
   }),
   execute: async ({ recordId, fields }) => {
-    console.log("[TOOL] modifyAccount", { recordId, fields });
-
+    const logs: string[] = [];
     try {
+      logs.push("[TOOL] Starting modifyAccount...");
+      logs.push(`Record ID: ${recordId}, Fields: ${JSON.stringify(fields)}`);
+
       if (!recordId) {
         throw new Error("recordId is required to identify the account.");
       }
 
-      console.log("[TOOL] Searching by record ID...");
       const accountRecord = await airtableBase("Accounts").find(recordId);
 
       if (!accountRecord) {
         throw new Error(`No account found with the record ID: ${recordId}`);
       }
 
-      console.log("[TOOL] Account found:", accountRecord);
+      logs.push("[TOOL] Account found:", JSON.stringify(accountRecord, null, 2));
 
       // Match Status and Industry to closest allowed values dynamically
       const allowedStatuses = ["Active", "Disabled", "New"];
@@ -239,29 +238,20 @@ const modifyAccount = tool({
         );
       }
 
-      console.log("[TOOL] Updating account with fields:", fields);
+      logs.push("[TOOL] Updating account with fields:", JSON.stringify(fields, null, 2));
 
       const updatedRecord = await airtableBase("Accounts").update(accountRecord.id, fields);
 
-      console.log("[TOOL] Account updated successfully:", updatedRecord);
+      logs.push("[TOOL] Account updated successfully:", JSON.stringify(updatedRecord, null, 2));
 
       return {
         message: `Account successfully updated. Updated fields: ${JSON.stringify(fields)}.`,
         recordId: updatedRecord.id,
+        logs,
       };
     } catch (error) {
-      console.error("[TOOL] Error modifying account in Airtable:", {
-        message: error instanceof Error ? error.message : "Unknown error",
-        stack: error instanceof Error ? error.stack : undefined,
-        raw: JSON.stringify(error, Object.getOwnPropertyNames(error)),
-      });
-
-      throw new Error(
-        JSON.stringify({
-          error: "Failed to modify account.",
-          details: error instanceof Error ? { message: error.message, stack: error.stack } : { raw: error },
-        })
-      );
+      logs.push("[TOOL] Error modifying account in Airtable:", error instanceof Error ? error.message : JSON.stringify(error));
+      throw { message: "Failed to modify account. Check logs for details.", logs };
     }
   },
 });
@@ -272,44 +262,36 @@ const deleteAccount = tool({
     recordId: z.string().describe("The record ID of the account to delete."),
   }),
   execute: async ({ recordId }) => {
-    console.log("[TOOL] deleteAccount", { recordId });
-
+    const logs: string[] = [];
     try {
+      logs.push("[TOOL] Starting deleteAccount...");
+      logs.push(`Record ID: ${recordId}`);
+
       if (!recordId) {
         throw new Error("recordId is required to identify the account.");
       }
 
-      console.log("[TOOL] Searching by record ID...");
       const accountRecord = await airtableBase("Accounts").find(recordId);
 
       if (!accountRecord) {
         throw new Error(`No account found with the record ID: ${recordId}`);
       }
 
-      console.log("[TOOL] Account found:", accountRecord);
+      logs.push("[TOOL] Account found:", JSON.stringify(accountRecord, null, 2));
 
-      console.log("[TOOL] Changing account status to 'Deleted'...");
+      logs.push("[TOOL] Changing account status to 'Deleted'...");
       const updatedRecord = await airtableBase("Accounts").update(accountRecord.id, { Status: "Deleted" });
 
-      console.log("[TOOL] Account status updated successfully:", updatedRecord);
+      logs.push("[TOOL] Account status updated successfully:", JSON.stringify(updatedRecord, null, 2));
 
       return {
         message: `Account with record ID ${recordId} has been successfully marked as 'Deleted'.`,
         recordId: updatedRecord.id,
+        logs,
       };
     } catch (error) {
-      console.error("[TOOL] Error deleting account in Airtable:", {
-        message: error instanceof Error ? error.message : "Unknown error",
-        stack: error instanceof Error ? error.stack : undefined,
-        raw: JSON.stringify(error, Object.getOwnPropertyNames(error)),
-      });
-
-      throw new Error(
-        JSON.stringify({
-          error: "Failed to delete account.",
-          details: error instanceof Error ? { message: error.message, stack: error.stack } : { raw: error },
-        })
-      );
+      logs.push("[TOOL] Error deleting account in Airtable:", error instanceof Error ? error.message : JSON.stringify(error));
+      throw { message: "Failed to delete account. Check logs for details.", logs };
     }
   },
 });

@@ -2,16 +2,17 @@ import { continueConversation } from "../../actions";
 
 export async function POST(req: Request) {
   console.log("[POST /api/chat] Request received");
+  const logs: string[] = [];
 
   try {
     const body = await req.json();
-    console.log("[POST /api/chat] Parsed body:", JSON.stringify(body, null, 2));
+    logs.push("[POST /api/chat] Parsed body:", JSON.stringify(body, null, 2));
 
     const { messages, record } = body;
 
     if (!messages || !Array.isArray(messages)) {
-      console.error("[POST /api/chat] Invalid input: messages is not an array.");
-      return new Response(JSON.stringify({ error: "Invalid input format." }), {
+      logs.push("[POST /api/chat] Invalid input: messages is not an array.");
+      return new Response(JSON.stringify({ error: "Invalid input format.", logs }), {
         status: 400,
         headers: {
           "Access-Control-Allow-Origin": "*",
@@ -20,9 +21,9 @@ export async function POST(req: Request) {
     }
 
     if (!record || !record.type) {
-      console.error("[POST /api/chat] No valid record provided.");
+      logs.push("[POST /api/chat] No valid record provided.");
       return new Response(
-        JSON.stringify({ error: "Record with valid type is required." }),
+        JSON.stringify({ error: "Record with valid type is required.", logs }),
         {
           status: 400,
           headers: {
@@ -32,7 +33,7 @@ export async function POST(req: Request) {
       );
     }
 
-    console.log("[POST /api/chat] Processing record and messages:", {
+    logs.push("[POST /api/chat] Processing record and messages:", {
       record,
       messages,
     });
@@ -42,15 +43,12 @@ export async function POST(req: Request) {
       ...messages,
     ]);
 
-    console.log(
-      "[POST /api/chat] Response from continueConversation:",
-      JSON.stringify(result, null, 2)
-    );
+    logs.push("[POST /api/chat] Response from continueConversation:", JSON.stringify(result, null, 2));
 
     return new Response(
       JSON.stringify({
         ...flattenErrorResponse(result),
-        logs: result.logs || [], // Include logs in the response
+        logs: result.logs || logs, // Include logs in the response
       }),
       {
         headers: {
@@ -62,7 +60,7 @@ export async function POST(req: Request) {
       }
     );
   } catch (error) {
-    console.error("[POST /api/chat] Error:", error);
+    logs.push("[POST /api/chat] Error:", error instanceof Error ? error.message : JSON.stringify(error));
 
     // Push detailed error to the frontend
     return new Response(
@@ -71,6 +69,7 @@ export async function POST(req: Request) {
         details: error instanceof Error ? error.message : "Unknown error",
         stack: error instanceof Error ? error.stack : undefined,
         raw: error,
+        logs,
       })),
       {
         status: 500,
