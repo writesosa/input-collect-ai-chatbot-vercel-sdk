@@ -28,7 +28,7 @@ export async function continueConversation(history: Message[]) {
 
   const responseCache = new Set(); // To track recent user responses
 
-  const updateProgressTracker = (field) => {
+  const updateProgressTracker = (field: string) => {
     if (progressTracker.hasOwnProperty(field)) progressTracker[field] = true;
   };
 
