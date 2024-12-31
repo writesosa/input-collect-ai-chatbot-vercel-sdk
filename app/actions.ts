@@ -97,7 +97,6 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
-
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
