@@ -74,37 +74,42 @@ export async function continueConversation(history: Message[]) {
       logs.push("[LLM] Account creation detected. Processing...");
 
       // Extract details from history
-      for (const msg of history) {
-        if (msg.role === "user") {
-          if (!fieldsToUpdate.Name && msg.content.toLowerCase().includes("called")) {
-            fieldsToUpdate.Name = toTitleCase(msg.content.match(/called\s(.+)/i)?.[1] || "");
+      const userMessage = history[history.length - 1]?.content.trim() || "";
+      if (creationProgress !== null) {
+        if (creationProgress === 0) {
+          const website = validateURL(userMessage);
+          if (website) {
+            fieldsToUpdate["Client URL"] = website;
+            logs.push(`[LLM] Captured website: ${website}`);
+            // Update Airtable immediately
+            if (currentRecordId) {
+              await modifyAccount.execute({ recordId: currentRecordId, fields: { "Client URL": website } });
+              logs.push(`[TOOL] Updated Client URL for Record ID: ${currentRecordId}`);
+            }
           }
-          if (!fieldsToUpdate.Description && msg.content.toLowerCase().includes("about")) {
-            fieldsToUpdate.Description = msg.content.match(/about\s(.+)/i)?.[1];
+          creationProgress++; // Always proceed to the next question
+        } else if (creationProgress === 1) {
+          fieldsToUpdate.Description = userMessage || "No description provided.";
+          logs.push(`[LLM] Captured description: ${userMessage}`);
+          // Update Airtable immediately
+          if (currentRecordId) {
+            await modifyAccount.execute({ recordId: currentRecordId, fields: { Description: fieldsToUpdate.Description } });
+            logs.push(`[TOOL] Updated Description for Record ID: ${currentRecordId}`);
           }
-          if (!fieldsToUpdate["Client URL"] && msg.content.toLowerCase().includes("http")) {
-            fieldsToUpdate["Client URL"] = validateURL(msg.content.match(/(http[^\s]+)/i)?.[1] || "");
+          creationProgress++;
+        } else if (creationProgress === 2) {
+          fieldsToUpdate["Talking Points"] = userMessage || "No talking points provided.";
+          logs.push(`[LLM] Captured talking points: ${userMessage}`);
+          // Update Airtable immediately
+          if (currentRecordId) {
+            await modifyAccount.execute({ recordId: currentRecordId, fields: { "Talking Points": fieldsToUpdate["Talking Points"] } });
+            logs.push(`[TOOL] Updated Talking Points for Record ID: ${currentRecordId}`);
           }
+          creationProgress = null; // End of question flow
         }
       }
 
-      // Create a draft record if necessary
-      if (fieldsToUpdate.Name && !currentRecordId) {
-        logs.push(`[LLM] Detected account name: ${fieldsToUpdate.Name}`);
-        const createResponse = await createAccount.execute({
-          Name: fieldsToUpdate.Name,
-          "Priority Image Type": "AI Generated",
-        });
-
-        currentRecordId = createResponse.recordId || null;
-        if (!currentRecordId) {
-          throw new Error("Failed to retrieve Record ID after creating an account.");
-        }
-        logs.push(`[TOOL] Draft created with Record ID: ${currentRecordId}`);
-        creationProgress = 0; // Start the question flow
-      }
-
-      // Handle the next question in the flow
+      // Determine the next question
       questionToAsk = getNextQuestion(fieldsToUpdate, logs);
 
       if (questionToAsk) {
@@ -119,13 +124,12 @@ export async function continueConversation(history: Message[]) {
       }
 
       // Finalize the account if all questions are answered
-      if (currentRecordId) {
+      if (currentRecordId && creationProgress === null) {
         logs.push(`[LLM] All details captured. Updating record ID: ${currentRecordId} to New status.`);
         await modifyAccount.execute({
           recordId: currentRecordId,
-          fields: { Status: "New", ...fieldsToUpdate },
+          fields: { Status: "New" },
         });
-        creationProgress = null; // Reset progress
         logs.push(`[TOOL] Record ID: ${currentRecordId} transitioned to New status.`);
       }
     }
@@ -135,6 +139,7 @@ export async function continueConversation(history: Message[]) {
     return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
   }
 }
+
 
 // Helper: Get the next question to ask during account creation
 const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | null => {
