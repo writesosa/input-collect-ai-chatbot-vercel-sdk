@@ -33,7 +33,6 @@ const toTitleCase = (str: string): string =>
 // Helper: Clean Undefined Fields
 const cleanFields = (fields: Record<string, any>) =>
   Object.fromEntries(Object.entries(fields).filter(([_, value]) => value !== undefined));
-
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
@@ -152,20 +151,19 @@ export async function continueConversation(history: Message[]) {
               else if (!fieldsToUpdate.Blog) fieldsToUpdate.Blog = url;
             }
           }
-try {
-  await modifyAccount.execute({
-    recordId: currentRecordId,
-    fields: cleanFields(fieldsToUpdate),
-  });
-  logs.push("[LLM] Website and Social Links updated.");
-} catch (error) {
-  if (error instanceof Error) {
-    logs.push(`[LLM] Error updating Website and Social Links: ${error.message}`);
-  } else {
-    logs.push("[LLM] Unknown error occurred while updating Website and Social Links.");
-  }
-}
-
+          try {
+            await modifyAccount.execute({
+              recordId: currentRecordId,
+              fields: cleanFields(fieldsToUpdate),
+            });
+            logs.push("[LLM] Website and Social Links updated.");
+          } catch (error) {
+            if (error instanceof Error) {
+              logs.push(`[LLM] Error updating Website and Social Links: ${error.message}`);
+            } else {
+              logs.push("[LLM] Unknown error occurred while updating Website and Social Links.");
+            }
+          }
 
           creationProgress++;
         } else if (creationProgress === 1) {
@@ -230,7 +228,6 @@ try {
     return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
   }
 } // Close the function properly
-
 
 
 // Ensure proper closing of helper functions and utilities
