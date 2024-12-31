@@ -96,7 +96,6 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
-
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -127,7 +126,15 @@ const createAccount = tool({
       // Title case the Name field
       if (fields.Name) {
         fields.Name = fields.Name.replace(/\b\w/g, (char) => char.toUpperCase());
+      } else {
+        throw new Error("Account Name (fields.Name) is required.");
       }
+
+      // Fetch existing records for suggestions
+      const existingRecords = await airtableBase("Accounts").select().firstPage();
+      const primaryContactSuggestions = existingRecords
+        .map((record) => record.get("Primary Contact Person"))
+        .filter((value): value is string => typeof value === "string");
 
       // Fetch available industry options from Airtable
       const allowedIndustries = await airtableBase("Accounts").select({ fields: ["Industry"] }).all();
@@ -136,70 +143,104 @@ const createAccount = tool({
         .filter((value): value is string => typeof value === "string");
 
       // Guess Industry based on client information
-      const guessIndustry = (info: string) => {
-        if (/dentist|dental/i.test(info)) return "Healthcare";
+      const guessIndustry = (info) => {
         if (/jeep|car|vehicle|automobile/i.test(info)) return "Automotive";
+        if (/dog|pet/i.test(info)) return "Pet Care";
+        if (/dental|dentist|implant/i.test(info)) return "Healthcare";
+        if (/legal|law/i.test(info)) return "Legal";
         return "General";
       };
       fields.Industry = fields.Industry || guessIndustry(fields.Description || fields["About the Client"] || "");
 
-      // Generate Primary Objective and Talking Points
-      const generatePrimaryObjective = (info: string) => {
-        return `To utilize Wonderland's AI-powered platform to enhance the reach, engagement, and visibility of ${info.toLowerCase()}, ensuring alignment with client goals.`;
+      // Rewrite Description and About the Client based on client-provided info
+      const rewriteDescription = (info) => {
+        return `This account is focused on ${info.toLowerCase()}, leveraging Wonderland's AI-powered public relations system to maximize visibility and engagement in the ${fields.Industry || "General"} sector. By dynamically generating content, images, and marketing assets, the account ensures scalability and precision in meeting client objectives.`;
       };
-      const generateTalkingPoints = (info: string) => [
-        `Highlight the importance of ${info.toLowerCase()} in building trust and engagement with clients.`,
-        `Leverage Wonderland's AI-driven tools to promote ${info.toLowerCase()} effectively.`,
-        `Ensure consistent, high-quality messaging about ${info.toLowerCase()} across all platforms.`,
-      ];
+
+      fields.Description =
+        fields.Description || rewriteDescription(fields["About the Client"] || fields.Name || "");
+
+      fields["About the Client"] =
+        fields["About the Client"] ||
+        `The client specializes in ${fields.Description.toLowerCase()}. Utilizing Wonderland, the account will automate content creation and strategically distribute it across platforms to align with client goals and target audience needs.`;
+
+      // Ensure minimum 600-character recommendations for descriptions
+      fields.Description = fields.Description.padEnd(600, ".");
+
+      // Generate Primary Objective and Talking Points based on client info
+      const generatePrimaryObjective = (info) => {
+        return `To enhance the reach and engagement of ${info.toLowerCase()}, ensuring alignment with client goals through targeted marketing and AI-driven automation.`;
+      };
+      const generateTalkingPoints = (info) => {
+        return [
+          `Focus on showcasing ${info.toLowerCase()} with tailored content and innovative strategies.`,
+          `Highlight quality, brand identity, and audience engagement.`,
+          `Leverage Wonderland's AI-driven tools for optimal visibility and outreach.`
+        ].join(" ");
+      };
       fields["Primary Objective"] =
         fields["Primary Objective"] || generatePrimaryObjective(fields.Description || fields.Name || "");
       fields["Talking Points"] =
-        fields["Talking Points"] || generateTalkingPoints(fields.Description || fields.Name || "").join("\n");
+        fields["Talking Points"] || generateTalkingPoints(fields.Description || fields.Name || "");
 
-      if (fields.Name) {
-        fields.Description =
-          fields.Description ||
-          `This account is focused on ${fields.Name.toLowerCase()}, ensuring tailored solutions for the ${
-            fields.Industry || "General"
-          } sector. Utilizing Wonderland, it maximizes visibility and engagement for strategic growth.`;
-      } else {
-        throw new Error("Account Name (fields.Name) is required to generate a description.");
+      // Prompt for Priority Image field if missing
+      const priorityImageOptions = [
+        "AI Generated",
+        "Stock Images",
+        "Google Images",
+        "Social Media",
+        "Uploaded Media",
+      ];
+      if (!fields["Priority Image"]) {
+        return {
+          message: `What kind of images should this account generate or display? Please choose one of the following options: ${priorityImageOptions.join(", ")}`,
+        };
+      }
+      if (!priorityImageOptions.includes(fields["Priority Image"])) {
+        return {
+          message: `Invalid choice for Priority Image. Please choose from: ${priorityImageOptions.join(", ")}`,
+        };
       }
 
-fields.Description = fields.Description.padEnd(600, ".");
+      // Prompt for Primary Contact Person if missing
+      if (!fields["Primary Contact Person"]) {
+        const suggestionMessage = primaryContactSuggestions.length > 0
+          ? `The following primary contact persons are available: ${primaryContactSuggestions.join(", ")}. Is one of them the contact person for this account, or should we add someone else?`
+          : "No existing contact persons found. Please provide a contact person for this account.";
+        return { message: suggestionMessage };
+      }
+
+      // Ask about website or social media if not provided
+      if (!fields["Client URL"]) {
+        return {
+          message: `Does this account have a website or social media account you'd like to include? If not, you can skip this step.`,
+        };
+      }
+
+      // Ask for additional contact information if not provided
+      if (!fields["Contact Information"]) {
+        return {
+          message: `Do you have any contact information for this company, such as an email, phone number, or address, to include in the content?`,
+        };
+      }
 
       // Summarize all fields before creation
       const summarizedFields = {
         Name: fields.Name,
         Description: fields.Description,
         "Client Company Name": fields["Client Company Name"],
-        "Client URL": fields["Client URL"] || "https://example.com",
+        "Client URL": fields["Client URL"],
         Status: fields.Status || "New",
         Industry: fields.Industry,
-        "Primary Contact Person": fields["Primary Contact Person"] || "N/A",
-        "About the Client":
-          fields["About the Client"] ||
-          `This account represents ${fields.Name.toLowerCase()} in the ${fields.Industry || "General"} sector.`,
+        "Primary Contact Person": fields["Primary Contact Person"],
+        "About the Client": fields["About the Client"],
         "Primary Objective": fields["Primary Objective"],
         "Talking Points": fields["Talking Points"],
-        "Contact Information": fields["Contact Information"] || "N/A",
-        "Priority Image": fields["Priority Image"] || "AI Generated",
+        "Contact Information": fields["Contact Information"],
+        "Priority Image": fields["Priority Image"],
       };
 
-      console.log("[TOOL] Summarized fields for account creation:", summarizedFields);
-
-      // Confirm before creation
-      if (!fields["Confirmed"]) {
-        return {
-          message: `Here are the details for the new account creation:\n\n${JSON.stringify(
-            summarizedFields,
-            null,
-            2
-          )}\n\nShould I proceed with creating this account, or would you like to make any changes?`,
-          fields: { ...summarizedFields, Confirmed: true }, // Add a flag to track confirmation
-        };
-      }
+      console.log("[TOOL] Final fields for account creation:", summarizedFields);
 
       // Create a new record in Airtable
       const createdRecord = await airtableBase("Accounts").create(summarizedFields);
@@ -220,7 +261,10 @@ fields.Description = fields.Description.padEnd(600, ".");
         message: error instanceof Error ? error.message : "Unknown error",
         stack: error instanceof Error ? error.stack : undefined,
       });
-      throw error;
+
+      throw new Error(
+        `Failed to create account for ${fields.Name || "unknown"}. Error details: ${error instanceof Error ? error.message : "Unknown error."}`
+      );
     }
   },
 });
