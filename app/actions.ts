@@ -76,7 +76,6 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
-
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -166,6 +165,8 @@ ${generatedFields.map(([key, value]) => `- **${key}**: ${value}`).join("\n")}
 Do you want to proceed with creating the account? (yes/no)
       `;
       logs.push("[TOOL] Prompting user for confirmation.");
+
+      // Wait for confirmation
       return { message: confirmationMessage, logs };
 
       // Create the account in Airtable
