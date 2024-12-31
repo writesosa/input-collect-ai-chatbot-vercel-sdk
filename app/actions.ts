@@ -187,9 +187,8 @@ const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | 
 
   return null; // All questions completed
 };
-
-// Process user input immediately and map to fields
 const processUserInput = async (userInput: string, logs: string[]) => {
+  const fieldsToUpdate: Record<string, string> = {}; // Properly define fieldsToUpdate locally
   let isUpdated = false;
 
   // Process Website, Instagram, Facebook, and Blog
@@ -219,13 +218,8 @@ const processUserInput = async (userInput: string, logs: string[]) => {
 
     // Update Airtable with collected links
     await modifyAccount.execute({
-      recordId: currentRecordId,
-      fields: {
-        Website: fieldsToUpdate.Website,
-        Instagram: fieldsToUpdate.Instagram,
-        Facebook: fieldsToUpdate.Facebook,
-        Blog: fieldsToUpdate.Blog,
-      },
+      recordId: currentRecordId!,
+      fields: fieldsToUpdate, // Use the locally defined fieldsToUpdate
     });
 
     isUpdated = true;
@@ -236,7 +230,7 @@ const processUserInput = async (userInput: string, logs: string[]) => {
   if (creationProgress === 1) {
     fieldsToUpdate.Description = userInput;
     logs.push(`[LLM] Description captured: ${userInput}. Updating Airtable.`);
-    await modifyAccount.execute({ recordId: currentRecordId, fields: { Description: userInput } });
+    await modifyAccount.execute({ recordId: currentRecordId!, fields: { Description: userInput } });
     isUpdated = true;
   }
 
@@ -244,12 +238,14 @@ const processUserInput = async (userInput: string, logs: string[]) => {
   if (creationProgress === 2) {
     fieldsToUpdate["Talking Points"] = userInput;
     logs.push(`[LLM] Talking Points captured: ${userInput}. Updating Airtable.`);
-    await modifyAccount.execute({ recordId: currentRecordId, fields: { "Talking Points": userInput } });
+    await modifyAccount.execute({ recordId: currentRecordId!, fields: { "Talking Points": userInput } });
     isUpdated = true;
   }
 
   return isUpdated;
 };
+
+
 
 
 
