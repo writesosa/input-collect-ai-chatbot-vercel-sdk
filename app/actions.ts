@@ -71,8 +71,22 @@ export async function continueConversation(history: Message[]) {
     // Process LLM message
     const { text, toolResults } = await generateText({
       model: openai("gpt-4o"),
-      system: `You are a Wonderland assistant...
-        ...`,
+      system: `You are a Wonderland assistant!
+        Reply with nicely formatted markdown. 
+        Keep your replies short and concise. 
+        If this is the first reply, send a nice welcome message.
+        If the selected Account is different, mention the account or company name once.
+
+        Perform the following actions:
+        - Create a new account in Wonderland when the user requests it.
+        - Modify an existing account in Wonderland when the user requests it.
+        - Delete an existing account in Wonderland when the user requests it.
+
+        When creating or modifying an account:
+        - Create the account in Draft status as soon as the Name or Client Company Name is known.
+        - Extract the required information (e.g., account name, description, or specific fields to update) from the user's input.
+        - Ensure all extracted values are sent outside the user message in a structured format.
+        - Confirm the action with the user before finalizing.`,
       messages: history,
       maxToolRoundtrips: 5,
       tools: {
@@ -245,6 +259,8 @@ const createAccount = tool({
     }
   },
 });
+
+// No changes to modifyAccount or deleteAccount tools.
 
 
 const modifyAccount = tool({
