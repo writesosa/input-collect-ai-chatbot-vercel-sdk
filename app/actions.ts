@@ -86,6 +86,7 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
+
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -122,12 +123,6 @@ const createAccount = tool({
         fields.Name = fields.Name.replace(/\b\w/g, (char) => char.toUpperCase());
       }
 
-      // Fetch existing records for suggestions
-      const existingRecords = await airtableBase("Accounts").select().firstPage();
-      const primaryContactSuggestions = existingRecords
-        .map((record) => record.get("Primary Contact Person"))
-        .filter((value): value is string => typeof value === "string");
-
       // Fetch available industry options from Airtable
       const allowedIndustries = await airtableBase("Accounts").select({ fields: ["Industry"] }).all();
       const industryOptions = allowedIndustries
@@ -136,11 +131,11 @@ const createAccount = tool({
 
       // Guess Industry based on client information
       const guessIndustry = (info: string) => {
-        if (/lawyer|legal|attorney/i.test(info)) return "Legal";
-        if (/jeep|car|vehicle|automobile/i.test(info)) return "Automotive";
-        if (/dog|pet/i.test(info)) return "Pet Care";
-        if (/dentist|dental/i.test(info)) return "Healthcare";
-        return "General";
+        const lowerInfo = info.toLowerCase();
+        const matchedIndustry = industryOptions.find((industry) =>
+          lowerInfo.includes(industry.toLowerCase())
+        );
+        return matchedIndustry || "General";
       };
       fields.Industry = fields.Industry || guessIndustry(fields.Description || fields["About the Client"] || "");
 
@@ -186,6 +181,13 @@ const createAccount = tool({
         };
       }
 
+      // Ask for website or social media if missing
+      if (!fields["Client URL"] && !fields.Instagram && !fields.Facebook && !fields.Blog && !fields["Other Social Accounts"]) {
+        return {
+          message: `Does this account have a website or social media links you'd like to include? If so, please provide them.`,
+        };
+      }
+
       // Summarize all fields before confirmation
       const summarizedFields = {
         Name: fields.Name || "Not provided",
@@ -208,23 +210,12 @@ const createAccount = tool({
 
       console.log("[TOOL] Final summarized fields:", summarizedFields);
 
-      // Create the record in Airtable
-      console.log("[TOOL] Creating a new Airtable record...");
-      const createdRecord = await airtableBase("Accounts").create(fields);
-
-      if (!createdRecord || !createdRecord.id) {
-        throw new Error("Airtable did not return a valid record ID.");
-      }
-
-      console.log("[TOOL] Account created successfully:", createdRecord);
-
       return {
-        message: `The account "${fields.Name}" has been successfully created with the following details:\n\n${JSON.stringify(
+        message: `Here's the information for the new account creation:\n\n${JSON.stringify(
           summarizedFields,
           null,
           2
-        )}\n\nRecord ID: ${createdRecord.id}`,
-        recordId: createdRecord.id,
+        )}\n\nShould I proceed with creating this account, or would you like to make any changes?`,
       };
     } catch (error) {
       console.error("[TOOL] Error creating account in Airtable:", error);
@@ -233,7 +224,6 @@ const createAccount = tool({
     }
   },
 });
-
 
 
 const modifyAccount = tool({
