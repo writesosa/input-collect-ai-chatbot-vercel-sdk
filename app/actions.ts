@@ -55,7 +55,7 @@ export async function continueConversation(history: Message[]) {
       return text.trim();
     };
 
-    const latestUserMessage = history.filter((msg) => msg.role === "user").pop()?.content;
+    const latestUserMessage = history.filter((msg) => msg.role === "user").pop()?.content || "";
     const intent = await detectIntentWithLLM(history);
 
     if (!intent) {
@@ -119,7 +119,7 @@ export async function continueConversation(history: Message[]) {
     }
 
     const nextPrompt = allFieldsComplete()
-      ? `The account "${fieldsToUpdate.Name}" has been updated with the provided details. Would you like to finalize and create the account as active?`
+      ? `The account "${fieldsToUpdate.Name || "Unnamed Account"}" has been updated with the provided details. Would you like to finalize and create the account as active?`
       : getNextPrompt(fieldsToUpdate, progressTracker, fieldsToUpdate.Name || "Unnamed Account");
 
     return {
