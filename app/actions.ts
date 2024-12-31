@@ -14,7 +14,6 @@ export interface Message {
 }
 
 let currentRecordId: string | null = null;
-
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
@@ -87,7 +86,11 @@ export async function continueConversation(history: Message[]) {
         - Modify an existing account in Wonderland when the user requests it.
         - Synchronize all fields dynamically in real-time as new information becomes available.
         - Validate actions to ensure they are successfully executed in Airtable.
-        - Confirm the current record being worked on, including the Record ID.`,
+        - Confirm the current record being worked on, including the Record ID.
+        - After creating an account, follow up with prompts for more details:
+          1. Ask for a brief description of the company and the industry.
+          2. Request the company's website and any social media links.
+          3. Ask about major talking points and primary objectives.`,
       messages: history,
       maxToolRoundtrips: 5,
       tools: {
@@ -110,12 +113,24 @@ export async function continueConversation(history: Message[]) {
       }
     });
 
+    // Extend: Follow up for additional fields
+    let nextPrompt = "";
+    if (!fieldsToUpdate.Description) {
+      nextPrompt = `I have the name. Could you give me a little description about the company "${fieldsToUpdate.Name}" and the industry?`;
+    } else if (!fieldsToUpdate["Client URL"]) {
+      nextPrompt = `Great! Could you share the company's website and any social media URLs they might have?`;
+    } else if (!fieldsToUpdate["Primary Objective"]) {
+      nextPrompt = `Thanks! Are there any major talking points or primary objectives for "${fieldsToUpdate.Name}"?`;
+    } else {
+      nextPrompt = `Here's the summary of the account we have so far:\n\n**Name**: ${fieldsToUpdate.Name}\n**Description**: ${fieldsToUpdate.Description}\n**Website**: ${fieldsToUpdate["Client URL"] || "N/A"}\n**Primary Objective**: ${fieldsToUpdate["Primary Objective"] || "N/A"}\n\nWould you like to finalize this account? If yes, I'll change its status from draft to "new."`;
+    }
+
     return {
       messages: [
         ...history,
         {
           role: "assistant",
-          content: text || toolResults.map((toolResult) => toolResult.result.message).join("\n"),
+          content: nextPrompt,
         },
       ],
       logs,
@@ -138,6 +153,7 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
+
 
 
 
