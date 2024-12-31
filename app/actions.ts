@@ -3,7 +3,6 @@
 import { InvalidToolArgumentsError, generateText, nanoid, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
-import users from "./users.json";
 import Airtable from "airtable";
 
 export interface Message {
@@ -11,29 +10,21 @@ export interface Message {
   content: string;
 }
 
-// Simulated user data for logging and updates
-const currentUserData = {
-  name: "",
-  accountNumber: "",
-  phoneNumber: "",
-  balance: 0,
-};
-
 // Initialize Airtable base
 const airtableBase = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID || "missing_base_id");
 
 export async function continueConversation(history: Message[]) {
-  "use server";
-
+  const logs: string[] = [];
   try {
-    console.log("[LLM] continueConversation");
+    logs.push("[LLM] Starting continueConversation...");
+
     const { text, toolResults } = await generateText({
       model: openai("gpt-4o"),
       system: `You are a Wonderland assistant!
         Reply with nicely formatted markdown. 
         Keep your replies short and concise. 
-        If this is the first reply send a nice welcome message.
-        If the selected Account is different mention account or company name once.
+        If this is the first reply, send a nice welcome message.
+        If the selected Account is different, mention the account or company name once.
 
         Perform the following actions:
         - Create a new account in Wonderland when the user requests it.
@@ -43,8 +34,7 @@ export async function continueConversation(history: Message[]) {
         When creating or modifying an account:
         - Extract the required information (e.g., account name, description, or specific fields to update) from the user's input.
         - Ensure all extracted values are sent outside the user message in a structured format.
-        - Confirm the action with the user before finalizing.
-        `,
+        - Confirm the action with the user before finalizing.`,
       messages: history,
       maxToolRoundtrips: 5,
       tools: {
@@ -54,37 +44,39 @@ export async function continueConversation(history: Message[]) {
       },
     });
 
-    return {
-      messages: [
-        ...history,
-        {
-          role: "assistant" as const,
-          content:
-            text ||
-            toolResults.map((toolResult) => toolResult.result).join("\n"),
-        },
-      ],
-    };
-  } catch (error) {
-    console.error("[LLM] Error in continueConversation:", {
-      message: error instanceof Error ? error.message : "Unknown error",
-      stack: error instanceof Error ? error.stack : undefined,
-      raw: JSON.stringify(error, Object.getOwnPropertyNames(error)),
-    });
+    logs.push("[LLM] Conversation processed successfully.");
 
     return {
       messages: [
         ...history,
         {
-          role: "assistant" as const,
+          role: "assistant",
+          content:
+            text ||
+            toolResults.map((toolResult) => toolResult.result).join("\n"),
+        },
+      ],
+      logs,
+    };
+  } catch (error) {
+    logs.push("[LLM] Error during conversation:", error instanceof Error ? error.message : JSON.stringify(error));
+
+    return {
+      messages: [
+        ...history,
+        {
+          role: "assistant",
           content: `There's a problem executing the request. Please try again. Error details: ${
             error instanceof Error ? error.message : "Unknown error"
           }`,
         },
       ],
+      logs,
     };
   }
 }
+
+// `createAccount` logic
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -104,7 +96,7 @@ const createAccount = tool({
   execute: async (fields) => {
     const logs: string[] = [];
     try {
-      logs.push("[TOOL] createAccount started.");
+      logs.push("[TOOL] Starting createAccount...");
       logs.push("[TOOL] Initial fields received:", JSON.stringify(fields, null, 2));
 
       // Ensure Name and Company Name consistency
@@ -119,12 +111,7 @@ const createAccount = tool({
         fields.Name = fields.Name.replace(/\b\w/g, (char) => char.toUpperCase());
       }
 
-      // Fetch existing records for suggestions
-      logs.push("[TOOL] Fetching existing records for suggestions...");
-      const existingRecords = await airtableBase("Accounts").select().firstPage();
-      const primaryContactSuggestions = existingRecords
-        .map((record) => record.get("Primary Contact Person"))
-        .filter((value): value is string => typeof value === "string");
+      logs.push("[TOOL] Updated Name and Client Company Name consistency.");
 
       // Fetch available industry options from Airtable
       logs.push("[TOOL] Fetching available industries...");
@@ -144,97 +131,53 @@ const createAccount = tool({
 
       logs.push(`[TOOL] Industry guessed: ${fields.Industry}`);
 
-      // Rewrite Description based on client-provided info
-      const rewriteDescription = (info: string) => {
-        return `This account is dedicated to ${info.toLowerCase()}, aiming to enhance visibility and engagement in the ${fields.Industry || "General"} sector with a focus on tailored solutions.`;
-      };
-      fields.Description = fields.Description || rewriteDescription(fields["About the Client"] || fields.Name || "");
+      // Rewrite "About the Client"
+      fields["About the Client"] =
+        fields["About the Client"] ||
+        `The client specializes in ${fields.Description?.toLowerCase()}. Utilizing Wonderland, the account will automate content creation and strategically distribute it across platforms to align with client goals and target audience needs.`;
 
-      // Generate Primary Objective and Talking Points based on client info
-      const generatePrimaryObjective = (info: string) => {
-        return `To promote ${info.toLowerCase()} effectively and achieve maximum engagement with the target audience.`;
-      };
-      const generateTalkingPoints = (info: string) => {
-        return `Highlighting ${info.toLowerCase()} with a focus on quality, customer-first strategies, and innovative solutions.`;
-      };
+      logs.push("[TOOL] About the Client rewritten.");
+
+      // Generate Primary Objective and Talking Points
       fields["Primary Objective"] =
-        fields["Primary Objective"] || generatePrimaryObjective(fields.Description || fields.Name || "");
+        fields["Primary Objective"] || `To enhance visibility for ${fields.Name || "the client"} in ${fields.Industry}.`;
       fields["Talking Points"] =
-        fields["Talking Points"] || generateTalkingPoints(fields.Description || fields.Name || "");
+        fields["Talking Points"] || `Focus on innovation and engagement for ${fields.Name || "the client"}.`;
 
-      logs.push("[TOOL] Finalized Primary Objective and Talking Points.");
+      logs.push("[TOOL] Primary Objective and Talking Points generated.");
 
-      // Prompt for Priority Image field if missing
-      const priorityImageOptions = [
-        "AI Generated",
-        "Stock Images",
-        "Google Images",
-        "Social Media",
-        "Uploaded Media",
-      ];
-      if (!fields["Priority Image"]) {
-        logs.push("[TOOL] Priority Image missing.");
-        return {
-          message: `What kind of images should this account generate or display? Please choose one of the following options: ${priorityImageOptions.join(
-            ", "
-          )}`,
-          logs,
-        };
-      }
-      if (!priorityImageOptions.includes(fields["Priority Image"])) {
-        logs.push("[TOOL] Invalid Priority Image option.");
-        return {
-          message: `Invalid choice for Priority Image. Please choose from: ${priorityImageOptions.join(", ")}`,
-          logs,
-        };
-      }
-
-      // Prompt for Primary Contact Person if missing
-      if (!fields["Primary Contact Person"]) {
-        const suggestionMessage = primaryContactSuggestions.length > 0
-          ? `The following primary contact persons are available: ${primaryContactSuggestions.join(", ")}. Is one of them the contact person for this account, or should we add someone else?`
-          : "No existing contact persons found. Please provide a contact person for this account.";
-        logs.push("[TOOL] Missing Primary Contact Person detected.");
-        return { message: suggestionMessage, logs };
-      }
-
-      // Merge suggested values with provided fields
+      // Finalize fields
       const finalFields = {
         ...fields,
         Status: fields.Status || "New",
-        "Client URL": fields["Client URL"] || "https://example.com",
-        "Contact Information": fields["Contact Information"] || "contact@example.com",
-        Description: fields.Description.padEnd(600, "."),
+        Description: fields.Description || `This account is focused on ${fields.Name || "the client"}.`,
       };
 
-      logs.push("[TOOL] Final fields prepared for account creation:", JSON.stringify(finalFields, null, 2));
+      logs.push("[TOOL] Final fields prepared for Airtable creation:", JSON.stringify(finalFields, null, 2));
 
-      // Create a new record in Airtable
-      logs.push("[TOOL] Creating a new Airtable record...");
+      // Create Airtable record
+      logs.push("[TOOL] Creating record in Airtable...");
       const createdRecord = await airtableBase("Accounts").create(finalFields);
 
       if (!createdRecord || !createdRecord.id) {
-        logs.push("[TOOL] Airtable record creation failed: No valid record ID returned.");
-        throw new Error("Failed to create the account in Airtable. Please check your fields and try again.");
+        logs.push("[TOOL] Airtable record creation failed.");
+        throw new Error("Failed to create the account in Airtable.");
       }
 
-      logs.push(`[TOOL] Account created successfully in Airtable. Record ID: ${createdRecord.id}`);
+      logs.push(`[TOOL] Account created successfully with Record ID: ${createdRecord.id}`);
 
       return {
-        message: `Account created successfully for ${fields.Name} with the provided and suggested details. Record ID: ${createdRecord.id}`,
+        message: `Account created successfully for ${fields.Name}. Record ID: ${createdRecord.id}`,
         recordId: createdRecord.id,
         logs,
       };
     } catch (error) {
       logs.push("[TOOL] Error during account creation:", error instanceof Error ? error.message : JSON.stringify(error));
-
-      return {
-        message: "Account creation failed. Check logs for details.",
-        logs,
-      };
+      throw { message: "Account creation failed. Check logs for details.", logs };
     }
   },
 });
+
 
 
 const modifyAccount = tool({
