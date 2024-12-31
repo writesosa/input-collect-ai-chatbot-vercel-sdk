@@ -85,6 +85,7 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
+
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -109,7 +110,7 @@ const createAccount = tool({
     console.log("[TOOL] createAccount", fields);
 
     try {
-      // Ensure Name and Company Name consistency
+      // Ensure Name and Client Company Name consistency
       if (!fields.Name && fields["Client Company Name"]) {
         fields.Name = fields["Client Company Name"];
       } else if (!fields["Client Company Name"] && fields.Name) {
@@ -179,18 +180,6 @@ const createAccount = tool({
           )}`,
         };
       }
-      if (!priorityImageOptions.includes(fields["Priority Image"])) {
-        return {
-          message: `Invalid choice for Priority Image. Please choose from: ${priorityImageOptions.join(", ")}`,
-        };
-      }
-
-      // Ask for website or social media if missing
-      if (!fields["Client URL"] && !fields.Instagram && !fields.Facebook && !fields.Blog && !fields["Other Social Accounts"]) {
-        return {
-          message: `Does this account have a website or social media links you'd like to include? If so, please provide them.`,
-        };
-      }
 
       // Summarize all fields before confirmation
       const summarizedFields = {
@@ -212,8 +201,6 @@ const createAccount = tool({
         "Other Social Accounts": fields["Other Social Accounts"] || "Not provided",
       };
 
-      console.log("[TOOL] Final summarized fields:", summarizedFields);
-
       return {
         message: `Here's the information for the new account creation:\n\n${JSON.stringify(
           summarizedFields,
@@ -228,7 +215,6 @@ const createAccount = tool({
     }
   },
 });
-
 
 const modifyAccount = tool({
   description: "Modify any field of an existing account in Wonderland.",
