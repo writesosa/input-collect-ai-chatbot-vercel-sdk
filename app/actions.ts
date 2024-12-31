@@ -1,38 +1,3 @@
-"use server";
-
-import { InvalidToolArgumentsError, generateText, tool } from "ai";
-import { openai } from "@ai-sdk/openai";
-import { z } from "zod";
-import Airtable from "airtable";
-
-// Initialize Airtable base
-const airtableBase = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID || "missing_base_id");
-
-export interface Message {
-  role: "user" | "assistant";
-  content: string;
-}
-
-let currentRecordId: string | null = null;
-let creationProgress: number | null = null; // Track user progress in account creation
-
-// Helper: Validate URLs
-const validateURL = (url: string): string | null => {
-  try {
-    const validUrl = new URL(url.startsWith("http") ? url : `https://${url}`);
-    return validUrl.href;
-  } catch {
-    return null;
-  }
-};
-
-// Helper: Convert string to Title Case
-const toTitleCase = (str: string): string =>
-  str.replace(/\w\S*/g, (word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
-
-// Helper: Clean Undefined Fields
-const cleanFields = (fields: Record<string, any>) =>
-  Object.fromEntries(Object.entries(fields).filter(([_, value]) => value !== undefined));
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
@@ -176,7 +141,11 @@ export async function continueConversation(history: Message[]) {
             });
             logs.push("[LLM] Description updated.");
           } catch (error) {
-            logs.push(`[LLM] Error updating Description: ${error.message}`);
+            if (error instanceof Error) {
+              logs.push(`[LLM] Error updating Description: ${error.message}`);
+            } else {
+              logs.push("[LLM] Unknown error occurred while updating Description.");
+            }
           }
 
           creationProgress++;
@@ -190,7 +159,11 @@ export async function continueConversation(history: Message[]) {
             });
             logs.push("[LLM] Talking Points updated.");
           } catch (error) {
-            logs.push(`[LLM] Error updating Talking Points: ${error.message}`);
+            if (error instanceof Error) {
+              logs.push(`[LLM] Error updating Talking Points: ${error.message}`);
+            } else {
+              logs.push("[LLM] Unknown error occurred while updating Talking Points.");
+            }
           }
 
           creationProgress = null; // End of flow
@@ -218,12 +191,20 @@ export async function continueConversation(history: Message[]) {
           });
           logs.push(`[TOOL] Record ID: ${currentRecordId} transitioned to New status.`);
         } catch (error) {
-          logs.push(`[LLM] Error updating status to New: ${error.message}`);
+          if (error instanceof Error) {
+            logs.push(`[LLM] Error updating status to New: ${error.message}`);
+          } else {
+            logs.push("[LLM] Unknown error occurred while updating status to New.");
+          }
         }
       }
     }
   } catch (error) {
-    logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
+    if (error instanceof Error) {
+      logs.push(`[LLM] Error during conversation: ${error.message}`);
+    } else {
+      logs.push("[LLM] Unknown error occurred during conversation.");
+    }
     console.error("[LLM] Error during conversation:", error);
     return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
   }
