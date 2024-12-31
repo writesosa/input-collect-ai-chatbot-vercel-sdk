@@ -181,6 +181,19 @@ const createAccount = tool({
         };
       }
 
+      // Prompt for website or social media links if missing
+      const socialMediaFields = {
+        Instagram: fields.Instagram || "Not provided",
+        Facebook: fields.Facebook || "Not provided",
+        Blog: fields.Blog || "Not provided",
+        "Other Social Accounts": fields["Other Social Accounts"] || "Not provided",
+      };
+      if (!fields["Client URL"] && Object.values(socialMediaFields).every((value) => value === "Not provided")) {
+        return {
+          message: `Does this account have a website or social media links you'd like to include? Please provide a URL or any social media account details (e.g., Instagram, Facebook, Blog, etc.).`,
+        };
+      }
+
       // Summarize all fields before confirmation
       const summarizedFields = {
         Name: fields.Name || "Not provided",
@@ -195,10 +208,10 @@ const createAccount = tool({
         "Talking Points": fields["Talking Points"] || "Not provided",
         "Contact Information": fields["Contact Information"] || "Not provided",
         "Priority Image": fields["Priority Image"] || "Not provided",
-        Instagram: fields.Instagram || "Not provided",
-        Facebook: fields.Facebook || "Not provided",
-        Blog: fields.Blog || "Not provided",
-        "Other Social Accounts": fields["Other Social Accounts"] || "Not provided",
+        Instagram: socialMediaFields.Instagram,
+        Facebook: socialMediaFields.Facebook,
+        Blog: socialMediaFields.Blog,
+        "Other Social Accounts": socialMediaFields["Other Social Accounts"],
       };
 
       return {
