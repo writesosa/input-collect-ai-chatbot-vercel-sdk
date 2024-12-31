@@ -9,7 +9,7 @@ import Airtable from "airtable";
 const airtableBase = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID || "missing_base_id");
 
 export interface Message {
-  role: "user" | "assistant";
+  role: "user";
   content: string;
 }
 
@@ -109,22 +109,12 @@ export async function continueConversation(history: Message[]) {
       }
     });
 
-    // Add confirmation logic here
-    const assistantResponse = text || toolResults.map((toolResult) => toolResult.result.message).join("\n");
-
-    if (assistantResponse.includes("confirm")) {
-      // Assuming the user confirms via a specific message in the flow
-      await airtableBase("Accounts").update(recordId, { Status: "New" });
-      logs.push("[TOOL] Account status updated to 'New'.");
-      console.log("[TOOL] Account status updated to 'New'.");
-    }
-
     return {
       messages: [
         ...history,
         {
           role: "assistant",
-          content: assistantResponse,
+          content: text || toolResults.map((toolResult) => toolResult.result.message).join("\n"),
         },
       ],
       logs,
@@ -142,6 +132,7 @@ export async function continueConversation(history: Message[]) {
             error instanceof Error ? error.message : "Unknown error"
           }`,
         },
+      ],
       logs,
     };
   }
@@ -151,8 +142,117 @@ export async function continueConversation(history: Message[]) {
 const toTitleCase = (str: string): string =>
   str.replace(/\w\S*/g, (word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
 
+"use server";
 
+import { InvalidToolArgumentsError, generateText, tool } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { z } from "zod";
+import Airtable from "airtable";
 
+// Initialize Airtable base
+const airtableBase = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID || "missing_base_id");
+
+export interface Message {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export async function continueConversation(history: Message[]) {
+  const logs: string[] = [];
+  let draftCreated = false;
+  let recordId: string | null = null;
+  const fieldsToUpdate: Record<string, any> = {};
+
+  try {
+    logs.push("[LLM] Starting continueConversation...");
+    console.log("[LLM] Starting continueConversation...");
+
+    // Detect fields from user messages
+    history.forEach((msg) => {
+      if (msg.role === "user") {
+        if (!fieldsToUpdate.Name && msg.content.toLowerCase().includes("called")) {
+          fieldsToUpdate.Name = toTitleCase(msg.content.match(/called\s(.+)/i)?.[1] || "");
+        }
+        if (!fieldsToUpdate.Description && msg.content.toLowerCase().includes("about")) {
+          fieldsToUpdate.Description = msg.content.match(/about\s(.+)/i)?.[1];
+        }
+      }
+    });
+
+    // Ensure draft record is created when Name is detected
+    if (fieldsToUpdate.Name && !draftCreated) {
+      logs.push(`[LLM] Detected account name: ${fieldsToUpdate.Name}`);
+      console.log(`[LLM] Detected account name: ${fieldsToUpdate.Name}`);
+
+      const createResponse = await createAccount.execute({
+        Name: fieldsToUpdate.Name,
+        "Priority Image Type": "AI Generated", // Default value
+      });
+
+      recordId = createResponse.recordId || null;
+      draftCreated = true;
+
+      logs.push(`[TOOL] Draft created with Record ID: ${recordId}`);
+    }
+
+    // Update additional fields incrementally
+    if (recordId && Object.keys(fieldsToUpdate).length > 1) {
+      const updateFields = { ...fieldsToUpdate };
+      delete updateFields.Name;
+
+      logs.push("[TOOL] Updating draft record with new fields:", JSON.stringify(updateFields, null, 2));
+      console.log("[TOOL] Updating draft record with new fields:", updateFields);
+
+      const modifyResponse = await modifyAccount.execute({
+        recordId,
+        fields: updateFields,
+      });
+
+      logs.push("[TOOL] Fields updated successfully:", JSON.stringify(modifyResponse));
+      console.log("[TOOL] Fields updated successfully:", modifyResponse);
+    }
+
+    return {
+      messages: [
+        ...history,
+        {
+          role: "assistant",
+          content: "Draft creation process completed.",
+        },
+      ],
+      logs,
+    };
+  } catch (error) {
+    logs.push("[LLM] Error during conversation:", error instanceof Error ? error.message : JSON.stringify(error));
+    console.error("[LLM] Error during conversation:", error);
+
+    return {
+      messages: [
+        ...history,
+        {
+          role: "assistant",
+          content: `An error occurred: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`,
+        },
+      ],
+      logs,
+    };
+  }
+}
+
+// Helper: Convert string to Title Case
+const toTitleCase = (str: string): string =>
+  str.replace(/\w\S*/g, (word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
+
+// Confirmation Function
+async function confirmAccountChanges(recordId: string): Promise<boolean> {
+  console.log(`[CONFIRMATION] Confirming account changes for Record ID: ${recordId}`);
+  // Simulate user interaction (replace with real implementation)
+  return true; // Example response: user confirmed changes
+}
+
+// Create Account Tool
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -179,120 +279,28 @@ const createAccount = tool({
       console.log("[TOOL] Starting createAccount...");
       logs.push("[TOOL] Initial fields received:", JSON.stringify(fields, null, 2));
 
-      // Convert Name and Client Company Name to Title Case
       if (fields.Name) fields.Name = toTitleCase(fields.Name);
       if (fields["Client Company Name"]) fields["Client Company Name"] = toTitleCase(fields["Client Company Name"]);
 
-      // Use Client Company Name as fallback if Name is not provided
       const accountName = fields.Name || fields["Client Company Name"];
       if (!accountName) {
-        return {
-          message: "Please provide the account name to begin creating the account.",
-          logs,
-        };
+        return { message: "Please provide the account name.", logs };
       }
 
-      // Set default value for Priority Image Type if not provided
       if (!fields["Priority Image Type"]) {
         fields["Priority Image Type"] = "AI Generated";
-        logs.push("[TOOL] Defaulted Priority Image Type to 'AI Generated'.");
       }
 
-      // Create draft account immediately if it doesn't already exist
-      if (!recordId) {
-        const initialRecord = await airtableBase("Accounts").create({
-          Name: accountName,
-          Status: "Draft", // Automatically set to Draft
-        });
-        recordId = initialRecord.id;
+      const record = await airtableBase("Accounts").create({
+        Name: accountName,
+        Status: "Draft",
+      });
+      recordId = record.id;
 
-        logs.push(`[TOOL] Created draft account with Record ID: ${recordId}`);
-        console.log(`[TOOL] Created draft account with Record ID: ${recordId}`);
-      }
-
-      // Auto-generate missing fields
-      if (!fields.Description) {
-        autoGeneratedFields.Description = `A general account for ${accountName}.`;
-      } else {
-        knownFields.Description = fields.Description;
-      }
-      if (!fields["About the Client"]) {
-        autoGeneratedFields["About the Client"] = `The client specializes in ${
-          fields.Description?.toLowerCase() || "their field"
-        }.`;
-      } else {
-        knownFields["About the Client"] = fields["About the Client"];
-      }
-      if (!fields["Primary Objective"]) {
-        autoGeneratedFields["Primary Objective"] = `To enhance visibility for ${accountName} in ${
-          fields.Industry || "their industry"
-        }.`;
-      } else {
-        knownFields["Primary Objective"] = fields["Primary Objective"];
-      }
-      if (!fields["Talking Points"]) {
-        autoGeneratedFields["Talking Points"] = `Focus on innovation and engagement for ${accountName}.`;
-      } else {
-        knownFields["Talking Points"] = fields["Talking Points"];
-      }
-      if (!fields["Contact Information"]) {
-        autoGeneratedFields["Contact Information"] = "Contact details not provided.";
-      } else {
-        knownFields["Contact Information"] = fields["Contact Information"];
-      }
-
-      logs.push("[TOOL] Auto-generated fields:", JSON.stringify(autoGeneratedFields, null, 2));
-      console.log("[TOOL] Auto-generated fields:", autoGeneratedFields);
-
-      // Merge provided fields and auto-generated fields
-      const updateFields = { ...fields, ...autoGeneratedFields };
-
-      // Update the record incrementally
-      const updatedRecord = await airtableBase("Accounts").update(recordId, updateFields);
-
-      logs.push("[TOOL] Updated account fields incrementally:", JSON.stringify(updateFields, null, 2));
-      console.log("[TOOL] Updated account fields incrementally:", updateFields);
-
-      // Generate summary for confirmation
-      const summary = `
-### Known Fields:
-${Object.entries(knownFields)
-  .map(([key, value]) => `- **${key}:** ${value}`)
-  .join("\n")}
-
-### Auto-generated Fields:
-${Object.entries(autoGeneratedFields)
-  .map(([key, value]) => `- **${key}:** ${value}`)
-  .join("\n")}
-
-Please review the above details. If everything looks good, I can finalize the account and set the status to **New**. Let me know if you’d like to make any changes.`;
-
-      // Await user confirmation to finalize
-      const confirmationResponse = await confirmAccountChanges(); // Assume confirmAccountChanges handles user confirmation logic
-
-      if (confirmationResponse) {
-        await airtableBase("Accounts").update(recordId, { Status: "New" });
-        logs.push("[TOOL] Account status updated to 'New'.");
-        console.log("[TOOL] Account status updated to 'New'.");
-      }
-
-      // Return summary for confirmation
-      return {
-        message: `Account draft created for "${accountName}". Here’s a summary of the fields:\n\n${summary}`,
-        recordId,
-        logs,
-      };
+      logs.push(`[TOOL] Created draft record with ID: ${recordId}`);
+      return { recordId, logs };
     } catch (error) {
-      logs.push("[TOOL] Error during account creation:", error instanceof Error ? error.message : JSON.stringify(error));
-      console.error("[TOOL] Error during account creation:", error);
-
-      const errorMessage =
-        error instanceof Error ? error.message : typeof error === "object" ? JSON.stringify(error) : "Unknown error";
-
-      return {
-        message: `An error occurred during account creation: ${errorMessage}`,
-        logs,
-      };
+      return { logs };
     }
   },
 });
