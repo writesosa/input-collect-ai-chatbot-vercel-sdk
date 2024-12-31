@@ -16,9 +16,7 @@ export default function Home() {
   const conversation = JSON.parse(conversationString) as Message[];
   const [optimisticConversation, addOptimisticMessage] = useOptimistic(
     conversation,
-    (current, optimisticVal: Message[]) => {
-      return [...current, ...optimisticVal];
-    }
+    (current, optimisticVal: Message[]) => [...current, ...optimisticVal]
   );
   const [input, setInput] = useState<string>(
     "I want to transfer money to my friend"
@@ -38,14 +36,67 @@ export default function Home() {
     }
   }, [optimisticConversation.length]);
 
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const userInput = input.trim();
+    if (!userInput) return;
+
+    setInput("");
+
+    if (userInput.toLowerCase() === "reset" || userInput.toLowerCase() === "clear") {
+      setConversation([]);
+      return;
+    }
+
+    addOptimisticMessage([
+      {
+        role: "assistant",
+        content: `[METADATA] Current date and time: ${new Date().toLocaleString()}`,
+      } as Message,
+      { role: "user", content: userInput } as Message,
+    ]);
+    setIsTyping(true);
+
+    try {
+      const result = await continueConversation([
+        ...conversation,
+        {
+          role: "assistant",
+          content: `[METADATA] Current date and time: ${new Date().toLocaleString()}`,
+        } as Message,
+        { role: "user", content: userInput } as Message,
+      ]);
+
+      if (result && result.messages) {
+        setConversation(result.messages as Message[]);
+      } else {
+        console.error("[Error] Invalid response from continueConversation:", result);
+        addOptimisticMessage([
+          {
+            role: "assistant",
+            content: "An error occurred while processing your request. Please try again.",
+          } as Message,
+        ]);
+      }
+    } catch (error) {
+      console.error("[Error] Exception in continueConversation:", error);
+      addOptimisticMessage([
+        {
+          role: "assistant",
+          content: "An unexpected error occurred. Please try again later.",
+        } as Message,
+      ]);
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
   return (
     <div className="flex flex-col w-full max-w-md py-24 mx-auto stretch pb-36 space-y-2">
       {optimisticConversation
         .filter((m) =>
           m.role === "assistant"
-            ? m.content.startsWith("[METADATA]")
-              ? false
-              : true
+            ? !m.content.startsWith("[METADATA]")
             : true
         )
         .map((message, index) => (
@@ -53,7 +104,7 @@ export default function Home() {
             key={index}
             className={cn(
               "flex flex-row space-x-2 p-2 rounded-md",
-              message.role === "user" ? "flex-row-reverse  self-end" : ""
+              message.role === "user" ? "flex-row-reverse self-end" : ""
             )}
           >
             <div className="mx-2">
@@ -63,7 +114,7 @@ export default function Home() {
               className={cn(
                 "flex flex-col space-y-2 p-2 px-4 rounded-md",
                 message.role === "user"
-                  ? "flex-row-reverse bg-blue-500 text-white self-end"
+                  ? "bg-blue-500 text-white self-end"
                   : "bg-slate-100"
               )}
             >
@@ -73,50 +124,17 @@ export default function Home() {
         ))}
       <div className="w-full h-1 bg-transparent" ref={lastElementRef} />
 
-      <form
-        onSubmit={async (e) => {
-          e.preventDefault();
-          const userInput = input.trim();
-          setInput("");
-
-          if (userInput === "reset" || userInput === "clear") {
-            setConversation([]);
-            return;
-          }
-
-          addOptimisticMessage([
-            {
-              role: "assistant",
-              content: `[METADATA] Current date and time: ${new Date().toLocaleString()}`,
-            } as Message,
-            { role: "user", content: userInput } as Message,
-          ]);
-          setIsTyping(true);
-
-          const { messages } = await continueConversation([
-            ...conversation,
-            {
-              role: "assistant",
-              content: `[METADATA] Current date and time: ${new Date().toLocaleString()}`,
-            } as Message,
-            { role: "user", content: userInput } as Message,
-          ]);
-          setIsTyping(false);
-          setConversation(messages as Message[]);
-        }}
-      >
+      <form onSubmit={handleSubmit}>
         <div className="fixed bottom-0 w-full max-w-md flex flex-col space-y-2 py-4 bg-white">
-          {isTyping ? (
+          {isTyping && (
             <p className="text-gray-400 italic text-sm">Bot is typing ...</p>
-          ) : null}
+          )}
           <input
             className="p-2 border border-gray-300 rounded shadow-xl"
             type="text"
             value={input}
             placeholder="Enter a message"
-            onChange={(event) => {
-              setInput(event.target.value);
-            }}
+            onChange={(event) => setInput(event.target.value)}
           />
           <button
             className="p-2 border bg-slate-700 text-white rounded shadow-xl"
