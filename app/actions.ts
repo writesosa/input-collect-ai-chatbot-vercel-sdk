@@ -299,7 +299,6 @@ const processUserInput = async (userInput: string, logs: string[]) => {
 };
 
 
-
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -348,16 +347,20 @@ const createAccount = tool({
         // Populate missing optional fields with defaults
         logs.push("[TOOL] Creating a new draft account...");
         const record = await airtableBase("Accounts").create({
-          Name: fields.Name,
-          Status: fields.Status || "Draft",
-          Description: fields.Description || `A general account for ${fields.Name}.`,
-          Website: fields.Website || "",
-          Instagram: fields.Instagram || "",
-          Facebook: fields.Facebook || "",
-          Blog: fields.Blog || "",
-          "Primary Objective": fields["Primary Objective"] || `Increase visibility for ${fields.Name}.`,
-          "Talking Points": fields["Talking Points"] || `Focus on innovation and engagement for ${fields.Name}.`,
-          "Priority Image Type": fields["Priority Image Type"], // Default to "AI Generated"
+          fields: {
+            Name: fields.Name,
+            Status: fields.Status || "Draft",
+            Description: fields.Description || `A general account for ${fields.Name}.`,
+            Website: fields.Website || "",
+            Instagram: fields.Instagram || "",
+            Facebook: fields.Facebook || "",
+            Blog: fields.Blog || "",
+            "Primary Objective":
+              fields["Primary Objective"] || `Increase visibility for ${fields.Name}.`,
+            "Talking Points":
+              fields["Talking Points"] || `Focus on innovation and engagement for ${fields.Name}.`,
+            "Priority Image Type": fields["Priority Image Type"], // Default to "AI Generated"
+          },
         });
 
         recordId = record.id;
@@ -370,7 +373,10 @@ const createAccount = tool({
         logs,
       };
     } catch (error) {
-      logs.push("[TOOL] Error during account creation:", error instanceof Error ? error.message : JSON.stringify(error));
+      logs.push(
+        "[TOOL] Error during account creation:",
+        error instanceof Error ? error.message : JSON.stringify(error)
+      );
       console.error("[TOOL] Error during account creation:", error);
 
       return {
