@@ -9,7 +9,7 @@ import Airtable from "airtable";
 const airtableBase = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID || "missing_base_id");
 
 export interface Message {
-  role: "user";
+  role: "user" | "assistant";
   content: string;
 }
 
@@ -109,12 +109,22 @@ export async function continueConversation(history: Message[]) {
       }
     });
 
+    // Add confirmation logic here
+    const assistantResponse = text || toolResults.map((toolResult) => toolResult.result.message).join("\n");
+
+    if (assistantResponse.includes("confirm")) {
+      // Assuming the user confirms via a specific message in the flow
+      await airtableBase("Accounts").update(recordId, { Status: "New" });
+      logs.push("[TOOL] Account status updated to 'New'.");
+      console.log("[TOOL] Account status updated to 'New'.");
+    }
+
     return {
       messages: [
         ...history,
         {
           role: "assistant",
-          content: text || toolResults.map((toolResult) => toolResult.result.message).join("\n"),
+          content: assistantResponse,
         },
       ],
       logs,
@@ -132,7 +142,6 @@ export async function continueConversation(history: Message[]) {
             error instanceof Error ? error.message : "Unknown error"
           }`,
         },
-      ],
       logs,
     };
   }
