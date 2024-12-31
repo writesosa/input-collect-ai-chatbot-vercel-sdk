@@ -88,8 +88,8 @@ export default function Home() {
             {
               role: "assistant",
               content: `[METADATA] Current date and time: ${new Date().toLocaleString()}`,
-            } as const,
-            { role: "user", content: userInput } as const,
+            } as Message,
+            { role: "user", content: userInput } as Message,
           ]);
           setIsTyping(true);
 
@@ -98,11 +98,11 @@ export default function Home() {
             {
               role: "assistant",
               content: `[METADATA] Current date and time: ${new Date().toLocaleString()}`,
-            } as const,
-            { role: "user", content: userInput } as const,
+            } as Message,
+            { role: "user", content: userInput } as Message,
           ]);
           setIsTyping(false);
-          setConversation(messages);
+          setConversation(messages as Message[]);
         }}
       >
         <div className="fixed bottom-0 w-full max-w-md flex flex-col space-y-2 py-4 bg-white">
@@ -110,7 +110,7 @@ export default function Home() {
             <p className="text-gray-400 italic text-sm">Bot is typing ...</p>
           ) : null}
           <input
-            className=" p-2 border border-gray-300 rounded shadow-xl"
+            className="p-2 border border-gray-300 rounded shadow-xl"
             type="text"
             value={input}
             placeholder="Enter a message"
