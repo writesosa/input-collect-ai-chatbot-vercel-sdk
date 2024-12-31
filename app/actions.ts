@@ -258,7 +258,7 @@ const createAccount = tool({
       logs.push("[TOOL] Account successfully created:", JSON.stringify(createdRecord, null, 2));
 
       // Summarize changes and confirm
-      const summary = `### Account Created\n\n**Provided Fields:**\n${JSON.stringify(fields, null, 2)}\n\n**Generated Fields:**\n- Industry: ${fields.Industry}\n- About the Client: ${fields["About the Client"]}\n- Primary Objective: ${fields["Primary Objective"]}\n- Talking Points: ${fields["Talking Points"]}\n\nRecord ID: ${createdRecord.id}`;
+      const summary = `## Account Created\n\n**Provided Fields:**\n${JSON.stringify(fields, null, 2)}\n\n**Generated Fields:**\n- Industry: ${fields.Industry}\n- About the Client: ${fields["About the Client"]}\n- Primary Objective: ${fields["Primary Objective"]}\n- Talking Points: ${fields["Talking Points"]}\n\nRecord ID: ${createdRecord.id}`;
       return { message: summary, logs };
     } catch (error) {
       logs.push("[TOOL] Error during account creation:", error instanceof Error ? error.message : JSON.stringify(error));
