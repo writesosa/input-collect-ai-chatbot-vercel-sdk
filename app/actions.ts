@@ -14,6 +14,7 @@ export interface Message {
 }
 
 let currentRecordId: string | null = null;
+let creationProgress: number | null = null; // Track user progress in account creation
 
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
@@ -46,25 +47,60 @@ export async function continueConversation(history: Message[]) {
       });
 
       currentRecordId = createResponse.recordId || null;
+      creationProgress = 0; // Start the three-question flow
 
       logs.push(`[TOOL] Draft created with Record ID: ${currentRecordId}`);
     }
 
-    // Update additional fields incrementally
-    if (currentRecordId && Object.keys(fieldsToUpdate).length > 1) {
-      const updateFields = { ...fieldsToUpdate };
-      delete updateFields.Name;
+    // If in account creation phase, run the three-question flow
+    if (currentRecordId && creationProgress !== null) {
+      const prompts = [
+        "Can you share the company's website or any social media links (e.g., Instagram, Facebook, Blog, or others)?",
+        "Can you tell me more about the company, including its industry, purpose, or mission?",
+        "What are the major objectives or talking points you'd like to achieve with Wonderland?",
+      ];
 
-      logs.push(`[TOOL] Updating record with ID: ${currentRecordId}`);
-      console.log("[TOOL] Updating record with fields:", updateFields);
+      // Process user input and update corresponding fields
+      const userMessage = history[history.length - 1]?.content || "";
+      if (creationProgress === 0) {
+        const website = validateURL(userMessage);
+        if (website) fieldsToUpdate["Client URL"] = website;
+      } else if (creationProgress === 1) {
+        fieldsToUpdate.Description = userMessage;
+        fieldsToUpdate["About the Client"] = userMessage;
+        fieldsToUpdate.Industry = "To be inferred"; // Placeholder
+      } else if (creationProgress === 2) {
+        fieldsToUpdate["Talking Points"] = userMessage;
+        fieldsToUpdate["Primary Objective"] = "To be inferred"; // Placeholder
+      }
 
-      const modifyResponse = await modifyAccount.execute({
-        recordId: currentRecordId,
-        fields: updateFields,
-      });
+      // Update fields incrementally
+      if (Object.keys(fieldsToUpdate).length > 0) {
+        logs.push(`[TOOL] Updating draft record ID: ${currentRecordId}`);
+        await modifyAccount.execute({ recordId: currentRecordId, fields: fieldsToUpdate });
+        logs.push(`[TOOL] Fields updated successfully for Record ID: ${currentRecordId}`);
+      }
 
-      logs.push(`[TOOL] Fields updated successfully for Record ID: ${currentRecordId}`);
-      console.log("[TOOL] Fields updated successfully:", modifyResponse);
+      // Prompt the next question or finalize creation
+      if (creationProgress < prompts.length - 1) {
+        creationProgress++;
+        const { text } = await generateText({
+          model: openai("gpt-4o"),
+          system: "You are a Wonderland assistant helping users create an account step-by-step.",
+          messages: [...history, { role: "assistant", content: prompts[creationProgress] }],
+          maxToolRoundtrips: 1,
+        });
+
+        return {
+          messages: [...history, { role: "assistant", content: text }],
+          logs,
+        };
+      } else {
+        // Finalize and switch status to "New"
+        await modifyAccount.execute({ recordId: currentRecordId, fields: { Status: "New" } });
+        creationProgress = null; // Reset progress
+        logs.push(`[TOOL] Account switched to "New" status for Record ID: ${currentRecordId}`);
+      }
     }
 
     // Process LLM message
@@ -96,7 +132,6 @@ export async function continueConversation(history: Message[]) {
         switchRecord,
       },
     });
-
 
     logs.push("[LLM] Conversation processed successfully.");
     console.log("[LLM] Conversation processed successfully.");
@@ -130,9 +165,7 @@ export async function continueConversation(history: Message[]) {
         ...history,
         {
           role: "assistant",
-          content: `An error occurred: ${
-            error instanceof Error ? error.message : "Unknown error"
-          }`,
+          content: `An error occurred: ${error instanceof Error ? error.message : "Unknown error"}`,
         },
       ],
       logs,
@@ -140,11 +173,19 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
+// Helper: Validate URLs
+const validateURL = (url: string): string | null => {
+  try {
+    const validUrl = new URL(url.startsWith("http") ? url : `https://${url}`);
+    return validUrl.href;
+  } catch {
+    return null;
+  }
+};
 
 // Helper: Convert string to Title Case
 const toTitleCase = (str: string): string =>
   str.replace(/\w\S*/g, (word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
-
 
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
