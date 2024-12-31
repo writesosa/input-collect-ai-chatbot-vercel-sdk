@@ -1,83 +1,6 @@
 "use server";
 
-import { InvalidToolArgumentsError, generateText, nanoid, tool } from "ai";
-import { openai } from "@ai-sdk/openai";
-import { z } from "zod";
-import Airtable from "airtable";
-
-export interface Message {
-  role: "user" | "assistant";
-  content: string;
-}
-
-// Initialize Airtable base
-const airtableBase = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID || "missing_base_id");
-
-export async function continueConversation(history: Message[]) {
-  const logs: string[] = [];
-  try {
-    logs.push("[LLM] Starting continueConversation...");
-
-    const { text, toolResults } = await generateText({
-      model: openai("gpt-4o"),
-      system: `You are a Wonderland assistant!
-        Reply with nicely formatted markdown. 
-        Keep your replies short and concise. 
-        If this is the first reply, send a nice welcome message.
-        If the selected Account is different, mention the account or company name once.
-
-        Perform the following actions:
-        - Create a new account in Wonderland when the user requests it.
-        - Modify an existing account in Wonderland when the user requests it.
-        - Delete an existing account in Wonderland when the user requests it.
-
-        When creating or modifying an account:
-        - Extract the required information (e.g., account name, description, or specific fields to update) from the user's input.
-        - Ensure all extracted values are sent outside the user message in a structured format.
-        - Confirm the action with the user before finalizing.`,
-      messages: history,
-      maxToolRoundtrips: 5,
-      tools: {
-        createAccount,
-        modifyAccount,
-        deleteAccount,
-      },
-    });
-
-    logs.push("[LLM] Conversation processed successfully.");
-
-    return {
-      messages: [
-        ...history,
-        {
-          role: "assistant",
-          content:
-            text ||
-            toolResults.map((toolResult) => toolResult.result).join("\n"),
-        },
-      ],
-      logs,
-    };
-  } catch (error) {
-    logs.push("[LLM] Error during conversation:", error instanceof Error ? error.message : JSON.stringify(error));
-
-    return {
-      messages: [
-        ...history,
-        {
-          role: "assistant",
-          content: `There's a problem executing the request. Please try again. Error details: ${
-            error instanceof Error ? error.message : "Unknown error"
-          }`,
-        },
-      ],
-      logs,
-    };
-  }
-}
-"use server";
-
-import { InvalidToolArgumentsError, generateText, nanoid, tool } from "ai";
+import { InvalidToolArgumentsError, generateText, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
 import Airtable from "airtable";
@@ -205,42 +128,26 @@ const createAccount = tool({
         throw { message: "No industries available in Airtable.", logs };
       }
 
-      fields.Industry = fields.Industry || "General";
-
-      // Rewrite "About the Client"
-      fields["About the Client"] =
-        fields["About the Client"] ||
-        `The client specializes in ${fields.Description?.toLowerCase()}. Utilizing Wonderland, the account will automate content creation and strategically distribute it across platforms to align with client goals and target audience needs.`;
-
-      logs.push("[TOOL] About the Client rewritten.");
-
-      // Generate Primary Objective and Talking Points
-      fields["Primary Objective"] =
-        fields["Primary Objective"] || `To enhance visibility for ${fields.Name || "the client"} in ${fields.Industry}.`;
-      fields["Talking Points"] =
-        fields["Talking Points"] || `Focus on innovation and engagement for ${fields.Name || "the client"}.`;
-
-      logs.push("[TOOL] Primary Objective and Talking Points generated.");
-
-      // Check Priority Image and Prompt user if not set
-      const priorityImageOptions = ["AI Generated", "Google Images", "Stock Images", "Uploaded Media", "Social Media"];
-      if (!fields["Priority Image"]) {
-        const priorityPrompt = `Please choose a Priority Image type for the account. Available options are: ${priorityImageOptions.join(", ")}.`;
-        logs.push(priorityPrompt);
-        return { message: priorityPrompt, logs };
+      if (!fields.Industry) {
+        return {
+          message: `Please select the industry for this account. Options: ${industryOptions.join(", ")}.`,
+          logs,
+        };
       }
 
-      // Collect optional URLs
-      const urlFields: (keyof typeof fields)[] = ["Client URL", "Instagram", "Facebook", "Blog"];
-      const missingUrls = urlFields.filter((field) => !fields[field]);
+      logs.push(`[TOOL] Industry set to: ${fields.Industry}`);
 
-      if (missingUrls.length > 0) {
-        const urlPrompt = `Do you have any of the following to add? ${missingUrls.join(", ")}. Please provide them in the appropriate format if available.`;
-        logs.push(urlPrompt);
+      // Collect missing optional fields
+      const optionalFields = ["Client URL", "Instagram", "Facebook", "Blog"];
+      const missingFields = optionalFields.filter((field) => !fields[field]);
+
+      if (missingFields.length > 0) {
+        const urlPrompt = `Do you have any of the following to add? ${missingFields.join(", ")}. Please provide them if available.`;
+        logs.push("[TOOL] Prompting user for missing optional fields.");
         return { message: urlPrompt, logs };
       }
 
-      // Finalize fields
+      // Prepare fields for Airtable creation
       const finalFields = {
         ...fields,
         Status: fields.Status || "New",
@@ -249,16 +156,17 @@ const createAccount = tool({
 
       logs.push("[TOOL] Final fields prepared for Airtable creation:", JSON.stringify(finalFields, null, 2));
 
-      // Verify and Create in Airtable
+      // Create account in Airtable
       const createdRecord = await airtableBase("Accounts").create(finalFields);
-      if (!createdRecord.id) {
-        throw { message: "Account creation failed in Airtable. No record ID returned.", logs };
+      if (!createdRecord || !createdRecord.id) {
+        logs.push("[TOOL] Airtable creation failed.");
+        throw { message: "Failed to create account in Airtable.", logs };
       }
 
-      logs.push("[TOOL] Account successfully created:", JSON.stringify(createdRecord, null, 2));
+      logs.push("[TOOL] Account successfully created in Airtable:", JSON.stringify(createdRecord, null, 2));
 
-      // Summarize changes and confirm
-      const summary = `## Account Created\n\n**Provided Fields:**\n${JSON.stringify(fields, null, 2)}\n\n**Generated Fields:**\n- Industry: ${fields.Industry}\n- About the Client: ${fields["About the Client"]}\n- Primary Objective: ${fields["Primary Objective"]}\n- Talking Points: ${fields["Talking Points"]}\n\nRecord ID: ${createdRecord.id}`;
+      // Summarize created account
+      const summary = `### Account Created Successfully\n\n**Provided Fields:**\n${JSON.stringify(fields, null, 2)}\n\n**Generated Fields:**\n- Status: ${finalFields.Status}\n- Description: ${finalFields.Description}\n\n**Record ID:** ${createdRecord.id}`;
       return { message: summary, logs };
     } catch (error) {
       logs.push("[TOOL] Error during account creation:", error instanceof Error ? error.message : JSON.stringify(error));
