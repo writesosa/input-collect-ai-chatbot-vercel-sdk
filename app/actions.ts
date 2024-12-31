@@ -13,10 +13,12 @@ export interface Message {
   content: string;
 }
 
+// Track the current working record ID
+let currentRecordId: string | null = null;
+
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   let draftCreated = false;
-  let recordId: string | null = null;
   const fieldsToUpdate: Record<string, any> = {};
 
   try {
@@ -32,10 +34,34 @@ export async function continueConversation(history: Message[]) {
         if (!fieldsToUpdate.Description && msg.content.toLowerCase().includes("about")) {
           fieldsToUpdate.Description = msg.content.match(/about\s(.+)/i)?.[1];
         }
+        if (msg.content.toLowerCase().includes("switch to")) {
+          const newAccountName = msg.content.match(/switch to\s(.+)/i)?.[1];
+          if (newAccountName) {
+            logs.push(`[LLM] Switching to account: ${newAccountName}`);
+            console.log(`[LLM] Switching to account: ${newAccountName}`);
+
+            const accountRecord = await airtableBase("Accounts")
+              .select({
+                filterByFormula: `{Name} = "${newAccountName}"`,
+                maxRecords: 1,
+              })
+              .firstPage();
+
+            if (accountRecord.length > 0) {
+              currentRecordId = accountRecord[0].id;
+              logs.push(`[LLM] Switched to record ID: ${currentRecordId}`);
+              console.log(`[LLM] Switched to record ID: ${currentRecordId}`);
+            } else {
+              logs.push(`[LLM] Account not found: ${newAccountName}`);
+              console.log(`[LLM] Account not found: ${newAccountName}`);
+              throw new Error(`No account found for "${newAccountName}".`);
+            }
+          }
+        }
       }
     });
 
-    // Ensure draft record is created or reused when Name is detected
+    // Ensure draft record is created when Name is detected
     if (fieldsToUpdate.Name && !draftCreated) {
       logs.push(`[LLM] Detected account name: ${fieldsToUpdate.Name}`);
       console.log(`[LLM] Detected account name: ${fieldsToUpdate.Name}`);
@@ -45,30 +71,30 @@ export async function continueConversation(history: Message[]) {
         "Priority Image Type": "AI Generated", // Default value
       });
 
-      if (createResponse.recordId) {
-        recordId = createResponse.recordId;
-        draftCreated = true;
-        logs.push(`[TOOL] Draft created or reused with Record ID: ${recordId}`);
-      } else {
-        throw new Error("Failed to create or reuse draft account.");
+      currentRecordId = createResponse.recordId || null; // Persist the record ID
+      draftCreated = true;
+
+      logs.push(`[TOOL] Draft created with Record ID: ${currentRecordId}`);
+      if (!currentRecordId) {
+        throw new Error("Failed to create a new draft account. Record ID is null.");
       }
     }
 
     // Update additional fields incrementally
-    if (recordId && Object.keys(fieldsToUpdate).length > 1) {
+    if (currentRecordId && Object.keys(fieldsToUpdate).length > 1) {
       const updateFields = { ...fieldsToUpdate };
       delete updateFields.Name;
 
-      logs.push("[TOOL] Updating draft record with new fields:", JSON.stringify(updateFields, null, 2));
-      console.log("[TOOL] Updating draft record with new fields:", updateFields);
+      logs.push(`[TOOL] Preparing to update record ID: ${currentRecordId}`);
+      console.log(`[TOOL] Preparing to update record ID: ${currentRecordId}`);
 
       const modifyResponse = await modifyAccount.execute({
-        recordId,
+        recordId: currentRecordId,
         fields: updateFields,
       });
 
-      logs.push("[TOOL] Fields updated successfully:", JSON.stringify(modifyResponse));
-      console.log("[TOOL] Fields updated successfully:", modifyResponse);
+      logs.push(`[TOOL] Fields updated for record ID ${currentRecordId}:`, JSON.stringify(modifyResponse));
+      console.log(`[TOOL] Fields updated for record ID ${currentRecordId}:`, modifyResponse);
     }
 
     // Process LLM message
@@ -141,10 +167,10 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
-
 // Helper: Convert string to Title Case
 const toTitleCase = (str: string): string =>
   str.replace(/\w\S*/g, (word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
+
 
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
