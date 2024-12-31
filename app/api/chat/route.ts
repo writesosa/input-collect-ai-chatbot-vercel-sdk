@@ -1,3 +1,5 @@
+import { continueConversation } from "../../actions";
+
 export async function POST(req: Request) {
   console.log("[POST /api/chat] Request received");
 
@@ -44,7 +46,7 @@ export async function POST(req: Request) {
 
     return new Response(
       JSON.stringify({
-        ...flattenErrorResponse(result),
+        ...result,
         logs: result.logs || [],
       }),
       {
@@ -60,12 +62,12 @@ export async function POST(req: Request) {
     console.error("[POST /api/chat] Error:", error);
 
     return new Response(
-      JSON.stringify(flattenErrorResponse({
+      JSON.stringify({
         error: "An error occurred.",
         details: error instanceof Error ? error.message : "Unknown error",
         stack: error instanceof Error ? error.stack : undefined,
         raw: error,
-      })),
+      }),
       {
         status: 500,
         headers: {
@@ -74,4 +76,15 @@ export async function POST(req: Request) {
       }
     );
   }
+}
+
+export async function OPTIONS() {
+  return new Response(null, {
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Max-Age": "86400",
+    },
+  });
 }
