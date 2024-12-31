@@ -15,7 +15,6 @@ export interface Message {
 }
 
 let currentRecordId: string | null = null;
-
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
@@ -48,26 +47,15 @@ export async function continueConversation(history: Message[]) {
       const { text } = await generateText({
         model: openai("gpt-4o"),
         system: `
-Wonderland is an AI-powered public relations automation system. It dynamically generates content, websites, blog posts, and images to market companies effectively.
+Wonderland is an AI-powered public relations automation system. It dynamically generates content, websites, and images to market companies effectively.
 
 You are a Wonderland assistant!
 - Reply with nicely formatted markdown.
-- Keep your replies short and concise.
+- Keep replies short and concise.
 - If this is the first reply, send a nice welcome message.
-- If the selected Account is different, mention the account or company name once.
-
-Perform the following actions:
-- Create a new account in Wonderland when the user requests it.
-- Modify an existing account in Wonderland when the user requests it.
-- Delete an existing account in Wonderland when the user requests it.
-- Synchronize all fields dynamically in real-time as new information becomes available.
-- Validate actions to ensure they are successfully executed in Airtable.
-- Confirm the current record being worked on, including the Record ID.
-- After creating an account, follow up with prompts for:
-  1. A brief description of the company and the industry.
-  2. The company's website and any social media links.
-  3. Major talking points and primary objectives.
-        `,
+- Handle account creation, modification, and deletion requests effectively.
+- Respond to general queries about Wonderland's features and capabilities.
+- Synchronize fields dynamically as new information becomes available.`,
         messages: history,
         maxTokens: 50,
       });
@@ -78,10 +66,29 @@ Perform the following actions:
         ? "modify"
         : text.toLowerCase().includes("delete") || text.toLowerCase().includes("remove")
         ? "delete"
+        : text.toLowerCase().includes("what") || text.toLowerCase().includes("help")
+        ? "general_query"
         : "unknown";
     };
 
     const intent = await detectIntentWithLLM(history);
+
+    if (intent === "general_query") {
+      return {
+        messages: [
+          ...history,
+          {
+            role: "assistant",
+            content: `I am Wonderland, an AI-powered public relations assistant. I can help you:
+- Create, modify, or delete accounts.
+- Generate and distribute content, websites, and blog posts.
+- Strategically market your business.
+What would you like to do?`,
+          },
+        ],
+        logs,
+      };
+    }
 
     if (intent === "unknown") {
       return {
@@ -153,6 +160,7 @@ Perform the following actions:
     };
   }
 }
+
 
 
 // Helper: Convert string to Title Case
