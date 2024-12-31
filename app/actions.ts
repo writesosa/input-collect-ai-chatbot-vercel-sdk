@@ -19,7 +19,14 @@ export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
 
-  let progressTracker = {
+  interface ProgressTracker {
+    name: boolean;
+    description: boolean;
+    website: boolean;
+    objectives: boolean;
+  }
+
+  let progressTracker: ProgressTracker = {
     name: false,
     description: false,
     website: false,
@@ -28,8 +35,8 @@ export async function continueConversation(history: Message[]) {
 
   const responseCache = new Set(); // To track recent user responses
 
-  const updateProgressTracker = (field: string) => {
-    if (progressTracker.hasOwnProperty(field)) progressTracker[field] = true;
+  const updateProgressTracker = (field: keyof ProgressTracker) => {
+    if (field in progressTracker) progressTracker[field] = true;
   };
 
   const allFieldsComplete = () => Object.values(progressTracker).every((status) => status);
