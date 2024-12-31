@@ -75,34 +75,27 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
-
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
-    Name: z.string().optional(),
-    Description: z.string().optional(),
-    "Client Company Name": z.string().optional(),
-    "Client URL": z.string().optional(),
-    Status: z.string().optional(),
-    Industry: z.string().optional(),
-    "Primary Contact Person": z.string().optional(),
-    "About the Client": z.string().optional(),
-    "Primary Objective": z.string().optional(),
-    "Talking Points": z.string().optional(),
-    "Contact Information": z.string().optional(),
-    "Priority Image": z.string().optional(),
-    Instagram: z.string().optional(),
-    Facebook: z.string().optional(),
-    Blog: z.string().optional(),
-    "Other Social Accounts": z.string().optional(),
+    Name: z.string().optional().describe("The name of the account holder."),
+    Description: z.string().optional().describe("A description for the account."),
+    "Client Company Name": z.string().optional().describe("The name of the client company."),
+    "Client URL": z.string().optional().describe("The client's URL."),
+    Status: z.string().optional().describe("The status of the account."),
+    Industry: z.string().optional().describe("The industry of the client."),
+    "Primary Contact Person": z.string().optional().describe("The primary contact person."),
+    "About the Client": z.string().optional().describe("Information about the client."),
+    "Primary Objective": z.string().optional().describe("The primary objective of the account."),
+    "Talking Points": z.string().optional().describe("Key talking points for the account."),
+    "Contact Information": z.string().optional().describe("Contact information for the client."),
+    "Priority Image": z.string().optional().describe("The type of images this account should generate or display."),
   }),
   execute: async (fields) => {
-    const logs: string[] = [];
-    try {
-      logs.push("[TOOL] Starting account creation process...");
-      logs.push("[TOOL] Initial fields received: " + JSON.stringify(fields, null, 2));
+    console.log("[TOOL] createAccount", fields);
 
-      // Ensure Name and Client Company Name consistency
+    try {
+      // Ensure Name and Company Name consistency
       if (!fields.Name && fields["Client Company Name"]) {
         fields.Name = fields["Client Company Name"];
       } else if (!fields["Client Company Name"] && fields.Name) {
@@ -114,6 +107,12 @@ const createAccount = tool({
         fields.Name = fields.Name.replace(/\b\w/g, (char) => char.toUpperCase());
       }
 
+      // Fetch existing records for suggestions
+      const existingRecords = await airtableBase("Accounts").select().firstPage();
+      const primaryContactSuggestions = existingRecords
+        .map((record) => record.get("Primary Contact Person"))
+        .filter((value): value is string => typeof value === "string");
+
       // Fetch available industry options from Airtable
       const allowedIndustries = await airtableBase("Accounts").select({ fields: ["Industry"] }).all();
       const industryOptions = allowedIndustries
@@ -122,62 +121,113 @@ const createAccount = tool({
 
       // Guess Industry based on client information
       const guessIndustry = (info: string) => {
-        const lowerInfo = info.toLowerCase();
-        const matchedIndustry = industryOptions.find((industry) =>
-          lowerInfo.includes(industry.toLowerCase())
-        );
-        return matchedIndustry || "General";
+        if (/jeep|car|vehicle|automobile/i.test(info)) return "Automotive";
+        if (/dog|pet/i.test(info)) return "Pet Care";
+        if (/legal|law/i.test(info)) return "Legal";
+        return "General";
       };
       fields.Industry = fields.Industry || guessIndustry(fields.Description || fields["About the Client"] || "");
 
-      // Rewrite "About the Client"
-      fields["About the Client"] =
-        fields["About the Client"] ||
-        `The client specializes in ${fields.Description?.toLowerCase()}. Utilizing Wonderland, the account will automate content creation and strategically distribute it across platforms to align with client goals and target audience needs.`;
+      // Rewrite Description based on client-provided info
+      const rewriteDescription = (info: string) => {
+        return `This account is dedicated to ${info.toLowerCase()}, aiming to enhance visibility and engagement in the ${fields.Industry || "General"} sector with a focus on tailored solutions.`;
+      };
+      fields.Description = fields.Description || rewriteDescription(fields["About the Client"] || fields.Name || "");
 
-      // Generate Primary Objective and Talking Points
+      // Generate Primary Objective and Talking Points based on client info
       const generatePrimaryObjective = (info: string) => {
-        return `To enhance the reach and engagement of ${info.toLowerCase()}, ensuring alignment with client goals through targeted marketing and AI-driven automation.`;
+        return `To promote ${info.toLowerCase()} effectively and achieve maximum engagement with the target audience.`;
       };
       const generateTalkingPoints = (info: string) => {
-        return [
-          `Showcase expertise in ${info.toLowerCase()}.`,
-          "Highlight innovative solutions for target audiences.",
-          "Focus on building trust and brand identity.",
-        ].join("\n");
+        return `Highlighting ${info.toLowerCase()} with a focus on quality, customer-first strategies, and innovative solutions.`;
       };
       fields["Primary Objective"] =
-        fields["Primary Objective"] || generatePrimaryObjective(fields.Description || fields.Name || "the client");
+        fields["Primary Objective"] || generatePrimaryObjective(fields.Description || fields.Name || "");
       fields["Talking Points"] =
-        fields["Talking Points"] || generateTalkingPoints(fields.Description || fields.Name || "the client");
+        fields["Talking Points"] || generateTalkingPoints(fields.Description || fields.Name || "");
 
-      // Ensure minimum 600-character recommendations for descriptions
-      fields.Description =
-        fields.Description ||
-        `This account is focused on ${fields.Name?.toLowerCase() || "the client"}, ensuring tailored solutions for the ${fields.Industry || "General"} sector. Utilizing Wonderland, it maximizes visibility and engagement for strategic growth.`;
-      fields.Description = fields.Description.padEnd(600, ".");
-
-      // Create the account in Airtable
-      logs.push("[TOOL] Creating account in Airtable...");
-      const createdRecord = await airtableBase("Accounts").create(fields);
-
-      if (!createdRecord || !createdRecord.id) {
-        throw new Error("Failed to create the account in Airtable.");
+      // Prompt for Priority Image field if missing
+      const priorityImageOptions = [
+        "AI Generated",
+        "Stock Images",
+        "Google Images",
+        "Social Media",
+        "Uploaded Media",
+      ];
+      if (!fields["Priority Image"]) {
+        return {
+          message: `What kind of images should this account generate or display? Please choose one of the following options: ${priorityImageOptions.join(
+            ", "
+          )}`,
+        };
+      }
+      if (!priorityImageOptions.includes(fields["Priority Image"])) {
+        return {
+          message: `Invalid choice for Priority Image. Please choose from: ${priorityImageOptions.join(", ")}`,
+        };
       }
 
-      logs.push("[TOOL] Account created successfully with Record ID: " + createdRecord.id);
+      // Prompt for Primary Contact Person if missing
+      if (!fields["Primary Contact Person"]) {
+        const suggestionMessage = primaryContactSuggestions.length > 0
+          ? `The following primary contact persons are available: ${primaryContactSuggestions.join(", ")}. Is one of them the contact person for this account, or should we add someone else?`
+          : "No existing contact persons found. Please provide a contact person for this account.";
+        return { message: suggestionMessage };
+      }
+
+      // Suggest values for remaining fields
+      const suggestedFields: Record<string, string> = {
+        ...fields,
+        "Client URL": fields["Client URL"] || "https://example.com",
+        Status: fields.Status || "New",
+        "Contact Information": fields["Contact Information"] || "contact@example.com",
+        "About the Client":
+          fields["About the Client"] ||
+          `This account represents ${fields.Name || "the client"} in the ${fields.Industry || "General"} sector.`,
+        Description: fields.Description,
+      };
+
+      console.log("[TOOL] Suggested values for missing fields:", suggestedFields);
+
+      // Merge suggested values with provided fields
+      const finalFields = { ...suggestedFields, ...fields };
+
+      console.log("[TOOL] Final fields for account creation:", finalFields);
+
+      // Create a new record in Airtable
+      console.log("[TOOL] Creating a new Airtable record...");
+      const createdRecord = await airtableBase("Accounts").create(finalFields);
+
+      if (!createdRecord || !createdRecord.id) {
+        console.error("[TOOL] Failed to create record: Airtable did not return a valid record ID.");
+        throw new Error("Failed to create the account in Airtable. Please check your fields and try again.");
+      }
+
+      console.log("[TOOL] Account created successfully in Airtable:", createdRecord);
 
       return {
-        message: `Account "${fields.Name}" created successfully with Record ID: ${createdRecord.id}`,
+        message: `Account created successfully for ${fields.Name} with the provided and suggested details. Record ID: ${createdRecord.id}`,
         recordId: createdRecord.id,
-        logs,
       };
     } catch (error) {
-      logs.push("[TOOL] Error during account creation: " + (error instanceof Error ? error.message : JSON.stringify(error)));
-      throw {
-        message: "Account creation failed. Check logs for details.",
-        logs,
-      };
+      console.error("[TOOL] Error creating account in Airtable:", {
+        message: error instanceof Error ? error.message : "Unknown error",
+        stack: error instanceof Error ? error.stack : undefined,
+        raw: JSON.stringify(error, Object.getOwnPropertyNames(error)),
+      });
+
+      // Handle and throw detailed error
+      const errorDetails =
+        error instanceof Error
+          ? { message: error.message, stack: error.stack }
+          : { message: "Unknown error occurred.", raw: error };
+
+      throw new Error(
+        JSON.stringify({
+          error: `Failed to create account for ${fields.Name}.`,
+          details: errorDetails,
+        })
+      );
     }
   },
 });
