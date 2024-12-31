@@ -75,7 +75,6 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
-
 // `createAccount` logic
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
@@ -138,7 +137,7 @@ const createAccount = tool({
       logs.push(`[TOOL] Industry set to: ${fields.Industry}`);
 
       // Collect missing optional fields
-      const optionalFields = ["Client URL", "Instagram", "Facebook", "Blog"];
+      const optionalFields: Array<keyof typeof fields> = ["Client URL", "Instagram", "Facebook", "Blog"];
       const missingFields = optionalFields.filter((field) => !fields[field]);
 
       if (missingFields.length > 0) {
