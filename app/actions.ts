@@ -187,7 +187,7 @@ const createAccount = tool({
     } catch (error) {
       console.error("[TOOL] Error creating account in Airtable:", {
         message: error instanceof Error ? error.message : "Unknown error",
-        stack: error.stack,
+        stack: error instanceof Error ? error.stack : undefined,
       });
       throw error;
     }
