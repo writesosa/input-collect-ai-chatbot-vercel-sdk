@@ -48,13 +48,6 @@ export async function continueConversation(history: Message[]) {
     logs.push("[LLM] Conversation processed successfully.");
     console.log("[LLM] Conversation processed successfully.");
 
-    toolResults.forEach((toolResult) => {
-      if (toolResult.logs) {
-        toolResult.logs.forEach((log) => console.log("[TOOL]", log));
-        logs.push(...toolResult.logs);
-      }
-    });
-
     return {
       messages: [
         ...history,
