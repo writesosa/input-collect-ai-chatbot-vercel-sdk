@@ -14,10 +14,10 @@ export interface Message {
 }
 
 let currentRecordId: string | null = null;
+
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
-  let progressTracker = { description: false, website: false, objectives: false };
 
   try {
     logs.push("[LLM] Starting continueConversation...");
@@ -31,11 +31,6 @@ export async function continueConversation(history: Message[]) {
         }
         if (!fieldsToUpdate.Description && msg.content.toLowerCase().includes("about")) {
           fieldsToUpdate.Description = msg.content.match(/about\s(.+)/i)?.[1];
-          progressTracker.description = true;
-        }
-        if (!fieldsToUpdate["Client URL"] && msg.content.toLowerCase().includes("website")) {
-          fieldsToUpdate["Client URL"] = msg.content.match(/website\s+is\s+(\S+)/i)?.[1];
-          progressTracker.website = true;
         }
       }
     }
@@ -50,43 +45,29 @@ export async function continueConversation(history: Message[]) {
         "Priority Image Type": "AI Generated", // Default value
       });
 
-      if (createResponse.recordId) {
-        currentRecordId = createResponse.recordId;
-        logs.push(`[TOOL] Draft created with Record ID: ${currentRecordId}`);
-      } else {
-        throw new Error("Failed to create draft account.");
-      }
+      currentRecordId = createResponse.recordId || null;
+
+      logs.push(`[TOOL] Draft created with Record ID: ${currentRecordId}`);
     }
 
-    // Dynamically update fields in Airtable for the current record
-    if (currentRecordId && Object.keys(fieldsToUpdate).length > 0) {
-      logs.push(`[TOOL] Updating record ID ${currentRecordId} with new fields...`);
-      console.log(`[TOOL] Updating record ID ${currentRecordId} with new fields:`, fieldsToUpdate);
+    // Update additional fields incrementally
+    if (currentRecordId && Object.keys(fieldsToUpdate).length > 1) {
+      const updateFields = { ...fieldsToUpdate };
+      delete updateFields.Name;
+
+      logs.push(`[TOOL] Updating record with ID: ${currentRecordId}`);
+      console.log("[TOOL] Updating record with fields:", updateFields);
 
       const modifyResponse = await modifyAccount.execute({
         recordId: currentRecordId,
-        fields: fieldsToUpdate,
+        fields: updateFields,
       });
 
-      if (modifyResponse.recordId !== currentRecordId) {
-        throw new Error("Record ID mismatch during update.");
-      }
-
       logs.push(`[TOOL] Fields updated successfully for Record ID: ${currentRecordId}`);
+      console.log("[TOOL] Fields updated successfully:", modifyResponse);
     }
 
-    // Process LLM message and handle follow-up prompts
-    let assistantResponse = "";
-    if (!progressTracker.description) {
-      assistantResponse = `I have the name "${fieldsToUpdate.Name}". Could you give me a little description about the company and the industry?`;
-    } else if (!progressTracker.website) {
-      assistantResponse = `Could you provide the company's website URL and any social media links for "${fieldsToUpdate.Name}"?`;
-    } else if (!progressTracker.objectives) {
-      assistantResponse = `Could you share any major talking points and primary objectives for "${fieldsToUpdate.Name}"?`;
-    } else {
-      assistantResponse = `The account "${fieldsToUpdate.Name}" has been updated with the provided details. Would you like to finalize and create the account as active?`;
-    }
-
+    // Process LLM message
     const { text, toolResults } = await generateText({
       model: openai("gpt-4o"),
       system: `You are a Wonderland assistant!
@@ -98,21 +79,22 @@ export async function continueConversation(history: Message[]) {
         Perform the following actions:
         - Create a new account in Wonderland when the user requests it.
         - Modify an existing account in Wonderland when the user requests it.
-        - Synchronize all fields dynamically in real-time as new information becomes available.
-        - Validate actions to ensure they are successfully executed in Airtable.
-        - Confirm the current record being worked on, including the Record ID.
-        - After creating an account, follow up with prompts for more details:
-          1. Ask for a brief description of the company and the industry.
-          2. Request the company's website and any social media links.
-          3. Ask about major talking points and primary objectives.`,
+        - Delete an existing account in Wonderland when the user requests it.
+        - Switch to a different account by looking up records based on a specific field and value.
+
+        When creating, modifying, or switching accounts:
+        - Confirm the action with the user before finalizing.
+        - Provide clear feedback on the current record being worked on, including its Record ID.`,
       messages: history,
       maxToolRoundtrips: 5,
       tools: {
         createAccount,
         modifyAccount,
         deleteAccount,
+        switchRecord,
       },
     });
+
 
     logs.push("[LLM] Conversation processed successfully.");
     console.log("[LLM] Conversation processed successfully.");
@@ -132,7 +114,7 @@ export async function continueConversation(history: Message[]) {
         ...history,
         {
           role: "assistant",
-          content: assistantResponse || text || toolResults.map((toolResult) => toolResult.result.message).join("\n"),
+          content: text || toolResults.map((toolResult) => toolResult.result.message).join("\n"),
         },
       ],
       logs,
@@ -156,9 +138,11 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
+
 // Helper: Convert string to Title Case
 const toTitleCase = (str: string): string =>
   str.replace(/\w\S*/g, (word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
+
 
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
@@ -385,65 +369,3 @@ const deleteAccount = tool({
     }
   },
 });
-
-const switchRecord = tool({
-  description: "Switch the current record being worked on in Wonderland by looking up an account by its name, company, website, or other fields.",
-  parameters: z.object({
-    lookupField: z.string().describe("The field to search by, such as 'Name', 'Client Company Name', or 'Client URL'."),
-    lookupValue: z.string().describe("The value to search for in the specified field."),
-  }),
-  execute: async ({ lookupField, lookupValue }) => {
-    const logs: string[] = [];
-    try {
-      logs.push("[TOOL] Starting switchRecord...");
-      logs.push(`Looking up record by ${lookupField}: ${lookupValue}`);
-
-      // Ensure lookupField is a valid field in the Airtable schema
-      const validFields = [
-        "Name",
-        "Client Company Name",
-        "Client URL",
-        "Description",
-        "Industry",
-        "Primary Contact Person",
-      ];
-      if (!validFields.includes(lookupField)) {
-        throw new Error(
-          `Invalid lookupField: ${lookupField}. Valid fields are ${validFields.join(", ")}.`
-        );
-      }
-
-      // Query Airtable to find the record
-      const matchingRecords = await airtableBase("Accounts")
-        .select({
-          filterByFormula: `{${lookupField}} = "${lookupValue}"`,
-          maxRecords: 1,
-        })
-        .firstPage();
-
-      if (matchingRecords.length === 0) {
-        throw new Error(`No record found with ${lookupField}: "${lookupValue}".`);
-      }
-
-      const matchedRecord = matchingRecords[0];
-      currentRecordId = matchedRecord.id;
-
-      logs.push(
-        `[TOOL] Successfully switched to record ID: ${currentRecordId} (${lookupField}: ${lookupValue}).`
-      );
-
-      return {
-        message: `Successfully switched to the account for "${lookupValue}" (Record ID: ${currentRecordId}).`,
-        recordId: currentRecordId,
-        logs,
-      };
-    } catch (error) {
-      logs.push(
-        "[TOOL] Error during switchRecord:",
-        error instanceof Error ? error.message : JSON.stringify(error)
-      );
-      throw { message: "Failed to switch records. Check logs for details.", logs };
-    }
-  },
-});
-
