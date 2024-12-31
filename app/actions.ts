@@ -91,11 +91,11 @@ export async function continueConversation(history: Message[]) {
     if (userIntent === "account_creation") {
       logs.push("[LLM] Account creation detected. Processing...");
 
-      // Extract details from history
       const userMessage = history[history.length - 1]?.content.trim() || "";
+
+      // Extract account details from the user message
       if (creationProgress !== null) {
         if (creationProgress === 0) {
-          // Website and Social Links
           const inputs = userMessage.split(",").map((input) => input.trim());
           for (const input of inputs) {
             const url = validateURL(input);
@@ -112,7 +112,6 @@ export async function continueConversation(history: Message[]) {
           logs.push("[LLM] Website and Social Links updated.");
           creationProgress++;
         } else if (creationProgress === 1) {
-          // Description
           fieldsToUpdate.Description = userMessage || "No description provided.";
           await modifyAccount.execute({
             recordId: currentRecordId!,
@@ -121,7 +120,6 @@ export async function continueConversation(history: Message[]) {
           logs.push("[LLM] Description updated.");
           creationProgress++;
         } else if (creationProgress === 2) {
-          // Talking Points
           fieldsToUpdate["Talking Points"] = userMessage || "No talking points provided.";
           await modifyAccount.execute({
             recordId: currentRecordId!,
@@ -132,21 +130,16 @@ export async function continueConversation(history: Message[]) {
         }
       }
 
-      // Determine the next question
       questionToAsk = getNextQuestion(fieldsToUpdate, logs);
 
       if (questionToAsk) {
         logs.push(`[LLM] Asking next question: ${questionToAsk}`);
         return {
-          messages: [
-            ...history,
-            { role: "assistant", content: questionToAsk },
-          ],
+          messages: [...history, { role: "assistant", content: questionToAsk }],
           logs,
         };
       }
 
-      // Finalize the account if all questions are answered
       if (currentRecordId && creationProgress === null) {
         logs.push(`[LLM] All details captured. Updating record ID: ${currentRecordId} to New status.`);
         await modifyAccount.execute({
@@ -163,15 +156,12 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
-// Helper: Get the next question to ask during account creation
 const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | null => {
   if (
     (!fields.Website || !fields.Instagram || !fields.Facebook || !fields.Blog) &&
     creationProgress === 0
   ) {
-    logs.push(
-      "[LLM] Missing fields: Website, Instagram, Facebook, or Blog. Prompting user for any available links."
-    );
+    logs.push("[LLM] Missing fields: Website, Instagram, Facebook, or Blog. Prompting user for any available links.");
     return "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?";
   }
 
@@ -187,6 +177,8 @@ const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | 
 
   return null; // All questions completed
 };
+
+
 const processUserInput = async (userInput: string, logs: string[]) => {
   const fieldsToUpdate: Record<string, string> = {}; // Properly define fieldsToUpdate locally
   let isUpdated = false;
