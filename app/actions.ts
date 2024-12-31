@@ -96,7 +96,6 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
-
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -164,15 +163,9 @@ const createAccount = tool({
         `1. Highlight the innovative offerings of ${fields.Name || "the client"}.\n2. Emphasize trust and quality.\n3. Showcase value-added services.`;
       fields.Status = fields.Status || "New";
       fields["Priority Image"] = fields["Priority Image"] || "AI Generated";
-      fields["Client URL"] = fields["Client URL"] || "Not provided";
-      fields["Contact Information"] = fields["Contact Information"] || "Not provided";
-      fields.Instagram = fields.Instagram || "Not provided";
-      fields.Facebook = fields.Facebook || "Not provided";
-      fields.Blog = fields.Blog || "Not provided";
-      fields["Other Social Accounts"] = fields["Other Social Accounts"] || "Not provided";
 
-      // Summarize all fields
-      const summarizedFields = {
+      // Prepare the final fields for creation
+      const finalFields = {
         Name: fields.Name,
         Description: fields.Description,
         "Client Company Name": fields["Client Company Name"],
@@ -183,21 +176,35 @@ const createAccount = tool({
         "About the Client": fields["About the Client"],
         "Primary Objective": fields["Primary Objective"],
         "Talking Points": fields["Talking Points"],
-        "Contact Information": fields["Contact Information"],
+        "Contact Information": fields["Contact Information"] || "Not provided",
         "Priority Image": fields["Priority Image"],
-        Instagram: fields.Instagram,
-        Facebook: fields.Facebook,
-        Blog: fields.Blog,
-        "Other Social Accounts": fields["Other Social Accounts"],
+        Instagram: fields.Instagram || "Not provided",
+        Facebook: fields.Facebook || "Not provided",
+        Blog: fields.Blog || "Not provided",
+        "Other Social Accounts": fields["Other Social Accounts"] || "Not provided",
       };
 
-      // Final confirmation before creating the record
+      console.log("[TOOL] Final fields for account creation:", finalFields);
+
+      // Create a new record in Airtable
+      const createdRecord = await airtableBase("Accounts").create([
+        { fields: finalFields },
+      ]);
+
+      if (!createdRecord || !createdRecord[0]?.id) {
+        console.error("[TOOL] Failed to create record: Airtable did not return a valid record ID.");
+        throw new Error("Failed to create the account in Airtable. Please check your fields and try again.");
+      }
+
+      console.log("[TOOL] Account created successfully in Airtable:", createdRecord);
+
       return {
-        message: `Here are the details for the new account creation:\n\n${JSON.stringify(
-          summarizedFields,
+        message: `Account created successfully for "${fields.Name}" with the following details:\n\n${JSON.stringify(
+          finalFields,
           null,
           2
-        )}\n\nShould I proceed with creating this account?`,
+        )}\n\nRecord ID: ${createdRecord[0].id}`,
+        recordId: createdRecord[0].id,
       };
     } catch (error) {
       console.error("[TOOL] Error creating account in Airtable:", error);
