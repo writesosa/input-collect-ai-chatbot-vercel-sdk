@@ -108,11 +108,13 @@ export async function continueConversation(history: Message[]) {
           };
         }
 
-        logs.push("[LLM] Creating a new draft record...");
-        const createResponse = await createAccount.execute({
-          Name: fieldsToUpdate.Name || fieldsToUpdate["Client Company Name"],
-          Status: "Draft",
-        });
+logs.push("[LLM] Creating a new draft record...");
+const createResponse = await createAccount.execute({
+  Name: fieldsToUpdate.Name || fieldsToUpdate["Client Company Name"],
+  Status: "Draft",
+  "Priority Image Type": "AI Generated", // Default value for the required field
+});
+
 
         if (createResponse.recordId) {
           currentRecordId = createResponse.recordId;
