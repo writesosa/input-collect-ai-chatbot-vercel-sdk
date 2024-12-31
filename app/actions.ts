@@ -88,6 +88,7 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
+
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -165,20 +166,9 @@ const createAccount = tool({
       logs.push("[TOOL] Updated account fields incrementally:", JSON.stringify(updateFields, null, 2));
       console.log("[TOOL] Updated account fields incrementally:", updateFields);
 
-      // Final confirmation message
-      const confirmationMessage = `
-Here's what we have for the account you're about to create:
-
-**Name:** ${accountName}
-**Description:** ${updateFields.Description || "Not provided"}
-**About the Client:** ${updateFields["About the Client"]}
-**Primary Objective:** ${updateFields["Primary Objective"]}
-**Talking Points:** ${updateFields["Talking Points"]}
-
-Would you like to finalize this account and mark it as "New"?`;
-
+      // Continue gathering information
       return {
-        message: confirmationMessage,
+        message: `Great! The draft account for "${accountName}" has been initialized. Feel free to provide additional details such as description, industry, or social media links, and I'll update it.`,
         recordId,
         logs,
       };
@@ -189,6 +179,7 @@ Would you like to finalize this account and mark it as "New"?`;
     }
   },
 });
+
 
 
 const modifyAccount = tool({
