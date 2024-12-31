@@ -369,3 +369,65 @@ const deleteAccount = tool({
     }
   },
 });
+
+const switchRecord = tool({
+  description: "Switch the current record being worked on in Wonderland by looking up an account by its name, company, website, or other fields.",
+  parameters: z.object({
+    lookupField: z.string().describe("The field to search by, such as 'Name', 'Client Company Name', or 'Client URL'."),
+    lookupValue: z.string().describe("The value to search for in the specified field."),
+  }),
+  execute: async ({ lookupField, lookupValue }) => {
+    const logs: string[] = [];
+    try {
+      logs.push("[TOOL] Starting switchRecord...");
+      logs.push(`Looking up record by ${lookupField}: ${lookupValue}`);
+
+      // Ensure lookupField is a valid field in the Airtable schema
+      const validFields = [
+        "Name",
+        "Client Company Name",
+        "Client URL",
+        "Description",
+        "Industry",
+        "Primary Contact Person",
+      ];
+      if (!validFields.includes(lookupField)) {
+        throw new Error(
+          `Invalid lookupField: ${lookupField}. Valid fields are ${validFields.join(", ")}.`
+        );
+      }
+
+      // Query Airtable to find the record
+      const matchingRecords = await airtableBase("Accounts")
+        .select({
+          filterByFormula: `{${lookupField}} = "${lookupValue}"`,
+          maxRecords: 1,
+        })
+        .firstPage();
+
+      if (matchingRecords.length === 0) {
+        throw new Error(`No record found with ${lookupField}: "${lookupValue}".`);
+      }
+
+      const matchedRecord = matchingRecords[0];
+      currentRecordId = matchedRecord.id;
+
+      logs.push(
+        `[TOOL] Successfully switched to record ID: ${currentRecordId} (${lookupField}: ${lookupValue}).`
+      );
+
+      return {
+        message: `Successfully switched to the account for "${lookupValue}" (Record ID: ${currentRecordId}).`,
+        recordId: currentRecordId,
+        logs,
+      };
+    } catch (error) {
+      logs.push(
+        "[TOOL] Error during switchRecord:",
+        error instanceof Error ? error.message : JSON.stringify(error)
+      );
+      throw { message: "Failed to switch records. Check logs for details.", logs };
+    }
+  },
+});
+
