@@ -86,6 +86,7 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
+
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -181,19 +182,6 @@ const createAccount = tool({
         };
       }
 
-      // Prompt for website or social media links if missing
-      const socialMediaFields = {
-        Instagram: fields.Instagram || "Not provided",
-        Facebook: fields.Facebook || "Not provided",
-        Blog: fields.Blog || "Not provided",
-        "Other Social Accounts": fields["Other Social Accounts"] || "Not provided",
-      };
-      if (!fields["Client URL"] && Object.values(socialMediaFields).every((value) => value === "Not provided")) {
-        return {
-          message: `Does this account have a website or social media links you'd like to include? Please provide a URL or any social media account details (e.g., Instagram, Facebook, Blog, etc.).`,
-        };
-      }
-
       // Summarize all fields before confirmation
       const summarizedFields = {
         Name: fields.Name || "Not provided",
@@ -208,18 +196,37 @@ const createAccount = tool({
         "Talking Points": fields["Talking Points"] || "Not provided",
         "Contact Information": fields["Contact Information"] || "Not provided",
         "Priority Image": fields["Priority Image"] || "Not provided",
-        Instagram: socialMediaFields.Instagram,
-        Facebook: socialMediaFields.Facebook,
-        Blog: socialMediaFields.Blog,
-        "Other Social Accounts": socialMediaFields["Other Social Accounts"],
+        Instagram: fields.Instagram || "Not provided",
+        Facebook: fields.Facebook || "Not provided",
+        Blog: fields.Blog || "Not provided",
+        "Other Social Accounts": fields["Other Social Accounts"] || "Not provided",
       };
 
+      console.log("[TOOL] Suggested values for missing fields:", summarizedFields);
+
+      // Prompt user to confirm the fields
       return {
-        message: `Here's the information for the new account creation:\n\n${JSON.stringify(
+        message: `Here's the summarized information for the new account:\n\n${JSON.stringify(
           summarizedFields,
           null,
           2
-        )}\n\nShould I proceed with creating this account, or would you like to make any changes?`,
+        )}\n\nShould I proceed with creating this account?`,
+      };
+
+      // Merge suggested values with provided fields
+      const finalFields = { ...summarizedFields, ...fields };
+
+      console.log("[TOOL] Final fields for account creation:", finalFields);
+
+      // Create a new record in Airtable
+      console.log("[TOOL] Creating a new Airtable record...");
+      const createdRecord = await airtableBase("Accounts").create(finalFields);
+
+      console.log("[TOOL] Account created successfully in Airtable:", createdRecord);
+
+      return {
+        message: `Account created successfully for ${fields.Name} with the provided and suggested details. Record ID: ${createdRecord.id}`,
+        recordId: createdRecord.id,
       };
     } catch (error) {
       console.error("[TOOL] Error creating account in Airtable:", error);
@@ -228,6 +235,7 @@ const createAccount = tool({
     }
   },
 });
+
 
 const modifyAccount = tool({
   description: "Modify any field of an existing account in Wonderland.",
