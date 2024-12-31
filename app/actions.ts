@@ -75,8 +75,6 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
-
-// `createAccount` logic
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -84,9 +82,9 @@ const createAccount = tool({
     Description: z.string().optional().describe("A description for the account."),
     "Client Company Name": z.string().optional().describe("The name of the client company."),
     "Client URL": z.string().optional().describe("The client's URL."),
-    "Instagram": z.string().optional().describe("The Instagram handle of the client."),
-    "Facebook": z.string().optional().describe("The Facebook page URL of the client."),
-    "Blog": z.string().optional().describe("The blog URL of the client."),
+    Instagram: z.string().optional().describe("The Instagram handle of the client."),
+    Facebook: z.string().optional().describe("The Facebook page URL of the client."),
+    Blog: z.string().optional().describe("The blog URL of the client."),
     Status: z.string().optional().describe("The status of the account."),
     Industry: z.string().optional().describe("The industry of the client."),
     "Primary Contact Person": z.string().optional().describe("The primary contact person."),
@@ -130,10 +128,10 @@ const createAccount = tool({
       };
       fields.Industry = fields.Industry || guessIndustry(fields.Description || fields["About the Client"] || "");
 
-      if (fields.Industry === "General") {
+      if (!fields.Industry || fields.Industry === "General") {
         logs.push("[TOOL] Unable to determine industry. Asking user...");
         return {
-          message: "I couldn't determine the industry. Could you specify it? Available options are: " + industryOptions.join(", "),
+          message: `I couldn't determine the industry. Available options are: ${industryOptions.join(", ")}. Please specify the most relevant industry for the account.`,
           logs,
         };
       }
@@ -164,14 +162,14 @@ const createAccount = tool({
       }
 
       // Check for optional URLs and social fields
-      const urlFields = ["Client URL", "Instagram", "Facebook", "Blog"];
+      const urlFields: (keyof typeof fields)[] = ["Client URL", "Instagram", "Facebook", "Blog"];
       const urlRegex = /(https?:\/\/)?([\w.-]+)(\.\w+)([\w\/-]*)?/;
 
-      urlFields.forEach((field) => {
+      for (const field of urlFields) {
         if (!fields[field]) {
           logs.push(`[TOOL] ${field} not provided. Asking user...`);
           return {
-            message: `Do you have a ${field} to add? If yes, please provide it in the format of a valid link.`,
+            message: `Do you have any of the following to add? ${urlFields.join(", ")}. Please provide them in the appropriate format.`,
             logs,
           };
         } else if (!urlRegex.test(fields[field]!)) {
@@ -181,7 +179,7 @@ const createAccount = tool({
             logs,
           };
         }
-      });
+      }
 
       // Finalize fields
       const finalFields = {
