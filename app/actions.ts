@@ -3,7 +3,6 @@
 import { InvalidToolArgumentsError, generateText, nanoid, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
-import users from "./users.json";
 import Airtable from "airtable";
 
 export interface Message {
@@ -11,16 +10,9 @@ export interface Message {
   content: string;
 }
 
-// Simulated user data for logging and updates
-const currentUserData = {
-  name: "",
-  accountNumber: "",
-  phoneNumber: "",
-  balance: 0,
-};
-
 // Initialize Airtable base
 const airtableBase = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID || "missing_base_id");
+
 export async function continueConversation(history: Message[]) {
   "use server";
 
@@ -68,7 +60,7 @@ export async function continueConversation(history: Message[]) {
       logs,
     };
   } catch (error) {
-    logs.push("[LLM] Error in continueConversation:", error instanceof Error ? error.message : JSON.stringify(error));
+    logs.push("[LLM] Error in continueConversation: " + (error instanceof Error ? error.message : JSON.stringify(error)));
     return {
       messages: [
         ...history,
@@ -83,6 +75,7 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
+
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -109,41 +102,6 @@ const createAccount = tool({
       logs.push("[TOOL] Starting account creation process...");
       logs.push("[TOOL] Initial fields received: " + JSON.stringify(fields, null, 2));
 
-      // Identify missing fields
-      const missingFields = Object.keys(fields).filter(
-        (key) => !(fields as Record<string, string | undefined>)[key]
-      );
-      if (missingFields.length > 0) {
-        logs.push(`[TOOL] Missing fields detected: ${missingFields.join(", ")}`);
-
-        const suggestions = await generateText({
-          model: openai("gpt-4o"),
-          system: `You are a Wonderland assistant. Suggest values for the following missing fields based on the provided account details.`,
-          messages: [
-            {
-              role: "user",
-              content: `Missing fields: ${missingFields.join(", ")}\nProvided fields: ${JSON.stringify(
-                fields,
-                null,
-                2
-              )}`,
-            },
-          ],
-        });
-
-        logs.push(`[TOOL] Suggested values for missing fields: ${JSON.stringify(suggestions)}`);
-        return {
-          message: `The following fields are missing: ${missingFields.join(
-            ", "
-          )}. Here are the suggested values:\n\n${JSON.stringify(
-            suggestions,
-            null,
-            2
-          )}\n\nWould you like to proceed with these suggestions?`,
-          logs,
-        };
-      }
-
       // Ensure Name and Client Company Name consistency
       if (!fields.Name && fields["Client Company Name"]) {
         fields.Name = fields["Client Company Name"];
@@ -151,23 +109,18 @@ const createAccount = tool({
         fields["Client Company Name"] = fields.Name;
       }
 
-      // Format Name field to title case
+      // Title case the Name field
       if (fields.Name) {
         fields.Name = fields.Name.replace(/\b\w/g, (char) => char.toUpperCase());
       }
 
-      logs.push(`[TOOL] Updated Name and Client Company Name: ${fields.Name}`);
-
       // Fetch available industry options from Airtable
-      logs.push("[TOOL] Fetching available industries from Airtable...");
       const allowedIndustries = await airtableBase("Accounts").select({ fields: ["Industry"] }).all();
       const industryOptions = allowedIndustries
         .map((record) => record.get("Industry"))
         .filter((value): value is string => typeof value === "string");
 
-      logs.push("[TOOL] Available industries: " + JSON.stringify(industryOptions));
-
-      // Guess Industry based on available data
+      // Guess Industry based on client information
       const guessIndustry = (info: string) => {
         const lowerInfo = info.toLowerCase();
         const matchedIndustry = industryOptions.find((industry) =>
@@ -177,56 +130,34 @@ const createAccount = tool({
       };
       fields.Industry = fields.Industry || guessIndustry(fields.Description || fields["About the Client"] || "");
 
-      logs.push(`[TOOL] Guessed Industry: ${fields.Industry}`);
-
-      // Rewrite "About the Client" if not provided
+      // Rewrite "About the Client"
       fields["About the Client"] =
         fields["About the Client"] ||
         `The client specializes in ${fields.Description?.toLowerCase()}. Utilizing Wonderland, the account will automate content creation and strategically distribute it across platforms to align with client goals and target audience needs.`;
 
-      logs.push("[TOOL] About the Client: " + fields["About the Client"]);
-
       // Generate Primary Objective and Talking Points
-      const generatePrimaryObjective = (info: string) =>
-        `To enhance the reach and engagement of ${info.toLowerCase()}, ensuring alignment with client goals through targeted marketing and AI-driven automation.`;
-      const generateTalkingPoints = (info: string) =>
-        `Focus on showcasing ${info.toLowerCase()} with tailored content and innovative strategies, highlighting quality, brand identity, and audience engagement.`;
-
+      const generatePrimaryObjective = (info: string) => {
+        return `To enhance the reach and engagement of ${info.toLowerCase()}, ensuring alignment with client goals through targeted marketing and AI-driven automation.`;
+      };
+      const generateTalkingPoints = (info: string) => {
+        return [
+          `Showcase expertise in ${info.toLowerCase()}.`,
+          "Highlight innovative solutions for target audiences.",
+          "Focus on building trust and brand identity.",
+        ].join("\n");
+      };
       fields["Primary Objective"] =
         fields["Primary Objective"] || generatePrimaryObjective(fields.Description || fields.Name || "the client");
       fields["Talking Points"] =
         fields["Talking Points"] || generateTalkingPoints(fields.Description || fields.Name || "the client");
 
-      logs.push("[TOOL] Primary Objective: " + fields["Primary Objective"]);
-      logs.push("[TOOL] Talking Points: " + fields["Talking Points"]);
-
-      // Finalize Description field
+      // Ensure minimum 600-character recommendations for descriptions
       fields.Description =
         fields.Description ||
         `This account is focused on ${fields.Name?.toLowerCase() || "the client"}, ensuring tailored solutions for the ${fields.Industry || "General"} sector. Utilizing Wonderland, it maximizes visibility and engagement for strategic growth.`;
       fields.Description = fields.Description.padEnd(600, ".");
 
-      logs.push("[TOOL] Final Description: " + fields.Description);
-
-      // Summarize fields for confirmation
-      const summarizedFields = {
-        Name: fields.Name || "Not provided",
-        Description: fields.Description || "Not provided",
-        "Client Company Name": fields["Client Company Name"] || "Not provided",
-        "Client URL": fields["Client URL"] || "Not provided",
-        Status: fields.Status || "New",
-        Industry: fields.Industry || "General",
-        "Primary Contact Person": fields["Primary Contact Person"] || "Not provided",
-        "About the Client": fields["About the Client"] || "Not provided",
-        "Primary Objective": fields["Primary Objective"] || "Not provided",
-        "Talking Points": fields["Talking Points"] || "Not provided",
-        "Contact Information": fields["Contact Information"] || "Not provided",
-        "Priority Image": fields["Priority Image"] || "Not provided",
-      };
-
-      logs.push("[TOOL] Finalized fields: " + JSON.stringify(summarizedFields, null, 2));
-
-      // Create account in Airtable
+      // Create the account in Airtable
       logs.push("[TOOL] Creating account in Airtable...");
       const createdRecord = await airtableBase("Accounts").create(fields);
 
@@ -242,7 +173,7 @@ const createAccount = tool({
         logs,
       };
     } catch (error) {
-      logs.push("[TOOL] Error during account creation: " + JSON.stringify(error));
+      logs.push("[TOOL] Error during account creation: " + (error instanceof Error ? error.message : JSON.stringify(error)));
       throw {
         message: "Account creation failed. Check logs for details.",
         logs,
@@ -251,6 +182,7 @@ const createAccount = tool({
   },
 });
 
+// Exports for other tools (modifyAccount and deleteAccount) remain unchanged.
 
 
 const modifyAccount = tool({
