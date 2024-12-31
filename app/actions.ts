@@ -17,6 +17,7 @@ let currentRecordId: string | null = null;
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
+  let progressTracker = { description: false, website: false, objectives: false };
 
   try {
     logs.push("[LLM] Starting continueConversation...");
@@ -30,9 +31,11 @@ export async function continueConversation(history: Message[]) {
         }
         if (!fieldsToUpdate.Description && msg.content.toLowerCase().includes("about")) {
           fieldsToUpdate.Description = msg.content.match(/about\s(.+)/i)?.[1];
+          progressTracker.description = true;
         }
         if (!fieldsToUpdate["Client URL"] && msg.content.toLowerCase().includes("website")) {
           fieldsToUpdate["Client URL"] = msg.content.match(/website\s+is\s+(\S+)/i)?.[1];
+          progressTracker.website = true;
         }
       }
     }
@@ -72,7 +75,18 @@ export async function continueConversation(history: Message[]) {
       logs.push(`[TOOL] Fields updated successfully for Record ID: ${currentRecordId}`);
     }
 
-    // Process LLM message
+    // Process LLM message and handle follow-up prompts
+    let assistantResponse = "";
+    if (!progressTracker.description) {
+      assistantResponse = `I have the name "${fieldsToUpdate.Name}". Could you give me a little description about the company and the industry?`;
+    } else if (!progressTracker.website) {
+      assistantResponse = `Could you provide the company's website URL and any social media links for "${fieldsToUpdate.Name}"?`;
+    } else if (!progressTracker.objectives) {
+      assistantResponse = `Could you share any major talking points and primary objectives for "${fieldsToUpdate.Name}"?`;
+    } else {
+      assistantResponse = `The account "${fieldsToUpdate.Name}" has been updated with the provided details. Would you like to finalize and create the account as active?`;
+    }
+
     const { text, toolResults } = await generateText({
       model: openai("gpt-4o"),
       system: `You are a Wonderland assistant!
@@ -113,24 +127,12 @@ export async function continueConversation(history: Message[]) {
       }
     });
 
-    // Extend: Follow up for additional fields
-    let nextPrompt = "";
-    if (!fieldsToUpdate.Description) {
-      nextPrompt = `I have the name. Could you give me a little description about the company "${fieldsToUpdate.Name}" and the industry?`;
-    } else if (!fieldsToUpdate["Client URL"]) {
-      nextPrompt = `Great! Could you share the company's website and any social media URLs they might have?`;
-    } else if (!fieldsToUpdate["Primary Objective"]) {
-      nextPrompt = `Thanks! Are there any major talking points or primary objectives for "${fieldsToUpdate.Name}"?`;
-    } else {
-      nextPrompt = `Here's the summary of the account we have so far:\n\n**Name**: ${fieldsToUpdate.Name}\n**Description**: ${fieldsToUpdate.Description}\n**Website**: ${fieldsToUpdate["Client URL"] || "N/A"}\n**Primary Objective**: ${fieldsToUpdate["Primary Objective"] || "N/A"}\n\nWould you like to finalize this account? If yes, I'll change its status from draft to "new."`;
-    }
-
     return {
       messages: [
         ...history,
         {
           role: "assistant",
-          content: nextPrompt,
+          content: assistantResponse || text || toolResults.map((toolResult) => toolResult.result.message).join("\n"),
         },
       ],
       logs,
@@ -154,13 +156,9 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
-
-
-
 // Helper: Convert string to Title Case
 const toTitleCase = (str: string): string =>
   str.replace(/\w\S*/g, (word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
-
 
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
