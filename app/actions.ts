@@ -96,6 +96,8 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
+
+
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -111,6 +113,10 @@ const createAccount = tool({
     "Talking Points": z.string().optional().describe("Key talking points for the account."),
     "Contact Information": z.string().optional().describe("Contact information for the client."),
     "Priority Image": z.string().optional().describe("The type of images this account should generate or display."),
+    Instagram: z.string().optional().describe("The Instagram URL for the account."),
+    Facebook: z.string().optional().describe("The Facebook URL for the account."),
+    Blog: z.string().optional().describe("The Blog URL for the account."),
+    "Other Social Accounts": z.string().optional().describe("Other social account information."),
   }),
   execute: async (fields) => {
     console.log("[TOOL] createAccount", fields);
@@ -126,8 +132,6 @@ const createAccount = tool({
       // Title case the Name field
       if (fields.Name) {
         fields.Name = fields.Name.replace(/\b\w/g, (char) => char.toUpperCase());
-      } else {
-        throw new Error("Account Name (fields.Name) is required.");
       }
 
       // Fetch existing records for suggestions
@@ -143,20 +147,19 @@ const createAccount = tool({
         .filter((value): value is string => typeof value === "string");
 
       // Guess Industry based on client information
-      const guessIndustry = (info) => {
+      const guessIndustry = (info: string) => {
         if (/jeep|car|vehicle|automobile/i.test(info)) return "Automotive";
         if (/dog|pet/i.test(info)) return "Pet Care";
-        if (/dental|dentist|implant/i.test(info)) return "Healthcare";
         if (/legal|law/i.test(info)) return "Legal";
+        if (/dental|dentist|implant/i.test(info)) return "Healthcare";
         return "General";
       };
       fields.Industry = fields.Industry || guessIndustry(fields.Description || fields["About the Client"] || "");
 
       // Rewrite Description and About the Client based on client-provided info
-      const rewriteDescription = (info) => {
+      const rewriteDescription = (info: string) => {
         return `This account is focused on ${info.toLowerCase()}, leveraging Wonderland's AI-powered public relations system to maximize visibility and engagement in the ${fields.Industry || "General"} sector. By dynamically generating content, images, and marketing assets, the account ensures scalability and precision in meeting client objectives.`;
       };
-
       fields.Description =
         fields.Description || rewriteDescription(fields["About the Client"] || fields.Name || "");
 
@@ -168,15 +171,11 @@ const createAccount = tool({
       fields.Description = fields.Description.padEnd(600, ".");
 
       // Generate Primary Objective and Talking Points based on client info
-      const generatePrimaryObjective = (info) => {
+      const generatePrimaryObjective = (info: string) => {
         return `To enhance the reach and engagement of ${info.toLowerCase()}, ensuring alignment with client goals through targeted marketing and AI-driven automation.`;
       };
-      const generateTalkingPoints = (info) => {
-        return [
-          `Focus on showcasing ${info.toLowerCase()} with tailored content and innovative strategies.`,
-          `Highlight quality, brand identity, and audience engagement.`,
-          `Leverage Wonderland's AI-driven tools for optimal visibility and outreach.`
-        ].join(" ");
+      const generateTalkingPoints = (info: string) => {
+        return `Focus on showcasing ${info.toLowerCase()} with tailored content and innovative strategies, highlighting quality, brand identity, and audience engagement.`;
       };
       fields["Primary Objective"] =
         fields["Primary Objective"] || generatePrimaryObjective(fields.Description || fields.Name || "");
@@ -202,25 +201,10 @@ const createAccount = tool({
         };
       }
 
-      // Prompt for Primary Contact Person if missing
-      if (!fields["Primary Contact Person"]) {
-        const suggestionMessage = primaryContactSuggestions.length > 0
-          ? `The following primary contact persons are available: ${primaryContactSuggestions.join(", ")}. Is one of them the contact person for this account, or should we add someone else?`
-          : "No existing contact persons found. Please provide a contact person for this account.";
-        return { message: suggestionMessage };
-      }
-
-      // Ask about website or social media if not provided
-      if (!fields["Client URL"]) {
+      // Ask about website or social accounts if not provided
+      if (!fields["Client URL"] && !fields.Instagram && !fields.Facebook && !fields.Blog && !fields["Other Social Accounts"]) {
         return {
-          message: `Does this account have a website or social media account you'd like to include? If not, you can skip this step.`,
-        };
-      }
-
-      // Ask for additional contact information if not provided
-      if (!fields["Contact Information"]) {
-        return {
-          message: `Do you have any contact information for this company, such as an email, phone number, or address, to include in the content?`,
+          message: `Does this account have a website or social media account you'd like to include? If so, please provide the URL or account information, and I will place it in the appropriate field.`,
         };
       }
 
@@ -230,6 +214,10 @@ const createAccount = tool({
         Description: fields.Description,
         "Client Company Name": fields["Client Company Name"],
         "Client URL": fields["Client URL"],
+        Instagram: fields.Instagram,
+        Facebook: fields.Facebook,
+        Blog: fields.Blog,
+        "Other Social Accounts": fields["Other Social Accounts"],
         Status: fields.Status || "New",
         Industry: fields.Industry,
         "Primary Contact Person": fields["Primary Contact Person"],
@@ -240,30 +228,31 @@ const createAccount = tool({
         "Priority Image": fields["Priority Image"],
       };
 
-      console.log("[TOOL] Final fields for account creation:", summarizedFields);
-
-      // Create a new record in Airtable
-      const createdRecord = await airtableBase("Accounts").create(summarizedFields);
-
-      if (!createdRecord || !createdRecord.id) {
-        console.error("[TOOL] Failed to create record: Airtable did not return a valid record ID.");
-        throw new Error("Failed to create the account in Airtable. Please check your fields and try again.");
-      }
-
-      console.log("[TOOL] Account created successfully in Airtable:", createdRecord);
-
       return {
-        message: `Account created successfully for ${fields.Name} with the provided and suggested details. Record ID: ${createdRecord.id}`,
-        recordId: createdRecord.id,
+        message: `Here are the details for the new account creation:\n\n${JSON.stringify(
+          summarizedFields,
+          null,
+          2
+        )}\n\nShould I proceed with creating this account, or would you like to make any changes?`,
       };
     } catch (error) {
       console.error("[TOOL] Error creating account in Airtable:", {
         message: error instanceof Error ? error.message : "Unknown error",
         stack: error instanceof Error ? error.stack : undefined,
+        raw: JSON.stringify(error, Object.getOwnPropertyNames(error)),
       });
 
+      // Handle and throw detailed error
+      const errorDetails =
+        error instanceof Error
+          ? { message: error.message, stack: error.stack }
+          : { message: "Unknown error occurred.", raw: error };
+
       throw new Error(
-        `Failed to create account for ${fields.Name || "unknown"}. Error details: ${error instanceof Error ? error.message : "Unknown error."}`
+        JSON.stringify({
+          error: `Failed to create account for ${fields.Name}.`,
+          details: errorDetails,
+        })
       );
     }
   },
