@@ -85,8 +85,6 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
-
-
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -108,10 +106,11 @@ const createAccount = tool({
     "Other Social Accounts": z.string().optional().describe("Other social accounts for the client."),
   }),
   execute: async (fields) => {
-    console.log("[TOOL] Starting account creation process...");
-    console.log("[TOOL] Initial fields received:", JSON.stringify(fields, null, 2));
-
+    const logs = [];
     try {
+      logs.push("[TOOL] Starting account creation process...");
+      logs.push("[TOOL] Initial fields received: " + JSON.stringify(fields, null, 2));
+
       // Ensure Name and Client Company Name consistency
       if (!fields.Name && fields["Client Company Name"]) {
         fields.Name = fields["Client Company Name"];
@@ -124,16 +123,16 @@ const createAccount = tool({
         fields.Name = fields.Name.replace(/\b\w/g, (char) => char.toUpperCase());
       }
 
-      console.log("[TOOL] Updated Name and Client Company Name:", fields.Name, fields["Client Company Name"]);
+      logs.push("[TOOL] Updated Name and Client Company Name: " + fields.Name);
 
       // Fetch available industry options from Airtable
-      console.log("[TOOL] Fetching available industries from Airtable...");
+      logs.push("[TOOL] Fetching available industries from Airtable...");
       const allowedIndustries = await airtableBase("Accounts").select({ fields: ["Industry"] }).all();
       const industryOptions = allowedIndustries
         .map((record) => record.get("Industry"))
         .filter((value): value is string => typeof value === "string");
 
-      console.log("[TOOL] Available industries:", industryOptions);
+      logs.push("[TOOL] Available industries: " + JSON.stringify(industryOptions));
 
       // Guess Industry based on client information
       const guessIndustry = (info: string) => {
@@ -145,14 +144,14 @@ const createAccount = tool({
       };
       fields.Industry = fields.Industry || guessIndustry(fields.Description || fields["About the Client"] || "");
 
-      console.log("[TOOL] Guessed Industry:", fields.Industry);
+      logs.push("[TOOL] Guessed Industry: " + fields.Industry);
 
       // Rewrite "About the Client"
       fields["About the Client"] =
         fields["About the Client"] ||
         `The client specializes in ${fields.Description?.toLowerCase()}. Utilizing Wonderland, the account will automate content creation and strategically distribute it across platforms to align with client goals and target audience needs.`;
 
-      console.log("[TOOL] About the Client:", fields["About the Client"]);
+      logs.push("[TOOL] About the Client: " + fields["About the Client"]);
 
       // Generate Primary Objective and Talking Points
       const generatePrimaryObjective = (info: string) => {
@@ -170,8 +169,8 @@ const createAccount = tool({
       fields["Talking Points"] =
         fields["Talking Points"] || generateTalkingPoints(fields.Description || fields.Name || "the client");
 
-      console.log("[TOOL] Primary Objective:", fields["Primary Objective"]);
-      console.log("[TOOL] Talking Points:", fields["Talking Points"]);
+      logs.push("[TOOL] Primary Objective: " + fields["Primary Objective"]);
+      logs.push("[TOOL] Talking Points: " + fields["Talking Points"]);
 
       // Ensure minimum 600-character recommendations for descriptions
       fields.Description =
@@ -179,23 +178,7 @@ const createAccount = tool({
         `This account is focused on ${fields.Name?.toLowerCase() || "the client"}, ensuring tailored solutions for the ${fields.Industry || "General"} sector. Utilizing Wonderland, it maximizes visibility and engagement for strategic growth.`;
       fields.Description = fields.Description.padEnd(600, ".");
 
-      console.log("[TOOL] Final Description:", fields.Description);
-
-      // Prompt for Priority Image field if missing
-      const priorityImageOptions = [
-        "AI Generated",
-        "Stock Images",
-        "Google Images",
-        "Social Media",
-        "Uploaded Media",
-      ];
-      if (!fields["Priority Image"]) {
-        return {
-          message: `What kind of images should this account generate or display? Please choose one of the following options: ${priorityImageOptions.join(
-            ", "
-          )}`,
-        };
-      }
+      logs.push("[TOOL] Final Description: " + fields.Description);
 
       // Summarize all fields before confirmation
       const summarizedFields = {
@@ -217,38 +200,30 @@ const createAccount = tool({
         "Other Social Accounts": fields["Other Social Accounts"] || "Not provided",
       };
 
-      console.log("[TOOL] Summarized fields for confirmation:", summarizedFields);
-
-      // Confirm with the user
-      return {
-        message: `Here are the details for the new account:\n\n${JSON.stringify(
-          summarizedFields,
-          null,
-          2
-        )}\n\nShould I proceed with creating this account?`,
-      };
+      logs.push("[TOOL] Summarized fields for confirmation: " + JSON.stringify(summarizedFields, null, 2));
 
       // Create the account in Airtable
-      console.log("[TOOL] Creating account in Airtable...");
+      logs.push("[TOOL] Creating account in Airtable...");
       const createdRecord = await airtableBase("Accounts").create(fields);
 
       if (!createdRecord || !createdRecord.id) {
-        console.error("[TOOL] Failed to create account: Airtable did not return a valid record ID.");
+        logs.push("[TOOL] Failed to create account: Airtable did not return a valid record ID.");
         throw new Error("Failed to create the account in Airtable.");
       }
 
-      console.log("[TOOL] Account created successfully with Record ID:", createdRecord.id);
+      logs.push("[TOOL] Account created successfully with Record ID: " + createdRecord.id);
 
       return {
         message: `Account created successfully for ${fields.Name}. Record ID: ${createdRecord.id}`,
+        logs,
         recordId: createdRecord.id,
       };
     } catch (error) {
-      console.error("[TOOL] Error during account creation:", error);
-
-      throw new Error(
-        `Failed to create account. Error: ${error instanceof Error ? error.message : JSON.stringify(error)}`
-      );
+      logs.push("[TOOL] Error during account creation: " + (error instanceof Error ? error.message : JSON.stringify(error)));
+      throw {
+        message: "Failed to create account. Check logs for details.",
+        logs,
+      };
     }
   },
 });
