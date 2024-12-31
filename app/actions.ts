@@ -170,6 +170,25 @@ export async function continueConversation(history: Message[]) {
     return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
   }
 }
+// Helper: Get the next question to ask during account creation
+const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | null => {
+  if (!fields["Client URL"]) {
+    logs.push("[LLM] Missing field: Client URL. Prompting user for website or social links.");
+    return "Can you share the company's website or any social media links (e.g., Instagram, Facebook, Blog, or others)?";
+  }
+
+  if (!fields.Description) {
+    logs.push("[LLM] Missing field: Description. Prompting user for company details.");
+    return "Can you tell me more about the company, including its industry, purpose, or mission?";
+  }
+
+  if (!fields["Talking Points"]) {
+    logs.push("[LLM] Missing field: Talking Points. Prompting user for major objectives.");
+    return "What are the major objectives or talking points you'd like to achieve with Wonderland?";
+  }
+
+  return null; // All questions completed
+};
 
 
 // Helper: Validate URLs
