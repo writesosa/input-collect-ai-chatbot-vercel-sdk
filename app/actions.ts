@@ -14,6 +14,23 @@ export interface Message {
 }
 
 let currentRecordId: string | null = null;
+"use server";
+
+import { InvalidToolArgumentsError, generateText, tool } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { z } from "zod";
+import Airtable from "airtable";
+
+// Initialize Airtable base
+const airtableBase = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID || "missing_base_id");
+
+export interface Message {
+  role: "user" | "assistant";
+  content: string;
+}
+
+let currentRecordId: string | null = null;
+
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
@@ -25,13 +42,13 @@ export async function continueConversation(history: Message[]) {
     objectives: false,
   };
 
-  const updateProgressTracker = (field) => {
+  const updateProgressTracker = (field: keyof typeof progressTracker) => {
     if (progressTracker.hasOwnProperty(field)) progressTracker[field] = true;
   };
 
   const allFieldsComplete = () => Object.values(progressTracker).every((status) => status);
 
-  const getNextPrompt = (fields, tracker, accountName) => {
+  const getNextPrompt = (fields: Record<string, any>, tracker: typeof progressTracker, accountName: string) => {
     if (!tracker.description) return `Could you provide a brief description of the company "${accountName}" and its industry?`;
     if (!tracker.website) return `Could you share the company's website and any social media links?`;
     if (!tracker.objectives) return `Could you share any major talking points and primary objectives for "${accountName}"?`;
@@ -42,16 +59,34 @@ export async function continueConversation(history: Message[]) {
     logs.push("[LLM] Starting continueConversation...");
     console.log("[LLM] Starting continueConversation...");
 
-    const detectIntentWithLLM = async (history) => {
+    const detectIntentWithLLM = async (history: Message[]) => {
       const { text } = await generateText({
         model: openai("gpt-4o"),
-        system: `You are a Wonderland assistant!\n          Reply with nicely formatted markdown.\n          Keep your replies short and concise.\n          If this is the first reply, send a nice welcome message.\n          If the selected Account is different, mention the account or company name once.\n          \n          Perform the following actions:\n          - Create a new account in Wonderland when the user requests it.\n          - Modify an existing account in Wonderland when the user requests it.\n          - Delete an existing account in Wonderland when the user requests it.\n          - Synchronize all fields dynamically in real-time as new information becomes available.\n          - Validate actions to ensure they are successfully executed in Airtable.\n          - Confirm the current record being worked on, including the Record ID.\n          - After creating an account, follow up with prompts for more details:\n            1. Ask for a brief description of the company and the industry.\n            2. Request the company's website and any social media links.\n            3. Ask about major talking points and primary objectives.`,
-        messages: [
-          ...history,
-          { role: "assistant", content: "What would you like to do: create, modify, or delete an account?" },
-        ],
+        system: `
+Wonderland is an AI-powered public relations automation system. It dynamically generates content, websites, blog posts, and images to market companies effectively.
+
+You are a Wonderland assistant!
+- Reply with nicely formatted markdown.
+- Keep your replies short and concise.
+- If this is the first reply, send a nice welcome message.
+- If the selected Account is different, mention the account or company name once.
+
+Perform the following actions:
+- Create a new account in Wonderland when the user requests it.
+- Modify an existing account in Wonderland when the user requests it.
+- Delete an existing account in Wonderland when the user requests it.
+- Synchronize all fields dynamically in real-time as new information becomes available.
+- Validate actions to ensure they are successfully executed in Airtable.
+- Confirm the current record being worked on, including the Record ID.
+- After creating an account, follow up with prompts for:
+  1. A brief description of the company and the industry.
+  2. The company's website and any social media links.
+  3. Major talking points and primary objectives.
+        `,
+        messages: history,
         maxTokens: 50,
       });
+
       return text.toLowerCase().includes("create") || text.toLowerCase().includes("make")
         ? "create"
         : text.toLowerCase().includes("modify") || text.toLowerCase().includes("edit")
@@ -108,7 +143,7 @@ export async function continueConversation(history: Message[]) {
 
     const nextPrompt = allFieldsComplete()
       ? `The account "${fieldsToUpdate.Name}" has been updated with the provided details. Would you like to finalize and create the account as active?`
-      : getNextPrompt(fieldsToUpdate, progressTracker, fieldsToUpdate.Name);
+      : getNextPrompt(fieldsToUpdate, progressTracker, fieldsToUpdate.Name || "Unnamed Account");
 
     return {
       messages: [
