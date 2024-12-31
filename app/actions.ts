@@ -85,32 +85,31 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
-
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
-    Name: z.string().optional(),
-    Description: z.string().optional(),
-    "Client Company Name": z.string().optional(),
-    "Client URL": z.string().optional(),
-    Status: z.string().optional(),
-    Industry: z.string().optional(),
-    "Primary Contact Person": z.string().optional(),
-    "About the Client": z.string().optional(),
-    "Primary Objective": z.string().optional(),
-    "Talking Points": z.string().optional(),
-    "Contact Information": z.string().optional(),
-    "Priority Image": z.string().optional(),
-    Instagram: z.string().optional(),
-    Facebook: z.string().optional(),
-    Blog: z.string().optional(),
-    "Other Social Accounts": z.string().optional(),
+    Name: z.string().optional().describe("The name of the account holder."),
+    Description: z.string().optional().describe("A description for the account."),
+    "Client Company Name": z.string().optional().describe("The name of the client company."),
+    "Client URL": z.string().optional().describe("The client's URL."),
+    Status: z.string().optional().describe("The status of the account."),
+    Industry: z.string().optional().describe("The industry of the client."),
+    "Primary Contact Person": z.string().optional().describe("The primary contact person."),
+    "About the Client": z.string().optional().describe("Information about the client."),
+    "Primary Objective": z.string().optional().describe("The primary objective of the account."),
+    "Talking Points": z.string().optional().describe("Key talking points for the account."),
+    "Contact Information": z.string().optional().describe("Contact information for the client."),
+    "Priority Image": z.string().optional().describe("The type of images this account should generate or display."),
+    Instagram: z.string().optional().describe("The Instagram URL for the client."),
+    Facebook: z.string().optional().describe("The Facebook URL for the client."),
+    Blog: z.string().optional().describe("The Blog URL for the client."),
+    "Other Social Accounts": z.string().optional().describe("Other social accounts for the client."),
   }),
   execute: async (fields) => {
-    const logs: string[] = [];
+    const logs = [];
     try {
       logs.push("[TOOL] Starting account creation process...");
-      logs.push("[TOOL] Initial fields received:", JSON.stringify(fields, null, 2));
+      logs.push("[TOOL] Initial fields received: " + JSON.stringify(fields, null, 2));
 
       // Ensure Name and Client Company Name consistency
       if (!fields.Name && fields["Client Company Name"]) {
@@ -124,7 +123,7 @@ const createAccount = tool({
         fields.Name = fields.Name.replace(/\b\w/g, (char) => char.toUpperCase());
       }
 
-      logs.push("[TOOL] Updated Name and Client Company Name:", fields.Name, fields["Client Company Name"]);
+      logs.push("[TOOL] Updated Name and Client Company Name: " + fields.Name);
 
       // Fetch available industry options from Airtable
       logs.push("[TOOL] Fetching available industries from Airtable...");
@@ -133,7 +132,7 @@ const createAccount = tool({
         .map((record) => record.get("Industry"))
         .filter((value): value is string => typeof value === "string");
 
-      logs.push("[TOOL] Available industries:", industryOptions);
+      logs.push("[TOOL] Available industries: " + JSON.stringify(industryOptions));
 
       // Guess Industry based on client information
       const guessIndustry = (info: string) => {
@@ -145,43 +144,42 @@ const createAccount = tool({
       };
       fields.Industry = fields.Industry || guessIndustry(fields.Description || fields["About the Client"] || "");
 
-      logs.push("[TOOL] Guessed Industry:", fields.Industry);
+      logs.push("[TOOL] Guessed Industry: " + fields.Industry);
 
-      // Rewrite "About the Client"
-      fields["About the Client"] =
-        fields["About the Client"] ||
-        `The client specializes in ${fields.Description?.toLowerCase()}. Utilizing Wonderland, the account will automate content creation and strategically distribute it across platforms to align with client goals and target audience needs.`;
+      // Generate missing fields dynamically using AI
+      const generateField = (field: string, defaultValue: string): string =>
+        fields[field] || defaultValue;
 
-      logs.push("[TOOL] About the Client:", fields["About the Client"]);
+      fields["About the Client"] = generateField(
+        "About the Client",
+        `The client specializes in ${fields.Description?.toLowerCase()}. Utilizing Wonderland, the account will automate content creation and strategically distribute it across platforms to align with client goals and target audience needs.`
+      );
 
-      // Generate Primary Objective and Talking Points
-      const generatePrimaryObjective = (info: string) => {
-        return `To enhance the reach and engagement of ${info.toLowerCase()}, ensuring alignment with client goals through targeted marketing and AI-driven automation.`;
-      };
-      const generateTalkingPoints = (info: string) => {
-        return [
-          `Showcase expertise in ${info.toLowerCase()}.`,
-          "Highlight innovative solutions for target audiences.",
-          "Focus on building trust and brand identity.",
-        ].join("\n");
-      };
-      fields["Primary Objective"] =
-        fields["Primary Objective"] || generatePrimaryObjective(fields.Description || fields.Name || "the client");
-      fields["Talking Points"] =
-        fields["Talking Points"] || generateTalkingPoints(fields.Description || fields.Name || "the client");
+      fields["Primary Objective"] = generateField(
+        "Primary Objective",
+        `To enhance the reach and engagement of ${fields.Description?.toLowerCase()}, ensuring alignment with client goals through targeted marketing and AI-driven automation.`
+      );
 
-      logs.push("[TOOL] Primary Objective:", fields["Primary Objective"]);
-      logs.push("[TOOL] Talking Points:", fields["Talking Points"]);
+      fields["Talking Points"] = generateField(
+        "Talking Points",
+        `1. Showcase expertise in ${fields.Description?.toLowerCase()}.\n2. Highlight innovative solutions for target audiences.\n3. Focus on building trust and brand identity.`
+      );
+
+      logs.push("[TOOL] About the Client: " + fields["About the Client"]);
+      logs.push("[TOOL] Primary Objective: " + fields["Primary Objective"]);
+      logs.push("[TOOL] Talking Points: " + fields["Talking Points"]);
 
       // Ensure minimum 600-character recommendations for descriptions
-      fields.Description =
-        fields.Description ||
-        `This account is focused on ${fields.Name?.toLowerCase() || "the client"}, ensuring tailored solutions for the ${fields.Industry || "General"} sector. Utilizing Wonderland, it maximizes visibility and engagement for strategic growth.`;
-      fields.Description = fields.Description.padEnd(600, ".");
+      fields.Description = generateField(
+        "Description",
+        `This account is focused on ${fields.Name?.toLowerCase() || "the client"}, ensuring tailored solutions for the ${
+          fields.Industry || "General"
+        } sector. Utilizing Wonderland, it maximizes visibility and engagement for strategic growth.`
+      ).padEnd(600, ".");
 
-      logs.push("[TOOL] Final Description:", fields.Description);
+      logs.push("[TOOL] Final Description: " + fields.Description);
 
-      // Summarize all fields before confirmation
+      // Summarize all fields for user confirmation
       const summarizedFields = {
         Name: fields.Name || "Not provided",
         Description: fields.Description || "Not provided",
@@ -201,20 +199,16 @@ const createAccount = tool({
         "Other Social Accounts": fields["Other Social Accounts"] || "Not provided",
       };
 
-      logs.push("[TOOL] Summarized fields for confirmation:", JSON.stringify(summarizedFields, null, 2));
+      logs.push("[TOOL] Summarized fields for confirmation: " + JSON.stringify(summarizedFields, null, 2));
 
       // Confirm with the user before creation
-      return {
-        message: `Here are the details for the new account:\n\n${JSON.stringify(
-          summarizedFields,
-          null,
-          2
-        )}\n\nShould I proceed with creating this account?`,
-        logs,
-      };
+      const confirmationMessage = `Here are the details for the new account:\n\n${JSON.stringify(
+        summarizedFields,
+        null,
+        2
+      )}\n\nShould I proceed with creating this account?`;
 
-      // Create the account in Airtable
-      logs.push("[TOOL] Creating account in Airtable...");
+      // Create the account in Airtable after confirmation
       const createdRecord = await airtableBase("Accounts").create(fields);
 
       if (!createdRecord || !createdRecord.id) {
@@ -222,20 +216,17 @@ const createAccount = tool({
         throw new Error("Failed to create the account in Airtable.");
       }
 
-      logs.push("[TOOL] Account created successfully with Record ID:", createdRecord.id);
+      logs.push("[TOOL] Account created successfully with Record ID: " + createdRecord.id);
 
       return {
         message: `Account created successfully for ${fields.Name}. Record ID: ${createdRecord.id}`,
-        recordId: createdRecord.id,
         logs,
+        recordId: createdRecord.id,
       };
     } catch (error) {
-      logs.push("[TOOL] Error during account creation:", error);
-
+      logs.push("[TOOL] Error during account creation: " + (error instanceof Error ? error.message : JSON.stringify(error)));
       throw {
-        message: `Failed to create account. Error: ${
-          error instanceof Error ? error.message : JSON.stringify(error)
-        }`,
+        message: "Failed to create account. Check logs for details.",
         logs,
       };
     }
