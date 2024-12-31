@@ -16,6 +16,24 @@ export interface Message {
 let currentRecordId: string | null = null;
 let creationProgress: number | null = null; // Track user progress in account creation
 
+// Helper: Validate URLs
+const validateURL = (url: string): string | null => {
+  try {
+    const validUrl = new URL(url.startsWith("http") ? url : `https://${url}`);
+    return validUrl.href;
+  } catch {
+    return null;
+  }
+};
+
+// Helper: Convert string to Title Case
+const toTitleCase = (str: string): string =>
+  str.replace(/\w\S*/g, (word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
+
+// Helper: Clean Undefined Fields
+const cleanFields = (fields: Record<string, any>) =>
+  Object.fromEntries(Object.entries(fields).filter(([_, value]) => value !== undefined));
+
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
@@ -56,7 +74,7 @@ export async function continueConversation(history: Message[]) {
           - Delete an existing account in Wonderland when the user requests it.
           - Switch to a different account by looking up records based on a specific field and value.
           - Answer questions you know about Wonderland.
-          - When the request is unknown prompt the user for more information to establish intent.
+          - When the request is unknown, prompt the user for more information to establish intent.
 
           When creating, modifying, or switching accounts:
           - Confirm the action with the user before finalizing.
@@ -77,35 +95,40 @@ export async function continueConversation(history: Message[]) {
       const userMessage = history[history.length - 1]?.content.trim() || "";
       if (creationProgress !== null) {
         if (creationProgress === 0) {
-          const website = validateURL(userMessage);
-          if (website) {
-            fieldsToUpdate["Client URL"] = website;
-            logs.push(`[LLM] Captured website: ${website}`);
-            // Update Airtable immediately
-            if (currentRecordId) {
-              await modifyAccount.execute({ recordId: currentRecordId, fields: { "Client URL": website } });
-              logs.push(`[TOOL] Updated Client URL for Record ID: ${currentRecordId}`);
+          // Website and Social Links
+          const inputs = userMessage.split(",").map((input) => input.trim());
+          for (const input of inputs) {
+            const url = validateURL(input);
+            if (url) {
+              if (!fieldsToUpdate.Website && url.includes("www")) fieldsToUpdate.Website = url;
+              else if (!fieldsToUpdate.Instagram && url.includes("instagram.com"))
+                fieldsToUpdate.Instagram = url;
+              else if (!fieldsToUpdate.Facebook && url.includes("facebook.com"))
+                fieldsToUpdate.Facebook = url;
+              else if (!fieldsToUpdate.Blog) fieldsToUpdate.Blog = url;
             }
           }
-          creationProgress++; // Always proceed to the next question
+          await modifyAccount.execute({ recordId: currentRecordId!, fields: cleanFields(fieldsToUpdate) });
+          logs.push("[LLM] Website and Social Links updated.");
+          creationProgress++;
         } else if (creationProgress === 1) {
+          // Description
           fieldsToUpdate.Description = userMessage || "No description provided.";
-          logs.push(`[LLM] Captured description: ${userMessage}`);
-          // Update Airtable immediately
-          if (currentRecordId) {
-            await modifyAccount.execute({ recordId: currentRecordId, fields: { Description: fieldsToUpdate.Description } });
-            logs.push(`[TOOL] Updated Description for Record ID: ${currentRecordId}`);
-          }
+          await modifyAccount.execute({
+            recordId: currentRecordId!,
+            fields: { Description: fieldsToUpdate.Description },
+          });
+          logs.push("[LLM] Description updated.");
           creationProgress++;
         } else if (creationProgress === 2) {
+          // Talking Points
           fieldsToUpdate["Talking Points"] = userMessage || "No talking points provided.";
-          logs.push(`[LLM] Captured talking points: ${userMessage}`);
-          // Update Airtable immediately
-          if (currentRecordId) {
-            await modifyAccount.execute({ recordId: currentRecordId, fields: { "Talking Points": fieldsToUpdate["Talking Points"] } });
-            logs.push(`[TOOL] Updated Talking Points for Record ID: ${currentRecordId}`);
-          }
-          creationProgress = null; // End of question flow
+          await modifyAccount.execute({
+            recordId: currentRecordId!,
+            fields: { "Talking Points": fieldsToUpdate["Talking Points"] },
+          });
+          logs.push("[LLM] Talking Points updated.");
+          creationProgress = null; // End of flow
         }
       }
 
@@ -140,6 +163,7 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
+// Helper: Get the next question to ask during account creation
 const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | null => {
   if (
     (!fields.Website || !fields.Instagram || !fields.Facebook || !fields.Blog) &&
