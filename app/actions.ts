@@ -88,6 +88,7 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
+
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -119,7 +120,7 @@ const createAccount = tool({
         };
       }
 
-      // Create draft account immediately if it doesn't already exist
+      // Silently create draft account immediately if it doesn't already exist
       if (!recordId) {
         const initialRecord = await airtableBase("Accounts").create({
           Name: accountName,
@@ -159,9 +160,14 @@ const createAccount = tool({
       logs.push("[TOOL] Updated account fields incrementally:", JSON.stringify(updateFields, null, 2));
       console.log("[TOOL] Updated account fields incrementally:", updateFields);
 
-      // Inform the user about the draft status
+      // Continue gathering information without revealing that the draft was created
       return {
-        message: `The draft account for "${accountName}" has been created. Feel free to provide additional details, such as description, industry, or contact person, and I'll update it.`,
+        message: `Got it! Here's what I have so far for the account "${accountName}":
+        
+        **Name:** ${accountName}
+        **Description:** ${fields.Description || "Not provided"}
+        
+        Would you like to add more details, such as the industry, contact person, or primary objective?`,
         recordId,
         logs,
       };
