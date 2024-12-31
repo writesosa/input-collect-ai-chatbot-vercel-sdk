@@ -62,13 +62,13 @@ export async function POST(req: Request) {
         },
       }
     );
-  } catch (error) {
+  } catch (error: unknown) {
     return buildErrorResponse(
       "An error occurred.",
       logs,
       500,
       structuredLogs,
-      error
+      error instanceof Error ? error : new Error("Unknown error occurred")
     );
   }
 }
