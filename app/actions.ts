@@ -127,22 +127,23 @@ const createAccount = tool({
         throw { message: "No industries available in Airtable.", logs };
       }
 
-      // Guess Industry based on client information
-      const guessIndustry = (info: string) => {
-        const matches = industryOptions.filter((industry) => new RegExp(industry, "i").test(info));
-        return matches.length > 0 ? matches[0] : "General";
-      };
-      fields.Industry = fields.Industry || guessIndustry(fields.Description || fields["About the Client"] || "");
+      logs.push(`[TOOL] Available industries: ${industryOptions.join(", ")}`);
 
-      if (!fields.Industry || fields.Industry === "General") {
-        logs.push("[TOOL] Unable to determine industry. Asking user...");
-        return {
-          message: `I couldn't determine the industry. Available options are: ${industryOptions.join(", ")}. Please specify the most relevant industry for the account.`,
-          logs,
-        };
+      // Prompt user for industry selection if not provided
+      if (!fields.Industry) {
+        const industryPrompt = `Please select the most relevant industry for the account. Available options are: ${industryOptions.join(", ")}.`;
+        logs.push("[TOOL] Industry not provided. Asking user to select.");
+        return { message: industryPrompt, logs };
       }
 
-      logs.push(`[TOOL] Industry guessed: ${fields.Industry}`);
+      // Validate the selected industry
+      if (!industryOptions.includes(fields.Industry)) {
+        const invalidIndustryPrompt = `The provided industry "${fields.Industry}" is not valid. Available options are: ${industryOptions.join(", ")}. Please select a valid industry.`;
+        logs.push("[TOOL] Invalid industry provided. Asking user to correct.");
+        return { message: invalidIndustryPrompt, logs };
+      }
+
+      logs.push(`[TOOL] Industry selected: ${fields.Industry}`);
 
       // Rewrite "About the Client"
       fields["About the Client"] =
@@ -186,8 +187,14 @@ const createAccount = tool({
 
       logs.push("[TOOL] Final fields prepared for Airtable creation:", JSON.stringify(finalFields, null, 2));
 
-      // Summarize changes and confirm
-      const summary = `### Account Summary\n\n**Provided Fields:**\n${JSON.stringify(fields, null, 2)}\n\n**Generated Fields:**\n- Industry: ${fields.Industry}\n- About the Client: ${fields["About the Client"]}\n- Primary Objective: ${fields["Primary Objective"]}\n- Talking Points: ${fields["Talking Points"]}\n\nWould you like to create the account with these details? (yes/no)`;
+      // Create the account in Airtable
+      logs.push("[TOOL] Creating account in Airtable...");
+      const createdAccount = await airtableBase("Accounts").create(finalFields);
+
+      logs.push("[TOOL] Account created successfully:", JSON.stringify(createdAccount, null, 2));
+
+      // Summarize changes
+      const summary = `### Account Created Successfully\n\n**Provided Fields:**\n${JSON.stringify(fields, null, 2)}\n\n**Generated Fields:**\n- Industry: ${fields.Industry}\n- About the Client: ${fields["About the Client"]}\n- Primary Objective: ${fields["Primary Objective"]}\n- Talking Points: ${fields["Talking Points"]}\n\nAccount ID: ${createdAccount.id}`;
       logs.push("[TOOL] Summary prepared:", summary);
       return { message: summary, logs };
     } catch (error) {
