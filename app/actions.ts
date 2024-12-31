@@ -48,7 +48,11 @@ export async function continueConversation(history: Message[]) {
     const detectIntentWithLLM = async (history: Message[]) => {
       const { text } = await generateText({
         model: openai("gpt-4o"),
-        system: `You are a Wonderland assistant!\n          Reply with nicely formatted markdown.\n          Keep your replies short and concise.\n          If this is the first reply, send a nice welcome message.\n          If the selected Account is different, mention the account or company name once.\n          \n          Perform the following actions:\n          - Respond to user queries to clarify their intent (e.g., create, modify, delete, or other actions).\n          - Provide examples of what actions the user can take, such as "create an account," "modify an account," or "delete an account."\n          - Once the user's intent is clear, proceed with the appropriate workflow.`,
+        system: `You are a Wonderland assistant, an AI-powered public relations automation system. You help users dynamically create, modify, or delete accounts and assist with content creation for marketing campaigns.
+          Respond with formatted markdown. Clarify intent dynamically based on user input by asking guiding questions like:
+          - Would you like to create, modify, or delete an account?
+          - Examples: "Create an account for ABC", "Modify the account for XYZ", or "Delete the account for DEF."
+          Once intent is clear, proceed with the requested workflow.`,
         messages: history,
         maxTokens: 100,
       });
@@ -64,7 +68,7 @@ export async function continueConversation(history: Message[]) {
           ...history,
           {
             role: "assistant",
-            content: "I can help you with actions like creating, modifying, or deleting an account. What would you like to do? For example, you could say, 'create a new account for XYZ' or 'modify the account for ABC.'",
+            content: "I can assist with creating, modifying, or deleting accounts. Could you clarify what you would like to do? For example, 'Create an account for XYZ' or 'Modify the account for ABC.'",
           },
         ],
         logs,
