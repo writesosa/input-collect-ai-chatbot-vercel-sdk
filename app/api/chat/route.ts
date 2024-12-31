@@ -51,11 +51,12 @@ export async function POST(req: Request) {
       result,
     });
 
-    // Extract and log TOOL logs explicitly
-    if (result.logs && Array.isArray(result.logs)) {
-      logs.push(...result.logs);
-      result.logs.forEach((log) => console.log("[TOOL]", log));
-    }
+// Extract and log TOOL logs explicitly
+if (result && result.logs && Array.isArray(result.logs)) {
+  logs.push(...result.logs);
+  result.logs.forEach((log) => console.log("[TOOL]", log));
+}
+
 
     return new Response(
       JSON.stringify({
