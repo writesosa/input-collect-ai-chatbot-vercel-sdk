@@ -34,7 +34,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Handle both string and structured logs
     structuredLogs.push({
       message: "[POST /api/chat] Processing record and messages",
       record,
@@ -54,11 +53,18 @@ export async function POST(req: Request) {
       result,
     });
 
+    // Extract and log TOOL logs explicitly
+    if (result.logs && Array.isArray(result.logs)) {
+      console.group("[TOOL Logs]");
+      result.logs.forEach((log) => console.log("[TOOL]", log));
+      console.groupEnd();
+    }
+
     return new Response(
       JSON.stringify({
         ...flattenErrorResponse(result),
-        logs: result.logs || logs, // Include logs in the response
-        structuredLogs, // Optionally include structured logs
+        logs: result.logs || logs,
+        structuredLogs,
       }),
       {
         headers: {
@@ -76,7 +82,6 @@ export async function POST(req: Request) {
       error: error instanceof Error ? { message: error.message, stack: error.stack } : error,
     });
 
-    // Push detailed error to the frontend
     return new Response(
       JSON.stringify(flattenErrorResponse({
         error: "An error occurred.",
