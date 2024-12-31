@@ -85,6 +85,8 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
+
+
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -106,7 +108,7 @@ const createAccount = tool({
     "Other Social Accounts": z.string().optional().describe("Other social accounts for the client."),
   }),
   execute: async (fields) => {
-    const logs = [];
+    const logs: string[] = [];
     try {
       logs.push("[TOOL] Starting account creation process...");
       logs.push("[TOOL] Initial fields received: " + JSON.stringify(fields, null, 2));
@@ -146,40 +148,48 @@ const createAccount = tool({
 
       logs.push("[TOOL] Guessed Industry: " + fields.Industry);
 
-      // Generate missing fields dynamically using AI
-      const generateField = (field: string, defaultValue: string): string =>
-        fields[field] || defaultValue;
-
-      fields["About the Client"] = generateField(
-        "About the Client",
-        `The client specializes in ${fields.Description?.toLowerCase()}. Utilizing Wonderland, the account will automate content creation and strategically distribute it across platforms to align with client goals and target audience needs.`
-      );
-
-      fields["Primary Objective"] = generateField(
-        "Primary Objective",
-        `To enhance the reach and engagement of ${fields.Description?.toLowerCase()}, ensuring alignment with client goals through targeted marketing and AI-driven automation.`
-      );
-
-      fields["Talking Points"] = generateField(
-        "Talking Points",
-        `1. Showcase expertise in ${fields.Description?.toLowerCase()}.\n2. Highlight innovative solutions for target audiences.\n3. Focus on building trust and brand identity.`
-      );
+      // Rewrite "About the Client"
+      fields["About the Client"] =
+        fields["About the Client"] ||
+        `The client specializes in ${fields.Description?.toLowerCase()}. Utilizing Wonderland, the account will automate content creation and strategically distribute it across platforms to align with client goals and target audience needs.`;
 
       logs.push("[TOOL] About the Client: " + fields["About the Client"]);
+
+      // Generate Primary Objective and Talking Points
+      const generatePrimaryObjective = (info: string) => {
+        return `To enhance the reach and engagement of ${info.toLowerCase()}, ensuring alignment with client goals through targeted marketing and AI-driven automation.`;
+      };
+      const generateTalkingPoints = (info: string) => {
+        return [
+          `Showcase expertise in ${info.toLowerCase()}.`,
+          "Highlight innovative solutions for target audiences.",
+          "Focus on building trust and brand identity.",
+        ].join("\n");
+      };
+      fields["Primary Objective"] =
+        fields["Primary Objective"] || generatePrimaryObjective(fields.Description || fields.Name || "the client");
+      fields["Talking Points"] =
+        fields["Talking Points"] || generateTalkingPoints(fields.Description || fields.Name || "the client");
+
       logs.push("[TOOL] Primary Objective: " + fields["Primary Objective"]);
       logs.push("[TOOL] Talking Points: " + fields["Talking Points"]);
 
       // Ensure minimum 600-character recommendations for descriptions
-      fields.Description = generateField(
-        "Description",
-        `This account is focused on ${fields.Name?.toLowerCase() || "the client"}, ensuring tailored solutions for the ${
-          fields.Industry || "General"
-        } sector. Utilizing Wonderland, it maximizes visibility and engagement for strategic growth.`
-      ).padEnd(600, ".");
+      fields.Description =
+        fields.Description ||
+        `This account is focused on ${fields.Name?.toLowerCase() || "the client"}, ensuring tailored solutions for the ${fields.Industry || "General"} sector. Utilizing Wonderland, it maximizes visibility and engagement for strategic growth.`;
+      fields.Description = fields.Description.padEnd(600, ".");
 
       logs.push("[TOOL] Final Description: " + fields.Description);
 
-      // Summarize all fields for user confirmation
+      // Prompt for Priority Image field if missing
+      if (!fields["Priority Image"]) {
+        return {
+          message: `What kind of images should this account generate or display? Please choose one of the following options: AI Generated, Stock Images, Google Images, Social Media, Uploaded Media.`,
+        };
+      }
+
+      // Summarize all fields before confirmation
       const summarizedFields = {
         Name: fields.Name || "Not provided",
         Description: fields.Description || "Not provided",
@@ -201,14 +211,8 @@ const createAccount = tool({
 
       logs.push("[TOOL] Summarized fields for confirmation: " + JSON.stringify(summarizedFields, null, 2));
 
-      // Confirm with the user before creation
-      const confirmationMessage = `Here are the details for the new account:\n\n${JSON.stringify(
-        summarizedFields,
-        null,
-        2
-      )}\n\nShould I proceed with creating this account?`;
-
-      // Create the account in Airtable after confirmation
+      // Create the account in Airtable
+      logs.push("[TOOL] Creating account in Airtable...");
       const createdRecord = await airtableBase("Accounts").create(fields);
 
       if (!createdRecord || !createdRecord.id) {
