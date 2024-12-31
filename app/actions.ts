@@ -13,12 +13,10 @@ export interface Message {
   content: string;
 }
 
-// Track the current working record ID
 let currentRecordId: string | null = null;
 
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
-  let draftCreated = false;
   const fieldsToUpdate: Record<string, any> = {};
 
   try {
@@ -26,7 +24,7 @@ export async function continueConversation(history: Message[]) {
     console.log("[LLM] Starting continueConversation...");
 
     // Detect fields from user messages
-    history.forEach((msg) => {
+    for (const msg of history) {
       if (msg.role === "user") {
         if (!fieldsToUpdate.Name && msg.content.toLowerCase().includes("called")) {
           fieldsToUpdate.Name = toTitleCase(msg.content.match(/called\s(.+)/i)?.[1] || "");
@@ -34,35 +32,11 @@ export async function continueConversation(history: Message[]) {
         if (!fieldsToUpdate.Description && msg.content.toLowerCase().includes("about")) {
           fieldsToUpdate.Description = msg.content.match(/about\s(.+)/i)?.[1];
         }
-        if (msg.content.toLowerCase().includes("switch to")) {
-          const newAccountName = msg.content.match(/switch to\s(.+)/i)?.[1];
-          if (newAccountName) {
-            logs.push(`[LLM] Switching to account: ${newAccountName}`);
-            console.log(`[LLM] Switching to account: ${newAccountName}`);
-
-            const accountRecord = await airtableBase("Accounts")
-              .select({
-                filterByFormula: `{Name} = "${newAccountName}"`,
-                maxRecords: 1,
-              })
-              .firstPage();
-
-            if (accountRecord.length > 0) {
-              currentRecordId = accountRecord[0].id;
-              logs.push(`[LLM] Switched to record ID: ${currentRecordId}`);
-              console.log(`[LLM] Switched to record ID: ${currentRecordId}`);
-            } else {
-              logs.push(`[LLM] Account not found: ${newAccountName}`);
-              console.log(`[LLM] Account not found: ${newAccountName}`);
-              throw new Error(`No account found for "${newAccountName}".`);
-            }
-          }
-        }
       }
-    });
+    }
 
     // Ensure draft record is created when Name is detected
-    if (fieldsToUpdate.Name && !draftCreated) {
+    if (fieldsToUpdate.Name && !currentRecordId) {
       logs.push(`[LLM] Detected account name: ${fieldsToUpdate.Name}`);
       console.log(`[LLM] Detected account name: ${fieldsToUpdate.Name}`);
 
@@ -71,13 +45,9 @@ export async function continueConversation(history: Message[]) {
         "Priority Image Type": "AI Generated", // Default value
       });
 
-      currentRecordId = createResponse.recordId || null; // Persist the record ID
-      draftCreated = true;
+      currentRecordId = createResponse.recordId || null;
 
       logs.push(`[TOOL] Draft created with Record ID: ${currentRecordId}`);
-      if (!currentRecordId) {
-        throw new Error("Failed to create a new draft account. Record ID is null.");
-      }
     }
 
     // Update additional fields incrementally
@@ -85,16 +55,16 @@ export async function continueConversation(history: Message[]) {
       const updateFields = { ...fieldsToUpdate };
       delete updateFields.Name;
 
-      logs.push(`[TOOL] Preparing to update record ID: ${currentRecordId}`);
-      console.log(`[TOOL] Preparing to update record ID: ${currentRecordId}`);
+      logs.push("[TOOL] Updating draft record with new fields:", JSON.stringify(updateFields, null, 2));
+      console.log("[TOOL] Updating draft record with new fields:", updateFields);
 
       const modifyResponse = await modifyAccount.execute({
         recordId: currentRecordId,
         fields: updateFields,
       });
 
-      logs.push(`[TOOL] Fields updated for record ID ${currentRecordId}:`, JSON.stringify(modifyResponse));
-      console.log(`[TOOL] Fields updated for record ID ${currentRecordId}:`, modifyResponse);
+      logs.push("[TOOL] Fields updated successfully:", JSON.stringify(modifyResponse));
+      console.log("[TOOL] Fields updated successfully:", modifyResponse);
     }
 
     // Process LLM message
