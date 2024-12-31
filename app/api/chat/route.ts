@@ -2,73 +2,44 @@ import { continueConversation } from "../../actions";
 
 export async function POST(req: Request) {
   console.log("[POST /api/chat] Request received");
-  const logs: string[] = [];
-  const structuredLogs: any[] = []; // For detailed structured logging
 
   try {
     const body = await req.json();
-    logs.push("[POST /api/chat] Parsed body:", JSON.stringify(body, null, 2));
+    console.log("[POST /api/chat] Parsed body:", body);
 
     const { messages, record } = body;
 
-    // Validate input
     if (!messages || !Array.isArray(messages)) {
-      logs.push("[POST /api/chat] Invalid input: messages is not an array.");
-      return buildErrorResponse("Invalid input format.", logs, 400);
+      console.error("[POST /api/chat] Invalid input: messages is not an array.");
+      return new Response(
+        JSON.stringify({ error: "Invalid input format." }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
     }
 
     if (!record || !record.type) {
-      logs.push("[POST /api/chat] No valid record provided.");
-      return buildErrorResponse("Record with valid type is required.", logs, 400);
+      console.error("[POST /api/chat] No valid record provided.");
+      return new Response(
+        JSON.stringify({ error: "Record with valid type is required." }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
     }
 
-    structuredLogs.push({
-      message: "[POST /api/chat] Processing record and messages",
-      record,
-      messages,
-    });
-
-    // Process conversation
     const result = await continueConversation([
       { role: "assistant", content: `Processing record: ${JSON.stringify(record)}` },
       ...messages,
     ]);
 
-    logs.push("[POST /api/chat] Response from continueConversation:", JSON.stringify(result, null, 2));
-    structuredLogs.push({
-      message: "[POST /api/chat] Response from continueConversation",
-      result,
+    console.log("[POST /api/chat] Response from continueConversation:", result);
+
+    return new Response(JSON.stringify(result), {
+      headers: { "Content-Type": "application/json" },
     });
-
-    // Extract and log TOOL logs explicitly
-    if (result.logs && Array.isArray(result.logs)) {
-      console.group("[TOOL Logs]");
-      result.logs.forEach((log) => console.log("[TOOL]", log));
-      console.groupEnd();
-    }
-
+  } catch (error) {
+    console.error("[POST /api/chat] Error occurred:", error);
     return new Response(
-      JSON.stringify({
-        ...flattenErrorResponse(result),
-        logs: result.logs || logs,
-        structuredLogs,
-      }),
-      {
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "POST, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type",
-          "Content-Type": "application/json",
-        },
-      }
-    );
-  } catch (error: unknown) {
-    return buildErrorResponse(
-      "An error occurred.",
-      logs,
-      500,
-      structuredLogs,
-      error instanceof Error ? error : new Error("Unknown error occurred")
+      JSON.stringify({ error: "An error occurred.", details: error.message }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
 }
@@ -79,10 +50,10 @@ export async function OPTIONS() {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
-      "Access-Control-Max-Age": "86400",
     },
   });
 }
+
 
 function flattenErrorResponse(response: any): Record<string, any> {
   if (typeof response === "object" && response !== null) {
