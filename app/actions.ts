@@ -3,6 +3,7 @@
 import { InvalidToolArgumentsError, generateText, nanoid, tool } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { z } from "zod";
+import users from "./users.json";
 import Airtable from "airtable";
 
 export interface Message {
@@ -10,15 +11,22 @@ export interface Message {
   content: string;
 }
 
+// Simulated user data for logging and updates
+const currentUserData = {
+  name: "",
+  accountNumber: "",
+  phoneNumber: "",
+  balance: 0,
+};
+
 // Initialize Airtable base
 const airtableBase = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID || "missing_base_id");
 
 export async function continueConversation(history: Message[]) {
   "use server";
 
-  const logs: string[] = [];
   try {
-    logs.push("[LLM] continueConversation: Starting...");
+    console.log("[LLM] continueConversation");
     const { text, toolResults } = await generateText({
       model: openai("gpt-4o"),
       system: `You are a Wonderland assistant!
@@ -35,7 +43,8 @@ export async function continueConversation(history: Message[]) {
         When creating or modifying an account:
         - Extract the required information (e.g., account name, description, or specific fields to update) from the user's input.
         - Ensure all extracted values are sent outside the user message in a structured format.
-        - Confirm the action with the user before finalizing.`,
+        - Confirm the action with the user before finalizing.
+        `,
       messages: history,
       maxToolRoundtrips: 5,
       tools: {
@@ -45,33 +54,34 @@ export async function continueConversation(history: Message[]) {
       },
     });
 
-    logs.push("[LLM] Conversation processed successfully.");
-
     return {
       messages: [
         ...history,
         {
-          role: "assistant",
+          role: "assistant" as const,
           content:
             text ||
             toolResults.map((toolResult) => toolResult.result).join("\n"),
         },
       ],
-      logs,
     };
   } catch (error) {
-    logs.push("[LLM] Error in continueConversation: " + (error instanceof Error ? error.message : JSON.stringify(error)));
+    console.error("[LLM] Error in continueConversation:", {
+      message: error instanceof Error ? error.message : "Unknown error",
+      stack: error instanceof Error ? error.stack : undefined,
+      raw: JSON.stringify(error, Object.getOwnPropertyNames(error)),
+    });
+
     return {
       messages: [
         ...history,
         {
-          role: "assistant",
+          role: "assistant" as const,
           content: `There's a problem executing the request. Please try again. Error details: ${
             error instanceof Error ? error.message : "Unknown error"
           }`,
         },
       ],
-      logs,
     };
   }
 }
@@ -92,9 +102,11 @@ const createAccount = tool({
     "Priority Image": z.string().optional().describe("The type of images this account should generate or display."),
   }),
   execute: async (fields) => {
-    console.log("[TOOL] createAccount", fields);
-
+    const logs: string[] = [];
     try {
+      logs.push("[TOOL] createAccount started.");
+      logs.push("[TOOL] Initial fields received:", JSON.stringify(fields, null, 2));
+
       // Ensure Name and Company Name consistency
       if (!fields.Name && fields["Client Company Name"]) {
         fields.Name = fields["Client Company Name"];
@@ -108,12 +120,14 @@ const createAccount = tool({
       }
 
       // Fetch existing records for suggestions
+      logs.push("[TOOL] Fetching existing records for suggestions...");
       const existingRecords = await airtableBase("Accounts").select().firstPage();
       const primaryContactSuggestions = existingRecords
         .map((record) => record.get("Primary Contact Person"))
         .filter((value): value is string => typeof value === "string");
 
       // Fetch available industry options from Airtable
+      logs.push("[TOOL] Fetching available industries...");
       const allowedIndustries = await airtableBase("Accounts").select({ fields: ["Industry"] }).all();
       const industryOptions = allowedIndustries
         .map((record) => record.get("Industry"))
@@ -127,6 +141,8 @@ const createAccount = tool({
         return "General";
       };
       fields.Industry = fields.Industry || guessIndustry(fields.Description || fields["About the Client"] || "");
+
+      logs.push(`[TOOL] Industry guessed: ${fields.Industry}`);
 
       // Rewrite Description based on client-provided info
       const rewriteDescription = (info: string) => {
@@ -146,6 +162,8 @@ const createAccount = tool({
       fields["Talking Points"] =
         fields["Talking Points"] || generateTalkingPoints(fields.Description || fields.Name || "");
 
+      logs.push("[TOOL] Finalized Primary Objective and Talking Points.");
+
       // Prompt for Priority Image field if missing
       const priorityImageOptions = [
         "AI Generated",
@@ -155,15 +173,19 @@ const createAccount = tool({
         "Uploaded Media",
       ];
       if (!fields["Priority Image"]) {
+        logs.push("[TOOL] Priority Image missing.");
         return {
           message: `What kind of images should this account generate or display? Please choose one of the following options: ${priorityImageOptions.join(
             ", "
           )}`,
+          logs,
         };
       }
       if (!priorityImageOptions.includes(fields["Priority Image"])) {
+        logs.push("[TOOL] Invalid Priority Image option.");
         return {
           message: `Invalid choice for Priority Image. Please choose from: ${priorityImageOptions.join(", ")}`,
+          logs,
         };
       }
 
@@ -172,67 +194,47 @@ const createAccount = tool({
         const suggestionMessage = primaryContactSuggestions.length > 0
           ? `The following primary contact persons are available: ${primaryContactSuggestions.join(", ")}. Is one of them the contact person for this account, or should we add someone else?`
           : "No existing contact persons found. Please provide a contact person for this account.";
-        return { message: suggestionMessage };
+        logs.push("[TOOL] Missing Primary Contact Person detected.");
+        return { message: suggestionMessage, logs };
       }
 
-      // Suggest values for remaining fields
-      const suggestedFields: Record<string, string> = {
+      // Merge suggested values with provided fields
+      const finalFields = {
         ...fields,
-        "Client URL": fields["Client URL"] || "https://example.com",
         Status: fields.Status || "New",
+        "Client URL": fields["Client URL"] || "https://example.com",
         "Contact Information": fields["Contact Information"] || "contact@example.com",
-        "About the Client":
-          fields["About the Client"] ||
-          `This account represents ${fields.Name || "the client"} in the ${fields.Industry || "General"} sector.`,
-        Description: fields.Description,
+        Description: fields.Description.padEnd(600, "."),
       };
 
-      console.log("[TOOL] Suggested values for missing fields:", suggestedFields);
-
-      // Merge suggested values with provided fields
-      const finalFields = { ...suggestedFields, ...fields };
-
-      console.log("[TOOL] Final fields for account creation:", finalFields);
+      logs.push("[TOOL] Final fields prepared for account creation:", JSON.stringify(finalFields, null, 2));
 
       // Create a new record in Airtable
-      console.log("[TOOL] Creating a new Airtable record...");
+      logs.push("[TOOL] Creating a new Airtable record...");
       const createdRecord = await airtableBase("Accounts").create(finalFields);
 
       if (!createdRecord || !createdRecord.id) {
-        console.error("[TOOL] Failed to create record: Airtable did not return a valid record ID.");
+        logs.push("[TOOL] Airtable record creation failed: No valid record ID returned.");
         throw new Error("Failed to create the account in Airtable. Please check your fields and try again.");
       }
 
-      console.log("[TOOL] Account created successfully in Airtable:", createdRecord);
+      logs.push(`[TOOL] Account created successfully in Airtable. Record ID: ${createdRecord.id}`);
 
       return {
         message: `Account created successfully for ${fields.Name} with the provided and suggested details. Record ID: ${createdRecord.id}`,
         recordId: createdRecord.id,
+        logs,
       };
     } catch (error) {
-      console.error("[TOOL] Error creating account in Airtable:", {
-        message: error instanceof Error ? error.message : "Unknown error",
-        stack: error instanceof Error ? error.stack : undefined,
-        raw: JSON.stringify(error, Object.getOwnPropertyNames(error)),
-      });
+      logs.push("[TOOL] Error during account creation:", error instanceof Error ? error.message : JSON.stringify(error));
 
-      // Handle and throw detailed error
-      const errorDetails =
-        error instanceof Error
-          ? { message: error.message, stack: error.stack }
-          : { message: "Unknown error occurred.", raw: error };
-
-      throw new Error(
-        JSON.stringify({
-          error: `Failed to create account for ${fields.Name}.`,
-          details: errorDetails,
-        })
-      );
+      return {
+        message: "Account creation failed. Check logs for details.",
+        logs,
+      };
     }
   },
 });
-
-// Exports for other tools (modifyAccount and deleteAccount) remain unchanged.
 
 
 const modifyAccount = tool({
