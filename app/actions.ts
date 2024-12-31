@@ -26,6 +26,13 @@ export async function continueConversation(history: Message[]) {
     objectives: boolean;
   }
 
+  interface FieldsToUpdate {
+    name?: string;
+    description?: string;
+    website?: string;
+    objectives?: string;
+  }
+
   let progressTracker: ProgressTracker = {
     name: false,
     description: false,
@@ -33,15 +40,15 @@ export async function continueConversation(history: Message[]) {
     objectives: false,
   };
 
-  const responseCache = new Set(); // To track recent user responses
+  const responseCache = new Set<string>(); // To track recent user responses
 
   const updateProgressTracker = (field: keyof ProgressTracker) => {
     if (field in progressTracker) progressTracker[field] = true;
   };
 
-  const allFieldsComplete = () => Object.values(progressTracker).every((status) => status);
+  const allFieldsComplete = (): boolean => Object.values(progressTracker).every((status) => status);
 
-  const getNextPrompt = (fields, tracker, accountName) => {
+  const getNextPrompt = (fields: FieldsToUpdate, tracker: ProgressTracker, accountName: string | undefined): string => {
     if (!tracker.description) return `Could you provide a brief description of the company "${accountName}" and its industry?`;
     if (!tracker.website) return `Could you share the company's website and any social media links?`;
     if (!tracker.objectives) return `Could you share any major talking points and primary objectives for "${accountName}"?`;
@@ -52,7 +59,7 @@ export async function continueConversation(history: Message[]) {
     logs.push("[LLM] Starting continueConversation...");
     console.log("[LLM] Starting continueConversation...");
 
-    const detectIntentWithLLM = async (history) => {
+    const detectIntentWithLLM = async (history: Message[]): Promise<string> => {
       const { text } = await generateText({
         model: openai("gpt-4o"),
         system: `You are a Wonderland assistant!\n          Reply with nicely formatted markdown.\n          Keep your replies short and concise.\n          If this is the first reply, send a nice welcome message.\n          If the selected Account is different, mention the account or company name once.\n          \n          Perform the following actions:\n          - Create a new account in Wonderland when the user requests it.\n          - Modify an existing account in Wonderland when the user requests it.\n          - Delete an existing account in Wonderland when the user requests it.\n          - Synchronize all fields dynamically in real-time as new information becomes available.\n          - Validate actions to ensure they are successfully executed in Airtable.\n          - Confirm the current record being worked on, including the Record ID.\n          - After creating an account, follow up with prompts for more details:\n            1. Ask for a brief description of the company and the industry.\n            2. Request the company's website and any social media links.\n            3. Ask about major talking points and primary objectives.`,
@@ -88,7 +95,7 @@ export async function continueConversation(history: Message[]) {
 
     const latestUserMessage = history.filter((msg) => msg.role === "user").pop()?.content;
 
-    if (responseCache.has(latestUserMessage)) {
+    if (latestUserMessage && responseCache.has(latestUserMessage)) {
       return {
         messages: [
           ...history,
@@ -101,11 +108,11 @@ export async function continueConversation(history: Message[]) {
       };
     }
 
-    responseCache.add(latestUserMessage);
+    if (latestUserMessage) responseCache.add(latestUserMessage);
 
     if (intent === "create" && !currentRecordId) {
       logs.push("[LLM] Creating new account...");
-      const accountName = fieldsToUpdate.Name || "Unnamed Account";
+      const accountName = fieldsToUpdate.name || "Unnamed Account";
 
       const createResponse = await createAccount.execute({
         Name: accountName,
@@ -115,7 +122,7 @@ export async function continueConversation(history: Message[]) {
       if (createResponse.recordId) {
         currentRecordId = createResponse.recordId;
         logs.push(`[TOOL] Draft created with Record ID: ${currentRecordId}`);
-        progressTracker.name = true;
+        updateProgressTracker("name");
       } else {
         throw new Error("Failed to create draft account.");
       }
@@ -136,8 +143,8 @@ export async function continueConversation(history: Message[]) {
     }
 
     const nextPrompt = allFieldsComplete()
-      ? `The account "${fieldsToUpdate.Name}" has been updated with the provided details. Would you like to finalize and create the account as active?`
-      : getNextPrompt(fieldsToUpdate, progressTracker, fieldsToUpdate.Name);
+      ? `The account "${fieldsToUpdate.name}" has been updated with the provided details. Would you like to finalize and create the account as active?`
+      : getNextPrompt(fieldsToUpdate, progressTracker, fieldsToUpdate.name);
 
     return {
       messages: [
