@@ -3,6 +3,7 @@ import { continueConversation } from "../../actions";
 export async function POST(req: Request) {
   console.log("[POST /api/chat] Request received");
   const logs: string[] = [];
+  const structuredLogs: any[] = []; // For logging detailed objects
 
   try {
     const body = await req.json();
@@ -33,10 +34,14 @@ export async function POST(req: Request) {
       );
     }
 
-    logs.push("[POST /api/chat] Processing record and messages:", {
+    // Handle both string and structured logs
+    structuredLogs.push({
+      message: "[POST /api/chat] Processing record and messages",
       record,
       messages,
     });
+
+    logs.push(`[POST /api/chat] Processing record and messages: Record - ${JSON.stringify(record)}, Messages - ${JSON.stringify(messages)}`);
 
     const result = await continueConversation([
       { role: "assistant", content: `Processing record: ${JSON.stringify(record)}` },
@@ -44,11 +49,16 @@ export async function POST(req: Request) {
     ]);
 
     logs.push("[POST /api/chat] Response from continueConversation:", JSON.stringify(result, null, 2));
+    structuredLogs.push({
+      message: "[POST /api/chat] Response from continueConversation",
+      result,
+    });
 
     return new Response(
       JSON.stringify({
         ...flattenErrorResponse(result),
         logs: result.logs || logs, // Include logs in the response
+        structuredLogs, // Optionally include structured logs
       }),
       {
         headers: {
@@ -61,6 +71,10 @@ export async function POST(req: Request) {
     );
   } catch (error) {
     logs.push("[POST /api/chat] Error:", error instanceof Error ? error.message : JSON.stringify(error));
+    structuredLogs.push({
+      message: "[POST /api/chat] Error occurred",
+      error: error instanceof Error ? { message: error.message, stack: error.stack } : error,
+    });
 
     // Push detailed error to the frontend
     return new Response(
@@ -70,6 +84,7 @@ export async function POST(req: Request) {
         stack: error instanceof Error ? error.stack : undefined,
         raw: error,
         logs,
+        structuredLogs,
       })),
       {
         status: 500,
