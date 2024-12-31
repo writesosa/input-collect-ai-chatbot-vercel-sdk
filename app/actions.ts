@@ -24,7 +24,7 @@ export async function continueConversation(history: Message[]) {
   try {
     logs.push("[LLM] Starting continueConversation...");
 
-    // Intent classification (NEW)
+    // Intent classification
     const intentResponse = await generateText({
       model: openai("gpt-4o"),
       system: `You are a Wonderland assistant.
@@ -42,7 +42,7 @@ export async function continueConversation(history: Message[]) {
     // Handle general queries
     if (userIntent === "general_query") {
       logs.push("[LLM] General query detected. Passing to standard processing.");
-      const { text, toolResults } = await generateText({
+      const { text } = await generateText({
         model: openai("gpt-4o"),
         system: `You are a Wonderland assistant!
           Reply with nicely formatted markdown. 
@@ -63,12 +63,6 @@ export async function continueConversation(history: Message[]) {
           - Provide clear feedback on the current record being worked on, including its Record ID.`,
         messages: history,
         maxToolRoundtrips: 5,
-        tools: {
-          createAccount,
-          modifyAccount,
-          deleteAccount,
-          switchRecord,
-        },
       });
 
       logs.push("[LLM] General query processed successfully.");
@@ -79,6 +73,7 @@ export async function continueConversation(history: Message[]) {
     if (userIntent === "account_creation") {
       logs.push("[LLM] Account creation detected. Processing...");
 
+      // Extract details from history
       for (const msg of history) {
         if (msg.role === "user") {
           if (!fieldsToUpdate.Name && msg.content.toLowerCase().includes("called")) {
@@ -87,12 +82,13 @@ export async function continueConversation(history: Message[]) {
           if (!fieldsToUpdate.Description && msg.content.toLowerCase().includes("about")) {
             fieldsToUpdate.Description = msg.content.match(/about\s(.+)/i)?.[1];
           }
-          if (!fieldsToUpdate.Website && msg.content.toLowerCase().includes("http")) {
-            fieldsToUpdate.Website = msg.content.match(/(http[^\s]+)/i)?.[1] || "";
+          if (!fieldsToUpdate["Client URL"] && msg.content.toLowerCase().includes("http")) {
+            fieldsToUpdate["Client URL"] = validateURL(msg.content.match(/(http[^\s]+)/i)?.[1] || "");
           }
         }
       }
 
+      // Create a draft record if necessary
       if (fieldsToUpdate.Name && !currentRecordId) {
         logs.push(`[LLM] Detected account name: ${fieldsToUpdate.Name}`);
         const createResponse = await createAccount.execute({
@@ -105,9 +101,10 @@ export async function continueConversation(history: Message[]) {
           throw new Error("Failed to retrieve Record ID after creating an account.");
         }
         logs.push(`[TOOL] Draft created with Record ID: ${currentRecordId}`);
+        creationProgress = 0; // Start the question flow
       }
 
-      // Determine the next question (if needed)
+      // Handle the next question in the flow
       questionToAsk = getNextQuestion(fieldsToUpdate, logs);
 
       if (questionToAsk) {
@@ -121,55 +118,24 @@ export async function continueConversation(history: Message[]) {
         };
       }
 
-      // Finalize the account
+      // Finalize the account if all questions are answered
       if (currentRecordId) {
         logs.push(`[LLM] All details captured. Updating record ID: ${currentRecordId} to New status.`);
         await modifyAccount.execute({
           recordId: currentRecordId,
-          fields: { Status: "New" },
+          fields: { Status: "New", ...fieldsToUpdate },
         });
+        creationProgress = null; // Reset progress
         logs.push(`[TOOL] Record ID: ${currentRecordId} transitioned to New status.`);
       }
     }
-
-    // Process LLM response for account-related actions
-    const { text, toolResults } = await generateText({
-      model: openai("gpt-4o"),
-      system: `You are a Wonderland assistant!
-        Reply with nicely formatted markdown. 
-        Keep your replies short and concise. 
-        If this is the first reply, send a nice welcome message.
-        If the selected Account is different, mention the account or company name once.
-
-        Perform the following actions:
-        - Create a new account in Wonderland when the user requests it.
-        - Modify an existing account in Wonderland when the user requests it.
-        - Delete an existing account in Wonderland when the user requests it.
-        - Switch to a different account by looking up records based on a specific field and value.
-        - Answer questions you know about Wonderland.
-        - When the request is unknown prompt the user for more information to establish intent.
-
-        When creating, modifying, or switching accounts:
-        - Confirm the action with the user before finalizing.
-        - Provide clear feedback on the current record being worked on, including its Record ID.`,
-      messages: history,
-      maxToolRoundtrips: 5,
-      tools: {
-        createAccount,
-        modifyAccount,
-        deleteAccount,
-        switchRecord,
-      },
-    });
-
-    logs.push("[LLM] Account-related query processed successfully.");
-    return { messages: [...history, { role: "assistant", content: text }], logs };
   } catch (error) {
     logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
     console.error("[LLM] Error during conversation:", error);
     return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
   }
 }
+
 // Helper: Get the next question to ask during account creation
 const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | null => {
   if (!fields["Client URL"]) {
@@ -190,7 +156,6 @@ const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | 
   return null; // All questions completed
 };
 
-
 // Helper: Validate URLs
 const validateURL = (url: string): string | null => {
   try {
@@ -204,6 +169,8 @@ const validateURL = (url: string): string | null => {
 // Helper: Convert string to Title Case
 const toTitleCase = (str: string): string =>
   str.replace(/\w\S*/g, (word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
+
+
 
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
