@@ -83,7 +83,6 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
-
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -111,7 +110,9 @@ const createAccount = tool({
       logs.push("[TOOL] Initial fields received: " + JSON.stringify(fields, null, 2));
 
       // Identify missing fields
-      const missingFields = Object.keys(fields).filter((key) => !fields[key]);
+      const missingFields = Object.keys(fields).filter(
+        (key) => !(fields as Record<string, string | undefined>)[key]
+      );
       if (missingFields.length > 0) {
         logs.push(`[TOOL] Missing fields detected: ${missingFields.join(", ")}`);
 
