@@ -26,13 +26,15 @@ export async function continueConversation(history: Message[]) {
     objectives: false,
   };
 
-  const updateProgressTracker = (field: keyof typeof progressTracker) => {
+  const responseCache = new Set(); // To track recent user responses
+
+  const updateProgressTracker = (field) => {
     if (progressTracker.hasOwnProperty(field)) progressTracker[field] = true;
   };
 
   const allFieldsComplete = () => Object.values(progressTracker).every((status) => status);
 
-  const getNextPrompt = (fields: Record<string, any>, tracker: typeof progressTracker, accountName: string) => {
+  const getNextPrompt = (fields, tracker, accountName) => {
     if (!tracker.description) return `Could you provide a brief description of the company "${accountName}" and its industry?`;
     if (!tracker.website) return `Could you share the company's website and any social media links?`;
     if (!tracker.objectives) return `Could you share any major talking points and primary objectives for "${accountName}"?`;
@@ -43,52 +45,26 @@ export async function continueConversation(history: Message[]) {
     logs.push("[LLM] Starting continueConversation...");
     console.log("[LLM] Starting continueConversation...");
 
-    const detectIntentWithLLM = async (history: Message[]) => {
+    const detectIntentWithLLM = async (history) => {
       const { text } = await generateText({
         model: openai("gpt-4o"),
-        system: `
-Wonderland is an AI-powered public relations automation system. It dynamically generates content, websites, and images to market companies effectively.
-
-You are a Wonderland assistant!
-- Reply with nicely formatted markdown.
-- Keep replies short and concise.
-- If this is the first reply, send a nice welcome message.
-- Handle account creation, modification, and deletion requests effectively.
-- Respond to general queries about Wonderland's features and capabilities.
-- Synchronize fields dynamically as new information becomes available.`,
-        messages: history,
+        system: `You are a Wonderland assistant!\n          Reply with nicely formatted markdown.\n          Keep your replies short and concise.\n          If this is the first reply, send a nice welcome message.\n          If the selected Account is different, mention the account or company name once.\n          \n          Perform the following actions:\n          - Create a new account in Wonderland when the user requests it.\n          - Modify an existing account in Wonderland when the user requests it.\n          - Delete an existing account in Wonderland when the user requests it.\n          - Synchronize all fields dynamically in real-time as new information becomes available.\n          - Validate actions to ensure they are successfully executed in Airtable.\n          - Confirm the current record being worked on, including the Record ID.\n          - After creating an account, follow up with prompts for more details:\n            1. Ask for a brief description of the company and the industry.\n            2. Request the company's website and any social media links.\n            3. Ask about major talking points and primary objectives.`,
+        messages: [
+          ...history,
+          { role: "assistant", content: "What would you like to do: create, modify, or delete an account?" },
+        ],
         maxTokens: 50,
       });
-
       return text.toLowerCase().includes("create") || text.toLowerCase().includes("make")
         ? "create"
         : text.toLowerCase().includes("modify") || text.toLowerCase().includes("edit")
         ? "modify"
         : text.toLowerCase().includes("delete") || text.toLowerCase().includes("remove")
         ? "delete"
-        : text.toLowerCase().includes("what") || text.toLowerCase().includes("help")
-        ? "general_query"
         : "unknown";
     };
 
     const intent = await detectIntentWithLLM(history);
-
-    if (intent === "general_query") {
-      return {
-        messages: [
-          ...history,
-          {
-            role: "assistant",
-            content: `I am Wonderland, an AI-powered public relations assistant. I can help you:
-- Create, modify, or delete accounts.
-- Generate and distribute content, websites, and blog posts.
-- Strategically market your business.
-What would you like to do?`,
-          },
-        ],
-        logs,
-      };
-    }
 
     if (intent === "unknown") {
       return {
@@ -103,10 +79,29 @@ What would you like to do?`,
       };
     }
 
+    const latestUserMessage = history.filter((msg) => msg.role === "user").pop()?.content;
+
+    if (responseCache.has(latestUserMessage)) {
+      return {
+        messages: [
+          ...history,
+          {
+            role: "assistant",
+            content: "It seems like you've already provided this information. Can you clarify or provide additional details?",
+          },
+        ],
+        logs,
+      };
+    }
+
+    responseCache.add(latestUserMessage);
+
     if (intent === "create" && !currentRecordId) {
       logs.push("[LLM] Creating new account...");
+      const accountName = fieldsToUpdate.Name || "Unnamed Account";
+
       const createResponse = await createAccount.execute({
-        Name: fieldsToUpdate.Name || "Unnamed Account",
+        Name: accountName,
         "Priority Image Type": "AI Generated",
       });
 
@@ -135,7 +130,7 @@ What would you like to do?`,
 
     const nextPrompt = allFieldsComplete()
       ? `The account "${fieldsToUpdate.Name}" has been updated with the provided details. Would you like to finalize and create the account as active?`
-      : getNextPrompt(fieldsToUpdate, progressTracker, fieldsToUpdate.Name || "Unnamed Account");
+      : getNextPrompt(fieldsToUpdate, progressTracker, fieldsToUpdate.Name);
 
     return {
       messages: [
