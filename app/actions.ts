@@ -152,19 +152,19 @@ export async function continueConversation(history: Message[]) {
               else if (!fieldsToUpdate.Blog) fieldsToUpdate.Blog = url;
             }
           }
-try {
-  await modifyAccount.execute({
-    recordId: currentRecordId,
-    fields: cleanFields(fieldsToUpdate),
-  });
-  logs.push("[LLM] Website and Social Links updated.");
-} catch (error) {
-  if (error instanceof Error) {
-    logs.push(`[LLM] Error updating Website and Social Links: ${error.message}`);
-  } else {
-    logs.push("[LLM] Unknown error occurred while updating Website and Social Links.");
-  }
-}
+          try {
+            await modifyAccount.execute({
+              recordId: currentRecordId,
+              fields: cleanFields(fieldsToUpdate),
+            });
+            logs.push("[LLM] Website and Social Links updated.");
+          } catch (error) {
+            if (error instanceof Error) {
+              logs.push(`[LLM] Error updating Website and Social Links: ${error.message}`);
+            } else {
+              logs.push("[LLM] Unknown error occurred while updating Website and Social Links.");
+            }
+          
 
 
           creationProgress++;
