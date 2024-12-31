@@ -43,100 +43,70 @@ export async function continueConversation(history: Message[]) {
   try {
     logs.push("[LLM] Starting continueConversation...");
 
-    // Intent classification
-    const intentResponse = await generateText({
-      model: openai("gpt-4o"),
-      system: `You are a Wonderland assistant.
-        Classify the user's latest message into one of the following intents:
-        - "account_creation": If the user is asking to create, update, or manage an account.
-        - "general_query": If the user is asking a general question about Wonderland or unrelated topics.
-        Respond only with the classification.`,
-      messages: history,
-      maxToolRoundtrips: 1,
-    });
+    const userMessage = history[history.length - 1]?.content.trim() || "";
 
-    const userIntent = intentResponse.text.trim();
-    logs.push(`[LLM] Detected intent: ${userIntent}`);
-
-    // Handle general queries
-    if (userIntent === "general_query") {
-      logs.push("[LLM] General query detected. Passing to standard processing.");
-      const { text } = await generateText({
-        model: openai("gpt-4o"),
-        system: `You are a Wonderland assistant!
-          Reply with nicely formatted markdown. 
-          Keep your replies short and concise. 
-          If this is the first reply, send a nice welcome message.
-          If the selected Account is different, mention the account or company name once.
-
-          Perform the following actions:
-          - Create a new account in Wonderland when the user requests it.
-          - Modify an existing account in Wonderland when the user requests it.
-          - Delete an existing account in Wonderland when the user requests it.
-          - Switch to a different account by looking up records based on a specific field and value.
-          - Answer questions you know about Wonderland.
-          - When the request is unknown, prompt the user for more information to establish intent.
-
-          When creating, modifying, or switching accounts:
-          - Confirm the action with the user before finalizing.
-          - Provide clear feedback on the current record being worked on, including its Record ID.`,
-        messages: history,
-        maxToolRoundtrips: 5,
-      });
-
-      logs.push("[LLM] General query processed successfully.");
-      return { messages: [...history, { role: "assistant", content: text }], logs };
-    }
-
-    // Handle account creation logic
-    if (userIntent === "account_creation") {
-      logs.push("[LLM] Account creation detected. Processing...");
-
-      const userMessage = history[history.length - 1]?.content.trim() || "";
-      if (!currentRecordId && creationProgress === null) {
-        // Check if the Name field is provided
-        if (!fieldsToUpdate.Name && !fieldsToUpdate["Client Company Name"]) {
-          if (userMessage) {
-            fieldsToUpdate.Name = userMessage; // Assume user input is the name
-            logs.push(`[LLM] Name provided: ${userMessage}`);
-          } else {
-            logs.push("[LLM] Missing Name or Client Company Name. Prompting user...");
-            return {
-              messages: [
-                ...history,
-                {
-                  role: "assistant",
-                  content: "Please provide the name or company name for the account to proceed.",
-                },
-              ],
-              logs,
-            };
-          }
-        }
-
-        // Proceed to create a draft account
-        logs.push("[LLM] Creating a new draft record...");
-        const createResponse = await createAccount.execute({
-          Name: fieldsToUpdate.Name || fieldsToUpdate["Client Company Name"],
-          Status: "Draft",
-          "Priority Image Type": "AI Generated", // Required default value
-        });
-
-        if (createResponse.recordId) {
-          currentRecordId = createResponse.recordId;
-          logs.push(`[LLM] Draft record created with ID: ${currentRecordId}`);
-          creationProgress = 0; // Start the creation flow
+    // Ensure name or client name is present
+    if (!currentRecordId && creationProgress === null) {
+      if (!fieldsToUpdate.Name && !fieldsToUpdate["Client Company Name"]) {
+        if (userMessage) {
+          fieldsToUpdate.Name = userMessage;
+          logs.push(`[LLM] Name provided: ${userMessage}`);
         } else {
-          logs.push("[LLM] Failed to create a draft record. Exiting process.");
+          logs.push("[LLM] Missing Name or Client Company Name. Prompting user...");
           return {
             messages: [
               ...history,
-              { role: "assistant", content: "An error occurred while starting account creation." },
+              { role: "assistant", content: "Please provide the name or company name to proceed." },
             ],
             logs,
           };
         }
       }
+
+      logs.push("[LLM] Creating draft record...");
+      const createResponse = await createAccount.execute({
+        Name: fieldsToUpdate.Name || fieldsToUpdate["Client Company Name"],
+        Status: "Draft",
+        "Priority Image Type": "AI Generated",
+      });
+
+      if (createResponse.recordId) {
+        currentRecordId = createResponse.recordId;
+        logs.push(`[LLM] Draft record created with ID: ${currentRecordId}`);
+        creationProgress = 0;
+      } else {
+        logs.push("[LLM] Failed to create draft. Exiting.");
+        throw new Error("Failed to create draft account.");
+      }
+    }
+
+    if (currentRecordId && creationProgress === null) {
+      logs.push(`[LLM] Processing 'create it' command. Updating record ID: ${currentRecordId} to New status.`);
+      try {
+        await modifyAccount.execute({
+          recordId: currentRecordId,
+          fields: { Status: "New" },
+        });
+        logs.push(`[TOOL] Record ID: ${currentRecordId} transitioned to New status.`);
+      } catch (error) {
+        logs.push(`[LLM] Error transitioning to New: ${error.message}`);
+        throw error;
+      }
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+    logs.push(`[LLM] Critical error: ${errorMessage}`);
+    logs.push("[LLM] Attempting recovery...");
+    return {
+      messages: [
+        ...history,
+        { role: "assistant", content: "An error occurred. Let’s try restarting the process." },
+      ],
+      logs,
+    };
+  }
+}
+
 
       // Ensure the record is created before proceeding
       if (currentRecordId) {
