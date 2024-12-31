@@ -1,3 +1,40 @@
+"use server";
+
+import { InvalidToolArgumentsError, generateText, tool } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { z } from "zod";
+import Airtable from "airtable";
+
+// Initialize Airtable base
+const airtableBase = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID || "missing_base_id");
+
+// Define the Message interface
+export interface Message {
+  role: "user" | "assistant";
+  content: string;
+}
+
+let currentRecordId: string | null = null;
+let creationProgress: number | null = null; // Track user progress in account creation
+
+// Helper: Validate URLs
+const validateURL = (url: string): string | null => {
+  try {
+    const validUrl = new URL(url.startsWith("http") ? url : `https://${url}`);
+    return validUrl.href;
+  } catch {
+    return null;
+  }
+};
+
+// Helper: Convert string to Title Case
+const toTitleCase = (str: string): string =>
+  str.replace(/\w\S*/g, (word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
+
+// Helper: Clean Undefined Fields
+const cleanFields = (fields: Record<string, any>) =>
+  Object.fromEntries(Object.entries(fields).filter(([_, value]) => value !== undefined));
+
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
