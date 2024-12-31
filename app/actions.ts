@@ -157,11 +157,17 @@ const createAccount = tool({
       fields["Talking Points"] =
         fields["Talking Points"] || generateTalkingPoints(fields.Description || fields.Name || "").join("\n");
 
-      // Ensure minimum 600-character recommendations for descriptions
-      fields.Description =
-        fields.Description || `This account is focused on ${fields.Name.toLowerCase()}, ensuring tailored solutions for the ${fields.Industry || "General"} sector. Utilizing Wonderland, it maximizes visibility and engagement for strategic growth.`;
+      if (fields.Name) {
+        fields.Description =
+          fields.Description ||
+          `This account is focused on ${fields.Name.toLowerCase()}, ensuring tailored solutions for the ${
+            fields.Industry || "General"
+          } sector. Utilizing Wonderland, it maximizes visibility and engagement for strategic growth.`;
+      } else {
+        throw new Error("Account Name (fields.Name) is required to generate a description.");
+      }
 
-      fields.Description = fields.Description.padEnd(600, ".");
+fields.Description = fields.Description.padEnd(600, ".");
 
       // Summarize all fields before creation
       const summarizedFields = {
