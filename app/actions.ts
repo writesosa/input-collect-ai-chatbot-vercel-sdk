@@ -170,7 +170,7 @@ const createAccount = tool({
         Name: fields.Name,
         Description: fields.Description,
         "Client Company Name": fields["Client Company Name"],
-        "Client URL": fields["Client URL"],
+        "Client URL": fields["Client URL"] || "Not provided",
         Status: fields.Status,
         Industry: fields.Industry,
         "Primary Contact Person": fields["Primary Contact Person"] || "Not provided",
@@ -185,27 +185,35 @@ const createAccount = tool({
         "Other Social Accounts": fields["Other Social Accounts"] || "Not provided",
       };
 
-      console.log("[TOOL] Final fields for account creation:", finalFields);
-
-      // Create a new record in Airtable
-      const createdRecord = await airtableBase("Accounts").create([
-        { fields: finalFields },
-      ]);
-
-      if (!createdRecord || !createdRecord[0]?.id) {
-        console.error("[TOOL] Failed to create record: Airtable did not return a valid record ID.");
-        throw new Error("Failed to create the account in Airtable. Please check your fields and try again.");
-      }
-
-      console.log("[TOOL] Account created successfully in Airtable:", createdRecord);
-
+      // Summarize all fields and confirm with the user
       return {
-        message: `Account created successfully for "${fields.Name}" with the following details:\n\n${JSON.stringify(
+        message: `Here's the summarized information for the new account:\n\n${JSON.stringify(
           finalFields,
           null,
           2
-        )}\n\nRecord ID: ${createdRecord[0].id}`,
-        recordId: createdRecord[0].id,
+        )}\n\nWould you like to proceed with creating this account, or make any changes?`,
+        confirmAction: async () => {
+          console.log("[TOOL] Final fields for account creation:", finalFields);
+
+          // Create the account in Airtable
+          const createdRecord = await airtableBase("Accounts").create([{ fields: finalFields }]);
+
+          if (!createdRecord || !createdRecord[0]?.id) {
+            console.error("[TOOL] Failed to create record: Airtable did not return a valid record ID.");
+            throw new Error("Failed to create the account in Airtable. Please check your fields and try again.");
+          }
+
+          console.log("[TOOL] Account created successfully in Airtable:", createdRecord);
+
+          return {
+            message: `Account created successfully for "${fields.Name}" with the following details:\n\n${JSON.stringify(
+              finalFields,
+              null,
+              2
+            )}\n\nRecord ID: ${createdRecord[0].id}`,
+            recordId: createdRecord[0].id,
+          };
+        },
       };
     } catch (error) {
       console.error("[TOOL] Error creating account in Airtable:", error);
