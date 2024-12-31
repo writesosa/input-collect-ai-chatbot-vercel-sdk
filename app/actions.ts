@@ -163,26 +163,27 @@ const createAccount = tool({
         return { message: priorityPrompt, logs };
       }
 
-      // Check for optional URLs and social fields
-      const urlFields = ["Client URL", "Instagram", "Facebook", "Blog"];
+     // Check for optional URLs and social fields
+      const urlFields = ["Client URL", "Instagram", "Facebook", "Blog"] as const; // Define as a tuple of constant strings
       const urlRegex = /(https?:\/\/)?([\w.-]+)(\.\w+)([\w\/-]*)?/;
 
       urlFields.forEach((field) => {
-        const value = fields[field as keyof typeof fields]; // Explicitly assert the field type
+        const value = fields[field as keyof typeof fields]; // Assert the key type
         if (!value) {
           logs.push(`[TOOL] ${field} not provided. Asking user...`);
-          return {
+          throw {
             message: `Do you have a ${field} to add? If yes, please provide it in the format of a valid link.`,
             logs,
           };
         } else if (!urlRegex.test(value)) {
           logs.push(`[TOOL] Invalid ${field} provided. Asking user to correct...`);
-          return {
+          throw {
             message: `${field} seems invalid. Could you provide it again in a valid link format?`,
             logs,
           };
         }
       });
+
 
       // Finalize fields
       const finalFields = {
