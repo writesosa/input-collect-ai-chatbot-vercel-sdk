@@ -140,20 +140,23 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
-
-// Helper: Get the next question to ask during account creation
 const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | null => {
-  if (!fields["Client URL"]) {
-    logs.push("[LLM] Missing field: Client URL. Prompting user for website or social links.");
-    return "Can you share the company's website or any social media links (e.g., Instagram, Facebook, Blog, or others)?";
+  if (
+    (!fields.Website || !fields.Instagram || !fields.Facebook || !fields.Blog) &&
+    creationProgress === 0
+  ) {
+    logs.push(
+      "[LLM] Missing fields: Website, Instagram, Facebook, or Blog. Prompting user for any available links."
+    );
+    return "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?";
   }
 
-  if (!fields.Description) {
+  if (!fields.Description && creationProgress === 1) {
     logs.push("[LLM] Missing field: Description. Prompting user for company details.");
     return "Can you tell me more about the company, including its industry, purpose, or mission?";
   }
 
-  if (!fields["Talking Points"]) {
+  if (!fields["Talking Points"] && creationProgress === 2) {
     logs.push("[LLM] Missing field: Talking Points. Prompting user for major objectives.");
     return "What are the major objectives or talking points you'd like to achieve with Wonderland?";
   }
@@ -161,20 +164,73 @@ const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | 
   return null; // All questions completed
 };
 
-// Helper: Validate URLs
-const validateURL = (url: string): string | null => {
-  try {
-    const validUrl = new URL(url.startsWith("http") ? url : `https://${url}`);
-    return validUrl.href;
-  } catch {
-    return null;
+// Process user input immediately and map to fields
+const processUserInput = async (userInput: string, logs: string[]) => {
+  let isUpdated = false;
+
+  // Process Website, Instagram, Facebook, and Blog
+  if (creationProgress === 0) {
+    const inputs = userInput.split(",").map((item) => item.trim()); // Split input by commas
+
+    for (const input of inputs) {
+      if (input.includes("http")) {
+        const url = validateURL(input);
+        if (url) {
+          if (!fieldsToUpdate.Website && url.includes("www")) {
+            fieldsToUpdate.Website = url;
+            logs.push(`[LLM] Valid Website detected: ${url}`);
+          } else if (!fieldsToUpdate.Instagram && url.includes("instagram.com")) {
+            fieldsToUpdate.Instagram = url;
+            logs.push(`[LLM] Valid Instagram detected: ${url}`);
+          } else if (!fieldsToUpdate.Facebook && url.includes("facebook.com")) {
+            fieldsToUpdate.Facebook = url;
+            logs.push(`[LLM] Valid Facebook detected: ${url}`);
+          } else if (!fieldsToUpdate.Blog) {
+            fieldsToUpdate.Blog = url;
+            logs.push(`[LLM] Valid Blog detected: ${url}`);
+          }
+        }
+      }
+    }
+
+    // Update Airtable with collected links
+    await modifyAccount.execute({
+      recordId: currentRecordId,
+      fields: {
+        Website: fieldsToUpdate.Website,
+        Instagram: fieldsToUpdate.Instagram,
+        Facebook: fieldsToUpdate.Facebook,
+        Blog: fieldsToUpdate.Blog,
+      },
+    });
+
+    isUpdated = true;
+    logs.push("[LLM] Website, Instagram, Facebook, and Blog updated successfully.");
   }
+
+  // Process Description
+  if (creationProgress === 1) {
+    fieldsToUpdate.Description = userInput;
+    logs.push(`[LLM] Description captured: ${userInput}. Updating Airtable.`);
+    await modifyAccount.execute({ recordId: currentRecordId, fields: { Description: userInput } });
+    isUpdated = true;
+  }
+
+  // Process Talking Points
+  if (creationProgress === 2) {
+    fieldsToUpdate["Talking Points"] = userInput;
+    logs.push(`[LLM] Talking Points captured: ${userInput}. Updating Airtable.`);
+    await modifyAccount.execute({ recordId: currentRecordId, fields: { "Talking Points": userInput } });
+    isUpdated = true;
+  }
+
+  return isUpdated;
 };
+
 
 // Helper: Convert string to Title Case
 const toTitleCase = (str: string): string =>
   str.replace(/\w\S*/g, (word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
-
 
 
 const createAccount = tool({
@@ -182,38 +238,36 @@ const createAccount = tool({
   parameters: z.object({
     Name: z.string().optional().describe("The name of the account holder."),
     Description: z.string().optional().describe("A description for the account."),
-    "Client Company Name": z.string().optional().describe("The name of the client company."),
-    "Client URL": z.string().optional().describe("The client's URL."),
-    Industry: z.string().optional().describe("The industry of the client."),
-    "Primary Contact Person": z.string().optional().describe("The primary contact person."),
-    "About the Client": z.string().optional().describe("Information about the client."),
+    Website: z.string().optional().describe("The website URL of the client."),
+    Instagram: z.string().optional().describe("The Instagram link of the client."),
+    Facebook: z.string().optional().describe("The Facebook link of the client."),
+    Blog: z.string().optional().describe("The blog URL of the client."),
     "Primary Objective": z.string().optional().describe("The primary objective of the account."),
     "Talking Points": z.string().optional().describe("Key talking points for the account."),
-    "Contact Information": z.string().optional().describe("Contact details for the client."),
-    "Priority Image Type": z.string().optional().describe("Image priorities for the account."),
+    Status: z.string().optional().default("Draft").describe("The status of the account."),
+    "Priority Image Type": z
+      .string()
+      .optional()
+      .default("AI Generated")
+      .describe("The priority image type for the account, defaults to 'AI Generated'."),
   }),
   execute: async (fields) => {
     const logs: string[] = [];
     let recordId: string | null = null;
-    const autoGeneratedFields: Record<string, string> = {};
 
     try {
       logs.push("[TOOL] Starting createAccount...");
       logs.push("[TOOL] Initial fields received:", JSON.stringify(fields, null, 2));
 
-      // Convert Name and Client Company Name to Title Case
-      if (fields.Name) fields.Name = toTitleCase(fields.Name);
-      if (fields["Client Company Name"]) fields["Client Company Name"] = toTitleCase(fields["Client Company Name"]);
-
-      const accountName = fields.Name || fields["Client Company Name"];
-      if (!accountName) {
+      // Ensure account name is provided
+      if (!fields.Name) {
         return { message: "Please provide the account name.", logs };
       }
 
-      // Check for existing draft
+      // Check for existing draft account
       const existingDraft = await airtableBase("Accounts")
         .select({
-          filterByFormula: `AND({Name} = "${accountName}", {Status} = "Draft")`,
+          filterByFormula: `AND({Name} = "${fields.Name}", {Status} = "Draft")`,
           maxRecords: 1,
         })
         .firstPage();
@@ -222,25 +276,25 @@ const createAccount = tool({
         recordId = existingDraft[0].id;
         logs.push(`[TOOL] Reusing existing draft with Record ID: ${recordId}`);
       } else {
-        // Auto-generate missing fields
-        autoGeneratedFields.Description = fields.Description || `A general account for ${accountName}.`;
-        autoGeneratedFields["About the Client"] =
-          fields["About the Client"] || `The client specializes in ${fields.Description?.toLowerCase() || "their field"}.`;
-        autoGeneratedFields["Primary Objective"] =
-          fields["Primary Objective"] || `To enhance visibility for ${accountName} in ${fields.Industry || "their industry"}.`;
-        autoGeneratedFields["Talking Points"] =
-          fields["Talking Points"] || `Focus on innovation and engagement for ${accountName}.`;
-        autoGeneratedFields["Contact Information"] =
-          fields["Contact Information"] || "Contact details not provided.";
+        // Populate missing fields with defaults
+        fields.Description = fields.Description || `A general account for ${fields.Name}.`;
+        fields["Primary Objective"] =
+          fields["Primary Objective"] || `Increase visibility for ${fields.Name}.`;
+        fields["Talking Points"] =
+          fields["Talking Points"] || `Focus on innovation and engagement for ${fields.Name}.`;
 
-        logs.push("[TOOL] Auto-generated fields:", JSON.stringify(autoGeneratedFields, null, 2));
-
-        // Create draft account
+        // Create the new account
         const record = await airtableBase("Accounts").create({
-          Name: accountName,
-          Status: "Draft",
-          ...autoGeneratedFields,
-          ...fields,
+          Name: fields.Name,
+          Status: fields.Status,
+          Description: fields.Description,
+          Website: fields.Website || "",
+          Instagram: fields.Instagram || "",
+          Facebook: fields.Facebook || "",
+          Blog: fields.Blog || "",
+          "Primary Objective": fields["Primary Objective"],
+          "Talking Points": fields["Talking Points"],
+          "Priority Image Type": fields["Priority Image Type"], // Default to "AI Generated"
         });
 
         recordId = record.id;
@@ -248,7 +302,7 @@ const createAccount = tool({
       }
 
       return {
-        message: `Draft account successfully created or reused for "${accountName}".`,
+        message: `Account successfully created or reused for "${fields.Name}".`,
         recordId,
         logs,
       };
@@ -263,6 +317,7 @@ const createAccount = tool({
     }
   },
 });
+
 
 
 const modifyAccount = tool({
