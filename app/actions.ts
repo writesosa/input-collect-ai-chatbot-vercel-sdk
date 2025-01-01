@@ -40,9 +40,12 @@ const cleanFields = (fields: Record<string, any>) =>
 
 const extractAndRefineFields = async (
   message: string,
-  logs: string[]
+  logs: string[],
+  previousMessage?: string
 ): Promise<Record<string, string>> => {
   logs.push("[LLM] Extracting account fields from user message...");
+
+  const combinedMessage = previousMessage ? `${previousMessage} ${message}` : message;
 
   const extractionResponse = await generateText({
     model: openai("gpt-4o"),
@@ -64,7 +67,7 @@ const extractAndRefineFields = async (
       Do not return anything for empty fields that aren't found.
       Rewrite the extracted fields for clarity and to complete them.
       Respond with a JSON object strictly following this schema.`,
-    messages: [{ role: "user", content: message }],
+    messages: [{ role: "user", content: combinedMessage }],
     maxToolRoundtrips: 1,
   });
 
