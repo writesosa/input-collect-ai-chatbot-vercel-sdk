@@ -319,7 +319,6 @@ const processUserInput = async (userInput: string, logs: string[]) => {
 
   return isUpdated;
 };
-
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -344,7 +343,7 @@ const createAccount = tool({
 
     try {
       logs.push("[TOOL] Starting createAccount...");
-      logs.push("[TOOL] Initial fields received:", JSON.stringify(fields, null, 2));
+      logs.push(`[TOOL] Initial fields received: ${JSON.stringify(fields, null, 2)}`);
 
       // Ensure account name is provided
       if (!fields.Name) {
@@ -365,8 +364,7 @@ const createAccount = tool({
         recordId = existingDraft[0].id;
         logs.push(`[TOOL] Reusing existing draft account with Record ID: ${recordId}`);
       } else {
-        // Populate missing optional fields with defaults
-        logs.push("[TOOL] Creating a new draft account...");
+        logs.push("[TOOL] No existing draft found. Creating a new draft account...");
         const record = await airtableBase("Accounts").create({
           Name: fields.Name,
           Status: fields.Status || "Draft",
@@ -392,10 +390,9 @@ const createAccount = tool({
         logs,
       };
     } catch (error) {
-      logs.push(
-        "[TOOL] Error during account creation:",
-        error instanceof Error ? error.message : JSON.stringify(error)
-      );
+      const errorMessage =
+        error instanceof Error ? error.message : JSON.stringify(error);
+      logs.push(`[TOOL] Error during account creation: ${errorMessage}`);
       console.error("[TOOL] Error during account creation:", error);
 
       return {
@@ -405,7 +402,6 @@ const createAccount = tool({
     }
   },
 });
-
 
 
 
