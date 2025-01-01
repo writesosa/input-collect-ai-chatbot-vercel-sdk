@@ -355,7 +355,7 @@ const extractAndRefineFields = async (
     console.error("[LLM] Error during conversation:", error);
     return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
   }
-}
+  
 // Ensure proper closing of helper functions and utilities
 
 const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | null => {
