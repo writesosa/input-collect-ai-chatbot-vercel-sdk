@@ -331,7 +331,6 @@ const processUserInput = async (userInput: string, logs: string[]) => {
 
   return isUpdated;
 };
-
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -361,7 +360,7 @@ const createAccount = tool({
       // Ensure account name is provided
       if (!fields.Name) {
         logs.push("[TOOL] Missing required field: Name.");
-        return { message: "Please provide the account name to create a new account.", logs };
+        throw new Error("The 'Name' field is required to create an account.");
       }
 
       // Check for existing draft account
@@ -379,23 +378,30 @@ const createAccount = tool({
       } else {
         // Populate missing optional fields with defaults
         logs.push("[TOOL] Creating a new draft account...");
-        const record = await airtableBase("Accounts").create({
-          Name: fields.Name,
-          Status: fields.Status || "Draft",
-          Description: fields.Description || `A general account for ${fields.Name}.`,
-          Website: fields.Website || "",
-          Instagram: fields.Instagram || "",
-          Facebook: fields.Facebook || "",
-          Blog: fields.Blog || "",
-          "Primary Objective":
-            fields["Primary Objective"] || `Increase visibility for ${fields.Name}.`,
-          "Talking Points":
-            fields["Talking Points"] || `Focus on innovation and engagement for ${fields.Name}.`,
-          "Priority Image Type": fields["Priority Image Type"], // Default to "AI Generated"
-        });
-
-        recordId = record.id;
-        logs.push(`[TOOL] New draft account created with Record ID: ${recordId}`);
+        try {
+          const record = await airtableBase("Accounts").create({
+            Name: fields.Name,
+            Status: fields.Status || "Draft",
+            Description: fields.Description || `A general account for ${fields.Name}.`,
+            Website: fields.Website || "",
+            Instagram: fields.Instagram || "",
+            Facebook: fields.Facebook || "",
+            Blog: fields.Blog || "",
+            "Primary Objective":
+              fields["Primary Objective"] || `Increase visibility for ${fields.Name}.`,
+            "Talking Points":
+              fields["Talking Points"] || `Focus on innovation and engagement for ${fields.Name}.`,
+            "Priority Image Type": fields["Priority Image Type"], // Default to "AI Generated"
+          });
+          recordId = record.id;
+          logs.push(`[TOOL] New draft account created with Record ID: ${recordId}`);
+        } catch (createError) {
+          logs.push(
+            "[TOOL] Error creating new draft account:",
+            createError instanceof Error ? createError.message : JSON.stringify(createError)
+          );
+          throw createError;
+        }
       }
 
       return {
@@ -411,7 +417,7 @@ const createAccount = tool({
       console.error("[TOOL] Error during account creation:", error);
 
       return {
-        message: "An error occurred while creating the account. Please try again later.",
+        message: "An error occurred while creating the account. Please check the logs for more details.",
         logs,
       };
     }
