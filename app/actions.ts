@@ -38,16 +38,9 @@ const cleanFields = (fields: Record<string, any>) =>
 const extractAndRefineFields = async (
   message: string,
   logs: string[],
-  previousMessage?: string // NEW: Allow sending previous message for context
+  previousMessage?: string
 ): Promise<Record<string, string>> => {
-  logs.push("[LLM] Extracting account fields from user messages...");
-
-  const messagesForExtraction = previousMessage
-    ? [
-        { role: "user", content: previousMessage },
-        { role: "user", content: message },
-      ]
-    : [{ role: "user", content: message }]; // NEW: Include previous message if available
+  logs.push("[LLM] Extracting account fields from user message...");
 
   const extractionResponse = await generateText({
     model: openai("gpt-4o"),
@@ -55,21 +48,23 @@ const extractAndRefineFields = async (
       Extract the following fields from the user's message if available:
 
       {
-        "Name": "Anything that sounds like an account name, company name, or record name.",
-        "Client Company Name": "The name of the company, account, or record.",
+        "Name": "Anything that sounds like an account name, company name, name for a record or something the user designates as a name.",
+        "Client Company Name": "The name of the company, account or record.",
         "Website": "A website URL, if mentioned.",
         "Instagram": "An Instagram handle or link, if mentioned.",
         "Facebook": "A Facebook handle or link, if mentioned.",
         "Blog": "A blog URL, if mentioned.",
-        "Description": "Any description for the record being created.",
+        "Description": "Anything that sounds like a description for the record being created.",
         "About the Client": "Any information supplied about the client or company.",
-        "Talking Points": "Objectives or talking points, if mentioned.",
-        "Primary Objective": "The main purpose or goal of creating this account."
+        "Talking Points": "Any objectives or talking points, if mentioned.",
+        "Primary Objective": "Any main purpose or goal of creating this account."
       }
-
-      Rewrite the extracted fields for clarity and completeness. Do not return fields that are not found.
+      Combine the following input for extraction: "${previousMessage || ""}" and "${message}".
       Respond with a JSON object strictly following this schema.`,
-    messages: messagesForExtraction, // NEW: Send multiple messages if applicable
+    messages: [
+      { role: "user", content: previousMessage || "" },
+      { role: "user", content: message }
+    ],
     maxToolRoundtrips: 1,
   });
 
@@ -85,11 +80,10 @@ const extractAndRefineFields = async (
 
   return extractedFields;
 };
+
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
-  const maxRetries = 3; // NEW: Maximum retries for missing fields
-  let retryCount = 0; // NEW: Retry counter
   let questionToAsk: string | null = null;
 
   try {
@@ -145,26 +139,43 @@ export async function continueConversation(history: Message[]) {
       logs.push("[LLM] Account creation detected. Processing...");
 
       const userMessage = history[history.length - 1]?.content.trim() || "";
-      const previousMessage = history.length > 1 ? history[history.length - 2]?.content.trim() : null;
-
+      const previousMessage = history[history.length - 2]?.content.trim() || "";
       let extractedFields = await extractAndRefineFields(userMessage, logs, previousMessage);
 
-      // Retry missing critical fields
-      while (!extractedFields.Name && !extractedFields["Client Company Name"] && retryCount < maxRetries) {
-        logs.push(`[LLM] Missing critical fields. Retrying extraction (${retryCount + 1}/${maxRetries})...`);
-        retryCount++;
-        extractedFields = await extractAndRefineFields(userMessage, logs, previousMessage);
-      }
-
-      if (!extractedFields.Name && !extractedFields["Client Company Name"]) {
-        logs.push("[LLM] Critical fields still missing after retries. Exiting.");
+      // If Name or equivalent is missing, prompt the user for it
+      if (!currentRecordId && !extractedFields.Name && !extractedFields["Client Company Name"]) {
+        logs.push("[LLM] Missing Name or Client Company Name. Prompting user...");
         return {
           messages: [
             ...history,
-            { role: "assistant", content: "A name or company name is required to create an account. Please provide it." },
+            {
+              role: "assistant",
+              content: "A name or company name is required to create an account. Please provide it.",
+            },
           ],
           logs,
         };
+      }
+
+      // Retry extraction if Name is still missing
+      if (!currentRecordId && !extractedFields.Name) {
+        logs.push("[LLM] Retrying extraction for Name...");
+        extractedFields = await extractAndRefineFields(userMessage, logs, previousMessage);
+
+        if (!extractedFields.Name && !extractedFields["Client Company Name"]) {
+          logs.push("[LLM] Name still missing after retry.");
+          return {
+            messages: [
+              ...history,
+              {
+                role: "assistant",
+                content:
+                  "I still couldn't detect a name or company name. Please explicitly provide a name to proceed.",
+              },
+            ],
+            logs,
+          };
+        }
       }
 
       // Create draft if Name is available
@@ -215,12 +226,12 @@ export async function continueConversation(history: Message[]) {
         };
       }
     }
-
   } catch (error) {
     logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
     return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
   }
 }
+
 
 // Determine the next question in account creation flow
 const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | null => {
