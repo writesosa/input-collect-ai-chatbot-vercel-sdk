@@ -270,6 +270,7 @@ const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | 
 
 
 
+
 const processUserInput = async (userInput: string, logs: string[]) => {
   const fieldsToUpdate: Record<string, string> = {}; // Properly define fieldsToUpdate locally
   let isUpdated = false;
