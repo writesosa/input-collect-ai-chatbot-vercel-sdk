@@ -271,26 +271,27 @@ const getNextQuestion = async (fields: Record<string, any>, logs: string[]): Pro
   return null; // All questions completed
 };
 
-
-
 const validateURL = (url: string): { validUrl: string | null; suggestion: string | null } => {
   try {
     const validUrl = new URL(url.startsWith("http") ? url : `https://${url}`);
     return { validUrl: validUrl.href, suggestion: null };
   } catch (error) {
-    console.error(`[URL Validation Error]: Invalid URL "${url}". Error: ${error.message}`);
+    const errorMessage =
+      error instanceof Error ? error.message : "An unknown error occurred during URL validation.";
+    console.error(`[URL Validation Error]: Invalid URL "${url}". Error: ${errorMessage}`);
+
     // Suggest corrections
+    let suggestion = null;
     if (!url.includes(".")) {
-      const suggestion = `https://www.${url}.com`;
-      return { validUrl: null, suggestion };
+      suggestion = `https://www.${url}.com`;
+    } else if (!url.startsWith("http")) {
+      suggestion = `https://${url}`;
     }
-    if (!url.startsWith("http")) {
-      const suggestion = `https://${url}`;
-      return { validUrl: null, suggestion };
-    }
-    return { validUrl: null, suggestion: null };
+
+    return { validUrl: null, suggestion };
   }
 };
+
 
 
 const createAccount = tool({
