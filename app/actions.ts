@@ -328,38 +328,25 @@ const extractAndRefineFields = async (
           logs,
         };
       }
-      try {
+
+      if (currentRecordId && creationProgress === null) {
+        logs.push(`[LLM] All details captured. Updating record ID: ${currentRecordId} to New status.`);
         try {
-  if (currentRecordId && creationProgress === null) {
-    logs.push(`[LLM] All details captured. Updating record ID: ${currentRecordId} to New status.`);
-    try {
-      await modifyAccount.execute({
-        recordId: currentRecordId,
-        fields: { Status: "New" },
-      });
-      logs.push(`[TOOL] Record ID: ${currentRecordId} transitioned to New status.`);
-    } catch (error) {
-      if (error instanceof Error) {
-        logs.push(`[LLM] Error updating status to New: ${error.message}`);
-      } else {
-        logs.push("[LLM] Unknown error occurred while updating status to New.");
+          await modifyAccount.execute({
+            recordId: currentRecordId,
+            fields: { Status: "New" },
+          });
+          logs.push(`[TOOL] Record ID: ${currentRecordId} transitioned to New status.`);
+        } catch (error) {
+          if (error instanceof Error) {
+            logs.push(`[LLM] Error updating status to New: ${error.message}`);
+          } else {
+            logs.push("[LLM] Unknown error occurred while updating status to New.");
+          }
+        }
       }
     }
-  }
-} catch (error) {
-  if (error instanceof Error) {
-    logs.push(`[LLM] Error during conversation: ${error.message}`);
-  } else {
-    logs.push("[LLM] Unknown error occurred during conversation.");
-  }
-  console.error("[LLM] Error during conversation:", error);
-  return {
-    messages: [...history, { role: "assistant", content: "An error occurred." }],
-    logs,
-  };
-} // End of outer try-catch block
-
-
+  } 
 // Ensure proper closing of helper functions and utilities
 
 const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | null => {
