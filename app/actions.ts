@@ -1,3 +1,4 @@
+
 "use server";
 
 import { InvalidToolArgumentsError, generateText, tool } from "ai";
@@ -8,7 +9,6 @@ import Airtable from "airtable";
 // Initialize Airtable base
 const airtableBase = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID || "missing_base_id");
 
-// Define the Message interface
 export interface Message {
   role: "user" | "assistant";
   content: string;
@@ -43,73 +43,59 @@ export async function continueConversation(history: Message[]) {
   try {
     logs.push("[LLM] Starting continueConversation...");
 
-    const userMessage = history[history.length - 1]?.content.trim() || "";
+    // Intent classification
+    const intentResponse = await generateText({
+      model: openai("gpt-4o"),
+      system: `You are a Wonderland assistant.
+        Classify the user's latest message into one of the following intents:
+        - "account_creation": If the user is asking to create, update, or manage an account.
+        - "general_query": If the user is asking a general question about Wonderland or unrelated topics.
+        Respond only with the classification.`,
+      messages: history,
+      maxToolRoundtrips: 1,
+    });
 
-    // Ensure name or client name is present
-    if (!currentRecordId && creationProgress === null) {
-      if (!fieldsToUpdate.Name && !fieldsToUpdate["Client Company Name"]) {
-        if (userMessage) {
-          fieldsToUpdate.Name = userMessage;
-          logs.push(`[LLM] Name provided: ${userMessage}`);
-        } else {
-          logs.push("[LLM] Missing Name or Client Company Name. Prompting user...");
-          return {
-            messages: [
-              ...history,
-              { role: "assistant", content: "Please provide the name or company name to proceed." },
-            ],
-            logs,
-          };
-        }
-      }
+    const userIntent = intentResponse.text.trim();
+    logs.push(`[LLM] Detected intent: ${userIntent}`);
 
-      logs.push("[LLM] Creating draft record...");
-      const createResponse = await createAccount.execute({
-        Name: fieldsToUpdate.Name || fieldsToUpdate["Client Company Name"],
-        Status: "Draft",
-        "Priority Image Type": "AI Generated",
+    // Handle general queries
+    if (userIntent === "general_query") {
+      logs.push("[LLM] General query detected. Passing to standard processing.");
+      const { text } = await generateText({
+        model: openai("gpt-4o"),
+        system: `You are a Wonderland assistant!
+          Reply with nicely formatted markdown. 
+          Keep your replies short and concise. 
+          If this is the first reply, send a nice welcome message.
+          If the selected Account is different, mention the account or company name once.
+
+          Perform the following actions:
+          - Create a new account in Wonderland when the user requests it.
+          - Modify an existing account in Wonderland when the user requests it.
+          - Delete an existing account in Wonderland when the user requests it.
+          - Switch to a different account by looking up records based on a specific field and value.
+          - Answer questions you know about Wonderland.
+          - When the request is unknown, prompt the user for more information to establish intent.
+
+          When creating, modifying, or switching accounts:
+          - Confirm the action with the user before finalizing.
+          - Provide clear feedback on the current record being worked on, including its Record ID.`,
+        messages: history,
+        maxToolRoundtrips: 5,
       });
 
-      if (createResponse.recordId) {
-        currentRecordId = createResponse.recordId;
-        logs.push(`[LLM] Draft record created with ID: ${currentRecordId}`);
-        creationProgress = 0;
-      } else {
-        logs.push("[LLM] Failed to create draft. Exiting.");
-        throw new Error("Failed to create draft account.");
-      }
+      logs.push("[LLM] General query processed successfully.");
+      return { messages: [...history, { role: "assistant", content: text }], logs };
     }
 
-    if (currentRecordId && creationProgress === null) {
-      logs.push(`[LLM] Processing 'create it' command. Updating record ID: ${currentRecordId} to New status.`);
-      try {
-        await modifyAccount.execute({
-          recordId: currentRecordId,
-          fields: { Status: "New" },
-        });
-        logs.push(`[TOOL] Record ID: ${currentRecordId} transitioned to New status.`);
-      } catch (error) {
-        logs.push(`[LLM] Error transitioning to New: ${error.message}`);
-        throw error;
-      }
-    }
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
-    logs.push(`[LLM] Critical error: ${errorMessage}`);
-    logs.push("[LLM] Attempting recovery...");
-    return {
-      messages: [
-        ...history,
-        { role: "assistant", content: "An error occurred. Let’s try restarting the process." },
-      ],
-      logs,
-    };
-  }
-}
+    // Handle account creation logic
+    if (userIntent === "account_creation") {
+      logs.push("[LLM] Account creation detected. Processing...");
 
+      const userMessage = history[history.length - 1]?.content.trim() || "";
 
-      // Ensure the record is created before proceeding
-      if (currentRecordId) {
+      // Extract account details from the user message
+      if (creationProgress !== null) {
         if (creationProgress === 0) {
           const inputs = userMessage.split(",").map((input) => input.trim());
           for (const input of inputs) {
@@ -123,60 +109,26 @@ export async function continueConversation(history: Message[]) {
               else if (!fieldsToUpdate.Blog) fieldsToUpdate.Blog = url;
             }
           }
-          try {
-            await modifyAccount.execute({
-              recordId: currentRecordId,
-              fields: cleanFields(fieldsToUpdate),
-            });
-            logs.push("[LLM] Website and Social Links updated.");
-          } catch (error) {
-            if (error instanceof Error) {
-              logs.push(`[LLM] Error updating Website and Social Links: ${error.message}`);
-            } else {
-              logs.push("[LLM] Unknown error occurred while updating Website and Social Links.");
-            }
-          }
-
+          await modifyAccount.execute({ recordId: currentRecordId!, fields: cleanFields(fieldsToUpdate) });
+          logs.push("[LLM] Website and Social Links updated.");
           creationProgress++;
         } else if (creationProgress === 1) {
           fieldsToUpdate.Description = userMessage || "No description provided.";
-
-          try {
-            await modifyAccount.execute({
-              recordId: currentRecordId,
-              fields: { Description: fieldsToUpdate.Description },
-            });
-            logs.push("[LLM] Description updated.");
-          } catch (error) {
-            if (error instanceof Error) {
-              logs.push(`[LLM] Error updating Description: ${error.message}`);
-            } else {
-              logs.push("[LLM] Unknown error occurred while updating Description.");
-            }
-          }
-
+          await modifyAccount.execute({
+            recordId: currentRecordId!,
+            fields: { Description: fieldsToUpdate.Description },
+          });
+          logs.push("[LLM] Description updated.");
           creationProgress++;
         } else if (creationProgress === 2) {
           fieldsToUpdate["Talking Points"] = userMessage || "No talking points provided.";
-
-          try {
-            await modifyAccount.execute({
-              recordId: currentRecordId,
-              fields: { "Talking Points": fieldsToUpdate["Talking Points"] },
-            });
-            logs.push("[LLM] Talking Points updated.");
-          } catch (error) {
-            if (error instanceof Error) {
-              logs.push(`[LLM] Error updating Talking Points: ${error.message}`);
-            } else {
-              logs.push("[LLM] Unknown error occurred while updating Talking Points.");
-            }
-          }
-
+          await modifyAccount.execute({
+            recordId: currentRecordId!,
+            fields: { "Talking Points": fieldsToUpdate["Talking Points"] },
+          });
+          logs.push("[LLM] Talking Points updated.");
           creationProgress = null; // End of flow
         }
-      } else {
-        logs.push("[LLM] No record ID found. Unable to proceed with modifications.");
       }
 
       questionToAsk = getNextQuestion(fieldsToUpdate, logs);
@@ -191,34 +143,19 @@ export async function continueConversation(history: Message[]) {
 
       if (currentRecordId && creationProgress === null) {
         logs.push(`[LLM] All details captured. Updating record ID: ${currentRecordId} to New status.`);
-        try {
-          await modifyAccount.execute({
-            recordId: currentRecordId,
-            fields: { Status: "New" },
-          });
-          logs.push(`[TOOL] Record ID: ${currentRecordId} transitioned to New status.`);
-        } catch (error) {
-          if (error instanceof Error) {
-            logs.push(`[LLM] Error updating status to New: ${error.message}`);
-          } else {
-            logs.push("[LLM] Unknown error occurred while updating status to New.");
-          }
-        }
+        await modifyAccount.execute({
+          recordId: currentRecordId,
+          fields: { Status: "New" },
+        });
+        logs.push(`[TOOL] Record ID: ${currentRecordId} transitioned to New status.`);
       }
     }
   } catch (error) {
-    if (error instanceof Error) {
-      logs.push(`[LLM] Error during conversation: ${error.message}`);
-    } else {
-      logs.push("[LLM] Unknown error occurred during conversation.");
-    }
+    logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
     console.error("[LLM] Error during conversation:", error);
     return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
   }
-} // Close the function properly
-
-
-// Ensure proper closing of helper functions and utilities
+}
 
 const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | null => {
   if (
@@ -241,6 +178,7 @@ const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | 
 
   return null; // All questions completed
 };
+
 
 
 

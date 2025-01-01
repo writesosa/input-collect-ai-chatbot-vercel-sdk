@@ -23,6 +23,7 @@ export async function POST(req: Request) {
       return buildErrorResponse("Record with valid type is required.", logs, 400);
     }
 
+    // Log the structured request
     structuredLogs.push({
       message: "[POST /api/chat] Processing record and messages",
       record,
@@ -51,18 +52,17 @@ export async function POST(req: Request) {
       result,
     });
 
-// Extract and log TOOL logs explicitly
-if (result && result.logs && Array.isArray(result.logs)) {
-  logs.push(...result.logs);
-  result.logs.forEach((log) => console.log("[TOOL]", log));
-}
-
+    // Extract and log TOOL logs explicitly
+    if (result.logs && Array.isArray(result.logs)) {
+      console.group("[TOOL Logs]");
+      result.logs.forEach((log) => console.log("[TOOL]", log));
+      console.groupEnd();
+    }
 
     return new Response(
       JSON.stringify({
         ...flattenErrorResponse(result),
-logs: (result && result.logs) || logs,
-
+        logs: result.logs || logs,
         structuredLogs,
       }),
       {
