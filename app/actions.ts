@@ -170,16 +170,13 @@ export async function continueConversation(history: Message[]) {
           };
         }
 
-        // Ensure Name is always set before calling createAccount.execute
+        logs.push("[LLM] Creating a new draft record...");
         const createResponse = await createAccount.execute({
           Name: fieldsToUpdate.Name || fieldsToUpdate["Client Company Name"], // Use whichever is available
           ...fieldsToUpdate,
           Status: "Draft",
           "Priority Image Type": "AI Generated",
         });
-
-
-        logs.push("[LLM] Creating a new draft record...");
 
         if (createResponse.recordId) {
           currentRecordId = createResponse.recordId;
@@ -222,15 +219,11 @@ export async function continueConversation(history: Message[]) {
       }
     }
   } catch (error) {
-    if (error instanceof Error) {
-      logs.push(`[LLM] Error during conversation: ${error.message}`);
-    } else {
-      logs.push("[LLM] Unknown error occurred during conversation.");
-    }
-    console.error("[LLM] Error during conversation:", error);
+    logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
     return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
   }
 }
+
 
 // Determine the next question in account creation flow
 const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | null => {
