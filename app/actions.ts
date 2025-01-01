@@ -1,4 +1,3 @@
-
 "use server";
 
 import { InvalidToolArgumentsError, generateText, tool } from "ai";
@@ -9,6 +8,7 @@ import Airtable from "airtable";
 // Initialize Airtable base
 const airtableBase = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(process.env.AIRTABLE_BASE_ID || "missing_base_id");
 
+// Define the Message interface
 export interface Message {
   role: "user" | "assistant";
   content: string;
@@ -93,9 +93,53 @@ export async function continueConversation(history: Message[]) {
       logs.push("[LLM] Account creation detected. Processing...");
 
       const userMessage = history[history.length - 1]?.content.trim() || "";
+      if (!currentRecordId && creationProgress === null) {
+        // Check if the Name field is provided
+        if (!fieldsToUpdate.Name && !fieldsToUpdate["Client Company Name"]) {
+          if (userMessage) {
+            fieldsToUpdate.Name = userMessage; // Assume user input is the name
+            logs.push(`[LLM] Name provided: ${userMessage}`);
+          } else {
+            logs.push("[LLM] Missing Name or Client Company Name. Prompting user...");
+            return {
+              messages: [
+                ...history,
+                {
+                  role: "assistant",
+                  content: "Please provide the name or company name for the account to proceed.",
+                },
+              ],
+              logs,
+            };
+          }
+        }
 
-      // Extract account details from the user message
-      if (creationProgress !== null) {
+        // Proceed to create a draft account
+        logs.push("[LLM] Creating a new draft record...");
+        const createResponse = await createAccount.execute({
+          Name: fieldsToUpdate.Name || fieldsToUpdate["Client Company Name"],
+          Status: "Draft",
+          "Priority Image Type": "AI Generated", // Required default value
+        });
+
+        if (createResponse.recordId) {
+          currentRecordId = createResponse.recordId;
+          logs.push(`[LLM] Draft record created with ID: ${currentRecordId}`);
+          creationProgress = 0; // Start the creation flow
+        } else {
+          logs.push("[LLM] Failed to create a draft record. Exiting process.");
+          return {
+            messages: [
+              ...history,
+              { role: "assistant", content: "An error occurred while starting account creation." },
+            ],
+            logs,
+          };
+        }
+      }
+
+      // Ensure the record is created before proceeding
+      if (currentRecordId) {
         if (creationProgress === 0) {
           const inputs = userMessage.split(",").map((input) => input.trim());
           for (const input of inputs) {
@@ -109,26 +153,60 @@ export async function continueConversation(history: Message[]) {
               else if (!fieldsToUpdate.Blog) fieldsToUpdate.Blog = url;
             }
           }
-          await modifyAccount.execute({ recordId: currentRecordId!, fields: cleanFields(fieldsToUpdate) });
-          logs.push("[LLM] Website and Social Links updated.");
+          try {
+            await modifyAccount.execute({
+              recordId: currentRecordId,
+              fields: cleanFields(fieldsToUpdate),
+            });
+            logs.push("[LLM] Website and Social Links updated.");
+          } catch (error) {
+            if (error instanceof Error) {
+              logs.push(`[LLM] Error updating Website and Social Links: ${error.message}`);
+            } else {
+              logs.push("[LLM] Unknown error occurred while updating Website and Social Links.");
+            }
+          }
+
           creationProgress++;
         } else if (creationProgress === 1) {
           fieldsToUpdate.Description = userMessage || "No description provided.";
-          await modifyAccount.execute({
-            recordId: currentRecordId!,
-            fields: { Description: fieldsToUpdate.Description },
-          });
-          logs.push("[LLM] Description updated.");
+
+          try {
+            await modifyAccount.execute({
+              recordId: currentRecordId,
+              fields: { Description: fieldsToUpdate.Description },
+            });
+            logs.push("[LLM] Description updated.");
+          } catch (error) {
+            if (error instanceof Error) {
+              logs.push(`[LLM] Error updating Description: ${error.message}`);
+            } else {
+              logs.push("[LLM] Unknown error occurred while updating Description.");
+            }
+          }
+
           creationProgress++;
         } else if (creationProgress === 2) {
           fieldsToUpdate["Talking Points"] = userMessage || "No talking points provided.";
-          await modifyAccount.execute({
-            recordId: currentRecordId!,
-            fields: { "Talking Points": fieldsToUpdate["Talking Points"] },
-          });
-          logs.push("[LLM] Talking Points updated.");
+
+          try {
+            await modifyAccount.execute({
+              recordId: currentRecordId,
+              fields: { "Talking Points": fieldsToUpdate["Talking Points"] },
+            });
+            logs.push("[LLM] Talking Points updated.");
+          } catch (error) {
+            if (error instanceof Error) {
+              logs.push(`[LLM] Error updating Talking Points: ${error.message}`);
+            } else {
+              logs.push("[LLM] Unknown error occurred while updating Talking Points.");
+            }
+          }
+
           creationProgress = null; // End of flow
         }
+      } else {
+        logs.push("[LLM] No record ID found. Unable to proceed with modifications.");
       }
 
       questionToAsk = getNextQuestion(fieldsToUpdate, logs);
@@ -143,19 +221,34 @@ export async function continueConversation(history: Message[]) {
 
       if (currentRecordId && creationProgress === null) {
         logs.push(`[LLM] All details captured. Updating record ID: ${currentRecordId} to New status.`);
-        await modifyAccount.execute({
-          recordId: currentRecordId,
-          fields: { Status: "New" },
-        });
-        logs.push(`[TOOL] Record ID: ${currentRecordId} transitioned to New status.`);
+        try {
+          await modifyAccount.execute({
+            recordId: currentRecordId,
+            fields: { Status: "New" },
+          });
+          logs.push(`[TOOL] Record ID: ${currentRecordId} transitioned to New status.`);
+        } catch (error) {
+          if (error instanceof Error) {
+            logs.push(`[LLM] Error updating status to New: ${error.message}`);
+          } else {
+            logs.push("[LLM] Unknown error occurred while updating status to New.");
+          }
+        }
       }
     }
   } catch (error) {
-    logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
+    if (error instanceof Error) {
+      logs.push(`[LLM] Error during conversation: ${error.message}`);
+    } else {
+      logs.push("[LLM] Unknown error occurred during conversation.");
+    }
     console.error("[LLM] Error during conversation:", error);
     return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
   }
-}
+} // Close the function properly
+
+
+// Ensure proper closing of helper functions and utilities
 
 const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | null => {
   if (
@@ -178,7 +271,6 @@ const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | 
 
   return null; // All questions completed
 };
-
 
 
 
@@ -528,409 +620,3 @@ const switchRecord = tool({
     }
   },
 });
-
-route.ts
-
-import { continueConversation } from "../../actions";
-
-export async function POST(req: Request) {
-  console.log("[POST /api/chat] Request received");
-  const logs: string[] = [];
-  const structuredLogs: any[] = []; // For logging detailed objects
-
-  try {
-    const body = await req.json();
-    logs.push("[POST /api/chat] Parsed body:", JSON.stringify(body, null, 2));
-
-    const { messages, record } = body;
-
-    // Validate messages
-    if (!messages || !Array.isArray(messages)) {
-      logs.push("[POST /api/chat] Invalid input: messages is not an array.");
-      return buildErrorResponse("Invalid input format.", logs, 400);
-    }
-
-    // Validate record
-    if (!record || !record.type) {
-      logs.push("[POST /api/chat] No valid record provided.");
-      return buildErrorResponse("Record with valid type is required.", logs, 400);
-    }
-
-    structuredLogs.push({
-      message: "[POST /api/chat] Processing record and messages",
-      record,
-      messages,
-    });
-
-    logs.push(
-      `[POST /api/chat] Processing record and messages: Record - ${JSON.stringify(
-        record
-      )}, Messages - ${JSON.stringify(messages)}`
-    );
-
-    // Call continueConversation
-    const result = await continueConversation([
-      { role: "assistant", content: `Processing record: ${JSON.stringify(record)}` },
-      ...messages,
-    ]);
-
-    // Log the result
-    logs.push(
-      "[POST /api/chat] Response from continueConversation:",
-      JSON.stringify(result, null, 2)
-    );
-    structuredLogs.push({
-      message: "[POST /api/chat] Response from continueConversation",
-      result,
-    });
-
-// Extract and log TOOL logs explicitly
-if (result && result.logs && Array.isArray(result.logs)) {
-  logs.push(...result.logs);
-  result.logs.forEach((log) => console.log("[TOOL]", log));
-}
-
-
-    return new Response(
-      JSON.stringify({
-        ...flattenErrorResponse(result),
-logs: (result && result.logs) || logs,
-
-        structuredLogs,
-      }),
-      {
-        headers: {
-          "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "POST, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type",
-          "Content-Type": "application/json",
-        },
-      }
-    );
-  } catch (error) {
-    console.error("[POST /api/chat] Error occurred:", error);
-
-    logs.push(
-      "[POST /api/chat] Error:",
-      error instanceof Error ? error.message : JSON.stringify(error)
-    );
-
-    structuredLogs.push({
-      message: "[POST /api/chat] Error occurred",
-      error: error instanceof Error
-        ? { message: error.message, stack: error.stack }
-        : error,
-    });
-
-    return buildErrorResponse(
-      "An error occurred.",
-      logs,
-      500,
-      structuredLogs,
-      error instanceof Error ? error : undefined
-    );
-  }
-}
-
-export async function OPTIONS() {
-  return new Response(null, {
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-      "Access-Control-Max-Age": "86400",
-    },
-  });
-}
-
-function flattenErrorResponse(response: any): Record<string, any> {
-  if (typeof response === "object" && response !== null) {
-    return Object.entries(response).reduce((acc: Record<string, any>, [key, value]) => {
-      if (typeof value === "object" && value !== null) {
-        const flattened = flattenErrorResponse(value);
-        Object.entries(flattened).forEach(([nestedKey, nestedValue]) => {
-          acc[`${key}.${nestedKey}`] = nestedValue;
-        });
-      } else {
-        acc[key] = value;
-      }
-      return acc;
-    }, {});
-  }
-  return response;
-}
-
-function buildErrorResponse(
-  message: string,
-  logs: string[],
-  status: number,
-  structuredLogs?: any[],
-  error?: Error
-) {
-  if (error) {
-    logs.push("[POST /api/chat] Error:", error.message);
-    console.error("[POST /api/chat] Error occurred:", error);
-  }
-
-  return new Response(
-    JSON.stringify(
-      flattenErrorResponse({
-        error: message,
-        details: error?.message || "Unknown error",
-        stack: error?.stack,
-        logs,
-        structuredLogs,
-      })
-    ),
-    {
-      status,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Content-Type": "application/json",
-      },
-    }
-  );
-}
-
-front end softr code:
-
-
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-
-<div id="chatbot-container">
-  <div id="chatbot-messages"></div>
-  <div class="input-container">
-    <textarea id="chatbot-input" placeholder="Type your message..."></textarea>
-    <button id="chatbot-send">Send</button>
-  </div>
-</div>
-
-<script>
-  let conversationHistory = [];
-  let currentRecord = null;
-  let isFirstHoverHandled = false;
-  const baseURL = "https://api.airtable.com/v0/appFf0nHuVTVWRjTa/Accounts";
-  const apiKey = "Bearer patuiAgEvFzitXyIu.a0fed140f02983ccc3dfeed6c02913b5e2593253cb784a08c3cfd8ac96518ba0";
-
-  // Set focus on message box on load
-  window.addEventListener("load", () => {
-    const inputField = document.getElementById("chatbot-input");
-    inputField.focus();
-  });
-
-  // Hover to fetch and send the record or accounts list once
-  document.getElementById("chatbot-container").addEventListener("mouseover", async () => {
-    if (!isFirstHoverHandled) {
-      isFirstHoverHandled = true;
-
-      const isOnAccountsPage = window.location.pathname.includes("/accounts/account-details");
-      if (isOnAccountsPage) {
-        await fetchCurrentRecord();
-      } else {
-        await fetchAllAccounts();
-      }
-    }
-  });
-
-  // Adjust Enter key behavior
-  const inputField = document.getElementById("chatbot-input");
-  inputField.addEventListener("keypress", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      document.getElementById("chatbot-send").click();
-    }
-  });
-
-  document.getElementById("chatbot-send").addEventListener("click", async () => {
-    const message = inputField.value.trim();
-    if (message) {
-      conversationHistory.push({ role: "user", content: message });
-      displayMessage("user", message);
-      inputField.value = "";
-      adjustInputHeight();
-      await sendConversation();
-    }
-  });
-
-  inputField.addEventListener("input", () => {
-    adjustInputHeight();
-  });
-
-  function adjustInputHeight() {
-    inputField.style.height = "44px"; // Reset to minimum height
-    inputField.style.height = Math.min(inputField.scrollHeight, 250) + "px"; // Dynamically adjust
-  }
-
-  async function sendConversation() {
-    try {
-      const urlParams = new URLSearchParams(window.location.search);
-      const recordId = urlParams.get("recordId");
-      const pageType = recordId ? "accounts" : "home";
-
-      const payload = { 
-        record: { recordId, type: pageType }, 
-        messages: conversationHistory 
-      };
-
-      console.log("[Frontend] Sending payload:", JSON.stringify(payload, null, 2));
-
-      const response = await fetch("https://input-collect-ai-chatbot-vercel-sdk.vercel.app/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP error! Status: ${response.status}, Details: ${errorText}`);
-      }
-
-      const responseData = await response.json();
-      console.log("[Frontend] Received response:", JSON.stringify(responseData, null, 2));
-
-      // Display backend logs in the console
-      if (responseData.logs && Array.isArray(responseData.logs)) {
-        console.group("[Backend Logs]");
-        responseData.logs.forEach((log, index) => console.log(`[Log ${index + 1}] ${log}`));
-        console.groupEnd();
-      }
-
-      // Reconstruct messages from flattened response
-      const reconstructedMessages = Object.keys(responseData)
-        .filter((key) => key.startsWith("messages.") && key.endsWith(".role"))
-        .map((key) => {
-          const index = key.split(".")[1];
-          return {
-            role: responseData[`messages.${index}.role`],
-            content: responseData[`messages.${index}.content`],
-          };
-        });
-
-      console.log("[Frontend] Reconstructed messages:", reconstructedMessages);
-
-      const assistantMessages = reconstructedMessages.filter((msg) => msg.role === "assistant");
-      const lastAssistantMessage = assistantMessages[assistantMessages.length - 1]?.content;
-
-      if (lastAssistantMessage) {
-        displayMessage("assistant", lastAssistantMessage);
-        conversationHistory.push({ role: "assistant", content: lastAssistantMessage });
-      }
-    } catch (error) {
-      console.error("[Frontend] Error during sendConversation:", error);
-      displayMessage("assistant", `An error occurred while processing your request. Error details: ${error.message}`);
-    }
-  }
-
-  function displayMessage(role, content) {
-    const messagesContainer = document.getElementById("chatbot-messages");
-    const messageElement = document.createElement("div");
-    messageElement.className = role;
-
-    if (typeof marked !== "undefined") {
-      const parsedContent = marked.parse(content);
-      messageElement.innerHTML = parsedContent;
-      const lastParagraph = messageElement.querySelector("p:last-child");
-      if (lastParagraph) {
-        lastParagraph.style.marginBottom = "0";
-      }
-    } else {
-      console.error("The `marked` library is not available. Rendering raw content.");
-      messageElement.textContent = content;
-    }
-
-    messagesContainer.appendChild(messageElement);
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-  }
-
-  async function fetchCurrentRecord() {
-    try {
-      const urlParams = new URLSearchParams(window.location.search);
-      const recordId = urlParams.get("recordId");
-
-      if (recordId) {
-        console.log("[Frontend] Fetching current record for recordId:", recordId);
-
-        const response = await fetch(`${baseURL}/${recordId}`, {
-          headers: { Authorization: apiKey },
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`HTTP error! Status: ${response.status}, Details: ${errorText}`);
-        }
-
-        const data = await response.json();
-        const { id, fields } = data;
-        const filteredRecord = {
-          recordId: id,
-          accountName: fields["Name"],
-          clientFile: fields["Client File"],
-        };
-
-        currentRecord = filteredRecord;
-
-        console.log("[Frontend] Fetched record:", JSON.stringify(filteredRecord, null, 2));
-
-        conversationHistory.push({
-          role: "system",
-          content: `Record ID: ${filteredRecord.recordId}, Account Name: ${filteredRecord.accountName}, Client File: ${filteredRecord.clientFile}`,
-        });
-
-        displayMessage(
-          "assistant",
-          `Hello! How can I assist you today with the account for **${filteredRecord.accountName}**?`
-        );
-      }
-    } catch (error) {
-      console.error("[Frontend] Error fetching current record:", error);
-      displayMessage("assistant", `An error occurred. Error details: ${error.message}`);
-    }
-  }
-
-  async function fetchAllAccounts() {
-    try {
-      console.log("[Frontend] Fetching all accounts from 'Active' view...");
-
-      const response = await fetch(`${baseURL}?view=Active`, {
-        headers: { Authorization: apiKey },
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP error! Status: ${response.status}, Details: ${errorText}`);
-      }
-
-      const data = await response.json();
-      console.log("[Frontend] Fetched all accounts from 'Active' view:", JSON.stringify(data, null, 2));
-
-      const accountsList = data.records.map(({ id, fields }) => {
-        return {
-          recordId: id,
-          accountName: fields["Name"],
-          clientFile: fields["Client File"],
-        };
-      });
-
-      conversationHistory.push({
-        role: "system",
-        content: `Accounts available:\n${accountsList
-          .map(
-            (account) => `${account.accountName} (Record ID: ${account.recordId})`
-          )
-          .join("\n")}`,
-      });
-
-      displayMessage(
-        "assistant",
-        `Here are the accounts available from the 'Active' view:\n\n${accountsList
-          .map(
-            (account) => `**${account.accountName}** (Record ID: ${account.recordId})`
-          )
-          .join("\n")}`
-      );
-    } catch (error) {
-      console.error("[Frontend] Error fetching all accounts from 'Active' view:", error);
-      displayMessage("assistant", `An error occurred while fetching accounts. Error details: ${error.message}`);
-    }
-  }
-</script>
