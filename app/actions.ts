@@ -156,43 +156,45 @@ export async function continueConversation(history: Message[]) {
 
       // If no current record, create a draft
       if (!currentRecordId && creationProgress === null) {
-        if (!fieldsToUpdate.Name && !fieldsToUpdate["Client Company Name"]) {
-          logs.push("[LLM] Missing Name or Client Company Name. Prompting user...");
-          return {
-            messages: [
-              ...history,
-              {
-                role: "assistant",
-                content: "Please provide the name or company name to proceed with account creation.",
-              },
-            ],
-            logs,
-          };
-        }
+  const extractedName = await extractAndRefineFields(userMessage, logs);
 
-        logs.push("[LLM] Creating a new draft record...");
-        const createResponse = await createAccount.execute({
-          Name: fieldsToUpdate.Name || fieldsToUpdate["Client Company Name"], // Use whichever is available
-          ...fieldsToUpdate,
-          Status: "Draft",
-          "Priority Image Type": "AI Generated",
-        });
+  if (!fieldsToUpdate.Name && !fieldsToUpdate["Client Company Name"]) {
+    logs.push("[LLM] Missing Name or Client Company Name. Prompting user...");
+    return {
+      messages: [
+        ...history,
+        {
+          role: "assistant",
+          content: "Please provide the name or company name to proceed with account creation.",
+        },
+      ],
+      logs,
+    };
+  }
 
-        if (createResponse.recordId) {
-          currentRecordId = createResponse.recordId;
-          logs.push(`[LLM] Draft record created with ID: ${currentRecordId}`);
-          creationProgress = 0; // Start creation flow
-        } else {
-          logs.push("[LLM] Failed to create draft. Exiting.");
-          return {
-            messages: [
-              ...history,
-              { role: "assistant", content: "An error occurred while starting account creation." },
-            ],
-            logs,
-          };
-        }
-      }
+  logs.push("[LLM] Creating a new draft record...");
+  const createResponse = await createAccount.execute({
+    Name: fieldsToUpdate.Name || fieldsToUpdate["Client Company Name"], // Use whichever is available
+    Status: "Draft",
+    "Priority Image Type": "AI Generated",
+  });
+
+  if (createResponse.recordId) {
+    currentRecordId = createResponse.recordId;
+    logs.push(`[LLM] Draft record created with ID: ${currentRecordId}`);
+    creationProgress = 0; // Start creation flow
+  } else {
+    logs.push("[LLM] Failed to create draft. Exiting.");
+    return {
+      messages: [
+        ...history,
+        { role: "assistant", content: "An error occurred while starting account creation." },
+      ],
+      logs,
+    };
+  }
+}
+
 
       // Update Airtable dynamically during conversation
       if (currentRecordId) {
