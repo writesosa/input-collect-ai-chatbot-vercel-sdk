@@ -129,70 +129,85 @@ export async function continueConversation(history: Message[]) {
       logs.push("[LLM] General query processed successfully.");
       return { messages: [...history, { role: "assistant", content: text }], logs };
     }
-// Handle account creation logic
+
+   // Handle account creation logic
 if (userIntent === "account_creation") {
   logs.push("[LLM] Account creation detected. Processing...");
 
   const userMessage = history[history.length - 1]?.content.trim() || "";
-  let extractedFields = await extractAndRefineFields(userMessage, logs);
+  let extractedFields: Record<string, any> = {};
 
-  // Log extracted fields for debugging
-  logs.push(`[LLM] Extracted fields from initial message: ${JSON.stringify(extractedFields)}`);
-
-  // If Name or equivalent is missing, prompt the user for it
-  if (!currentRecordId && !extractedFields.Name && !extractedFields["Client Company Name"]) {
-    logs.push("[LLM] Missing Name or Client Company Name. Prompting user...");
-    return {
-      messages: [
-        ...history,
-        {
-          role: "assistant",
-          content: "A name or company name is required to create an account. Please provide it.",
-        },
-      ],
-      logs,
-    };
-  }
-
-  // Retry extraction if Name is missing after prompting the user
-  if (!currentRecordId && !extractedFields.Name) {
-    logs.push("[LLM] Retrying extraction for Name...");
+  try {
+    // Extract fields from the user message
     extractedFields = await extractAndRefineFields(userMessage, logs);
 
-    logs.push(`[LLM] Extracted fields after retry: ${JSON.stringify(extractedFields)}`);
+    // Log extracted fields for debugging
+    logs.push(`[LLM] Extracted fields from initial message: ${JSON.stringify(extractedFields)}`);
 
-    if (!extractedFields.Name && !extractedFields["Client Company Name"]) {
-      logs.push("[LLM] Name still missing after retry.");
+    // If Name or equivalent is missing, prompt the user for it
+    if (!currentRecordId && !extractedFields.Name && !extractedFields["Client Company Name"]) {
+      logs.push("[LLM] Missing Name or Client Company Name. Prompting user...");
       return {
         messages: [
           ...history,
           {
             role: "assistant",
-            content:
-              "I still couldn't detect a name or company name. Please explicitly provide a name to proceed.",
+            content: "A name or company name is required to create an account. Please provide it.",
           },
         ],
         logs,
       };
     }
-  }
 
-  // Create draft if Name is available
-  if (!currentRecordId && extractedFields.Name) {
-    logs.push("[LLM] Creating a new draft record...");
-    try {
-      const createResponse = await createAccount.execute({
-        Name: extractedFields.Name || extractedFields["Client Company Name"],
-        Status: "Draft",
-        "Priority Image Type": "AI Generated",
-      });
+    // Retry extraction if Name is missing after prompting the user
+    if (!currentRecordId && !extractedFields.Name) {
+      logs.push("[LLM] Retrying extraction for Name...");
+      extractedFields = await extractAndRefineFields(userMessage, logs);
 
-      if (createResponse.recordId) {
-        currentRecordId = createResponse.recordId;
-        logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
-        creationProgress = 0; // Start creation flow
-      } else {
-        logs.push("[LLM] Failed to create draft. Exiting.");
+      logs.push(`[LLM] Extracted fields after retry: ${JSON.stringify(extractedFields)}`);
+
+      if (!extractedFields.Name && !extractedFields["Client Company Name"]) {
+        logs.push("[LLM] Name still missing after retry.");
+        return {
+          messages: [
+            ...history,
+            {
+              role: "assistant",
+              content:
+                "I still couldn't detect a name or company name. Please explicitly provide a name to proceed.",
+            },
+          ],
+          logs,
+        };
+      }
+    }
+
+    // Create draft if Name is available
+    if (!currentRecordId && extractedFields.Name) {
+      logs.push("[LLM] Creating a new draft record...");
+      try {
+        const createResponse = await createAccount.execute({
+          Name: extractedFields.Name || extractedFields["Client Company Name"],
+          Status: "Draft",
+          "Priority Image Type": "AI Generated",
+        });
+
+        if (createResponse.recordId) {
+          currentRecordId = createResponse.recordId;
+          logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
+          creationProgress = 0; // Start creation flow
+        } else {
+          logs.push("[LLM] Failed to create draft. Exiting.");
+          return {
+            messages: [
+              ...history,
+              { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+            ],
+            logs,
+          };
+        }
+      } catch (error) {
+        logs.push(`[LLM] Error creating draft: ${error instanceof Error ? error.message : "Unknown error"}`);
         return {
           messages: [
             ...history,
@@ -201,41 +216,37 @@ if (userIntent === "account_creation") {
           logs,
         };
       }
-    } catch (error) {
-      logs.push(`[LLM] Error creating draft: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+
+    // Update Airtable dynamically with extracted fields in the background
+    if (currentRecordId) {
+      try {
+        await modifyAccount.execute({
+          recordId: currentRecordId,
+          fields: cleanFields(extractedFields),
+        });
+        logs.push("[LLM] Updated account fields in Airtable.");
+      } catch (error) {
+        logs.push(`[LLM] Error updating Airtable: ${error instanceof Error ? error.message : error}`);
+      }
+    }
+
+    // Prompt user for missing fields if necessary
+    const missingQuestion = getNextQuestion(extractedFields, logs);
+    if (missingQuestion) {
       return {
-        messages: [
-          ...history,
-          { role: "assistant", content: "An error occurred while creating the account. Please try again." },
-        ],
+        messages: [...history, { role: "assistant", content: missingQuestion }],
         logs,
       };
     }
-  }
-
-  // Update Airtable dynamically with extracted fields in the background
-  if (currentRecordId) {
-    try {
-      await modifyAccount.execute({
-        recordId: currentRecordId,
-        fields: cleanFields(extractedFields),
-      });
-      logs.push("[LLM] Updated account fields in Airtable.");
-    } catch (error) {
-      logs.push(`[LLM] Error updating Airtable: ${error instanceof Error ? error.message : error}`);
-    }
-  }
-
-  // Prompt user for missing fields if necessary
-  const missingQuestion = getNextQuestion(extractedFields, logs);
-  if (missingQuestion) {
+  } catch (error) {
+    logs.push(`[LLM] Error during account creation logic: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
     return {
-      messages: [...history, { role: "assistant", content: missingQuestion }],
+      messages: [...history, { role: "assistant", content: "An unexpected error occurred. Please try again." }],
       logs,
     };
   }
 }
-
 
 
 // Determine the next question in account creation flow
