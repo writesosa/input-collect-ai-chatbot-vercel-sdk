@@ -18,6 +18,7 @@ export interface Message {
 
 let currentRecordId: string | null = null;
 let creationProgress: number | null = null; // Track user progress in account creation
+let lastExtractedFields: Record<string, any> | null = null; // Remember the last extracted fields
 
 // Helper: Validate URLs
 const validateURL = (url: string): string | null => {
@@ -92,6 +93,7 @@ const extractAndRefineFields = async (
     }
   }
 
+  lastExtractedFields = extractedFields; // Save extracted fields
   return extractedFields;
 };
 
@@ -155,6 +157,12 @@ export async function continueConversation(history: Message[]) {
       const userMessage = history[history.length - 1]?.content.trim() || "";
       let extractedFields = await extractAndRefineFields(userMessage, logs);
 
+      // Use previously extracted fields if available and valid
+      if (!extractedFields.Name && lastExtractedFields?.Name) {
+        logs.push("[LLM] Using previously extracted Name field.");
+        extractedFields.Name = lastExtractedFields.Name;
+      }
+
       // If Name or equivalent is missing, prompt the user for it
       if (!currentRecordId && !extractedFields.Name && !extractedFields["Client Company Name"]) {
         logs.push("[LLM] Missing Name or Client Company Name. Prompting user...");
@@ -170,30 +178,9 @@ export async function continueConversation(history: Message[]) {
         };
       }
 
-      // Retry extraction if Name is still missing
-      if (!currentRecordId && !extractedFields.Name) {
-        logs.push("[LLM] Retrying extraction for Name...");
-        extractedFields = await extractAndRefineFields(userMessage, logs);
-
-        if (!extractedFields.Name && !extractedFields["Client Company Name"]) {
-          logs.push("[LLM] Name still missing after retry.");
-          return {
-            messages: [
-              ...history,
-              {
-                role: "assistant",
-                content:
-                  "I still couldn't detect a name or company name. Please explicitly provide a name to proceed.",
-              },
-            ],
-            logs,
-          };
-        }
-      }
       // Create draft if Name is available
       if (!currentRecordId && (extractedFields.Name || extractedFields["Client Company Name"])) {
         logs.push("[LLM] Creating a new draft record...");
-        currentRecordId = extractedFields.Name; // Remember the account name
         const createResponse = await createAccount.execute({
           Name: extractedFields.Name || extractedFields["Client Company Name"],
           Status: "Draft",
@@ -215,12 +202,6 @@ export async function continueConversation(history: Message[]) {
             logs,
           };
         }
-      }
-
-      // Avoid redundant prompts if the required data exists
-      if (currentRecordId && extractedFields.Name) {
-        logs.push("[LLM] Skipping redundant prompts. Account name already provided.");
-        // Proceed with next logical step
       }
 
       // Update Airtable dynamically with extracted fields in the background
@@ -273,6 +254,7 @@ const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | 
 
   return null; // All questions completed
 };
+
 
 
 
