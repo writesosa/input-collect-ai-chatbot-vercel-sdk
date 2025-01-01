@@ -170,15 +170,6 @@ export async function continueConversation(history: Message[]) {
           };
         }
 
-        // Ensure Name is always set before calling createAccount.execute
-        const createResponse = await createAccount.execute({
-          Name: fieldsToUpdate.Name || fieldsToUpdate["Client Company Name"], // Use whichever is available
-          ...fieldsToUpdate,
-          Status: "Draft",
-          "Priority Image Type": "AI Generated",
-        });
-
-
         logs.push("[LLM] Creating a new draft record...");
         const createResponse = await createAccount.execute({
           ...fieldsToUpdate,
