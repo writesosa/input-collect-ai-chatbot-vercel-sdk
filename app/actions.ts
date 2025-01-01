@@ -131,6 +131,7 @@ export async function continueConversation(history: Message[]) {
       const { text } = await generateText({
         model: openai("gpt-4o"),
         system: `You are a Wonderland assistant!
+          You only know about Wonderland and can only anwer questions related to Wonderland.
           Reply with nicely formatted markdown. 
           Keep your replies short and concise. 
           If this is the first reply, send a nice welcome message.
@@ -236,8 +237,7 @@ export async function continueConversation(history: Message[]) {
     return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
   }
 }
-
-const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | null => {
+const getNextQuestion = async (fields: Record<string, any>, logs: string[]): Promise<string | null> => {
   const questions = [
     {
       progress: 0,
@@ -252,28 +252,54 @@ const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | 
     {
       progress: 2,
       prompt: "What are the major objectives or talking points you'd like to achieve with Wonderland?",
-      fields: ["Talking Points", "Primary Objective"],
+      fields: ["Talking Points", "Primary Objective", "Industry"],
     },
   ];
 
   for (const question of questions) {
-    // If progress matches and some fields are missing, ask the question
-    if (
-      creationProgress === question.progress &&
-      question.fields.some((field) => !fields[field])
-    ) {
+    if (creationProgress === question.progress) {
       const missingFields = question.fields.filter((field) => !fields[field]);
-      logs.push(
-        `[LLM] Missing fields: ${missingFields.join(", ")}. Prompting with question: "${question.prompt}"`
-      );
-      return question.prompt;
+      logs.push(`[LLM] Missing fields: ${missingFields.join(", ")}.`);
+      
+      if (missingFields.length > 0) {
+        // Process invalid URLs
+        for (const field of question.fields) {
+          if (fields[field]) {
+            const { validUrl, suggestion } = validateURL(fields[field]);
+            if (!validUrl) {
+              logs.push(`[Validation]: Invalid ${field}: "${fields[field]}". Suggestion: "${suggestion}".`);
+              return `The provided ${field} "${fields[field]}" seems invalid. Did you mean: "${suggestion}"?`;
+            }
+            fields[field] = validUrl; // Use valid URL
+          }
+        }
+        return question.prompt;
+      }
     }
   }
-
   return null; // All questions completed
 };
 
 
+
+const validateURL = (url: string): { validUrl: string | null; suggestion: string | null } => {
+  try {
+    const validUrl = new URL(url.startsWith("http") ? url : `https://${url}`);
+    return { validUrl: validUrl.href, suggestion: null };
+  } catch (error) {
+    console.error(`[URL Validation Error]: Invalid URL "${url}". Error: ${error.message}`);
+    // Suggest corrections
+    if (!url.includes(".")) {
+      const suggestion = `https://www.${url}.com`;
+      return { validUrl: null, suggestion };
+    }
+    if (!url.startsWith("http")) {
+      const suggestion = `https://${url}`;
+      return { validUrl: null, suggestion };
+    }
+    return { validUrl: null, suggestion: null };
+  }
+};
 
 
 const processUserInput = async (userInput: string, logs: string[]) => {
