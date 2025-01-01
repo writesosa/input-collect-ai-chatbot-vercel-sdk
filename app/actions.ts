@@ -61,11 +61,12 @@ const extractAndRefineFields = async (
         "Blog": "A blog URL, if mentioned.",
         "Description": "Anything that sounds like a description for the record being created.",
         "About the Client": "Any information supplied about the client or company.",
+        "Industry": "Any mention of industry, domain, or sector.",
         "Talking Points": "Any objectives or talking points, if mentioned.",
         "Primary Objective": "Any main purpose or goal of creating this account."
       }
-      Do not return anything for empty fields that aren't found.
-      Rewrite the extracted fields for clarity and to complete them.
+      Always extract all fields mentioned in the message. Do not return empty fields.
+      Rewrite the extracted fields for clarity and completeness.
       Respond with a JSON object strictly following this schema.`,
     messages: [{ role: "user", content: combinedMessage }],
     maxToolRoundtrips: 1,
@@ -96,9 +97,10 @@ const extractAndRefineFields = async (
     }
   }
 
-  lastExtractedFields = extractedFields; // Save extracted fields
+  lastExtractedFields = { ...lastExtractedFields, ...extractedFields }; // Merge with previously extracted fields
   return extractedFields;
 };
+
 
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
@@ -235,29 +237,41 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
-// Determine the next question in account creation flow
 const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | null => {
-  if (
-    (!fields.Website || !fields.Instagram || !fields.Facebook || !fields.Blog) &&
-    creationProgress === 0
-  ) {
-    logs.push("[LLM] Missing fields: Website, Instagram, Facebook, or Blog. Prompting user for any available links.");
-    return "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?";
-  }
+  const questions = [
+    {
+      progress: 0,
+      prompt: "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?",
+      fields: ["Website", "Instagram", "Facebook", "Blog"],
+    },
+    {
+      progress: 1,
+      prompt: "Can you tell me more about the company, including its industry, purpose, or mission?",
+      fields: ["Description", "About the Client", "Industry"],
+    },
+    {
+      progress: 2,
+      prompt: "What are the major objectives or talking points you'd like to achieve with Wonderland?",
+      fields: ["Talking Points", "Primary Objective"],
+    },
+  ];
 
-  if (!fields.Description && creationProgress === 1) {
-    logs.push("[LLM] Missing field: Description. Prompting user for company details.");
-    return "Can you tell me more about the company, including its industry, purpose, or mission?";
-  }
-
-  if (!fields["Talking Points"] && creationProgress === 2) {
-    logs.push("[LLM] Missing field: Talking Points. Prompting user for major objectives.");
-    return "What are the major objectives or talking points you'd like to achieve with Wonderland?";
+  for (const question of questions) {
+    // If progress matches and some fields are missing, ask the question
+    if (
+      creationProgress === question.progress &&
+      question.fields.some((field) => !fields[field])
+    ) {
+      const missingFields = question.fields.filter((field) => !fields[field]);
+      logs.push(
+        `[LLM] Missing fields: ${missingFields.join(", ")}. Prompting with question: "${question.prompt}"`
+      );
+      return question.prompt;
+    }
   }
 
   return null; // All questions completed
 };
-
 
 
 
