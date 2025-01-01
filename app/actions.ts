@@ -1,3 +1,5 @@
+// Existing script with updates applied
+
 "use server";
 
 import { InvalidToolArgumentsError, generateText, tool } from "ai";
@@ -37,8 +39,7 @@ const cleanFields = (fields: Record<string, any>) =>
 
 const extractAndRefineFields = async (
   message: string,
-  logs: string[],
-  previousMessage?: string
+  logs: string[]
 ): Promise<Record<string, string>> => {
   logs.push("[LLM] Extracting account fields from user message...");
 
@@ -59,12 +60,10 @@ const extractAndRefineFields = async (
         "Talking Points": "Any objectives or talking points, if mentioned.",
         "Primary Objective": "Any main purpose or goal of creating this account."
       }
-      Combine the following input for extraction: "${previousMessage || ""}" and "${message}".
+      Do not return anything for empty fields that aren't found.
+      Rewrite the extracted fields for clarity and to complete them.
       Respond with a JSON object strictly following this schema.`,
-    messages: [
-      { role: "user", content: previousMessage || "" },
-      { role: "user", content: message }
-    ],
+    messages: [{ role: "user", content: message }],
     maxToolRoundtrips: 1,
   });
 
@@ -73,9 +72,24 @@ const extractAndRefineFields = async (
   try {
     logs.push(`[LLM] Full AI Response: ${extractionResponse.text}`);
     extractedFields = JSON.parse(extractionResponse.text.trim());
-    logs.push(`[LLM] Extracted fields: ${JSON.stringify(extractedFields)}`);
+    logs.push(`[LLM] Extracted fields successfully parsed: ${JSON.stringify(extractedFields)}`);
   } catch (error) {
-    logs.push("[LLM] Failed to parse extracted fields. Defaulting to empty.");
+    logs.push("[LLM] Initial parsing failed. Attempting retry...");
+
+    // Retry parsing logic
+    const jsonStart = extractionResponse.text.indexOf("{");
+    const jsonEnd = extractionResponse.text.lastIndexOf("}") + 1;
+    if (jsonStart !== -1 && jsonEnd !== -1) {
+      try {
+        const retryJson = extractionResponse.text.substring(jsonStart, jsonEnd);
+        extractedFields = JSON.parse(retryJson);
+        logs.push(`[LLM] Retry successful. Parsed fields: ${JSON.stringify(extractedFields)}`);
+      } catch (retryError) {
+        logs.push("[LLM] Retry failed. Defaulting to empty.");
+      }
+    } else {
+      logs.push("[LLM] No JSON structure found in response. Defaulting to empty.");
+    }
   }
 
   return extractedFields;
@@ -139,8 +153,7 @@ export async function continueConversation(history: Message[]) {
       logs.push("[LLM] Account creation detected. Processing...");
 
       const userMessage = history[history.length - 1]?.content.trim() || "";
-      const previousMessage = history[history.length - 2]?.content.trim() || "";
-      let extractedFields = await extractAndRefineFields(userMessage, logs, previousMessage);
+      let extractedFields = await extractAndRefineFields(userMessage, logs);
 
       // If Name or equivalent is missing, prompt the user for it
       if (!currentRecordId && !extractedFields.Name && !extractedFields["Client Company Name"]) {
@@ -160,7 +173,7 @@ export async function continueConversation(history: Message[]) {
       // Retry extraction if Name is still missing
       if (!currentRecordId && !extractedFields.Name) {
         logs.push("[LLM] Retrying extraction for Name...");
-        extractedFields = await extractAndRefineFields(userMessage, logs, previousMessage);
+        extractedFields = await extractAndRefineFields(userMessage, logs);
 
         if (!extractedFields.Name && !extractedFields["Client Company Name"]) {
           logs.push("[LLM] Name still missing after retry.");
@@ -232,7 +245,6 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
-
 // Determine the next question in account creation flow
 const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | null => {
   if (
@@ -255,7 +267,6 @@ const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | 
 
   return null; // All questions completed
 };
-
 
 
 
