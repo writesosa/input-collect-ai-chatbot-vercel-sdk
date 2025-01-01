@@ -190,10 +190,10 @@ export async function continueConversation(history: Message[]) {
           };
         }
       }
-
       // Create draft if Name is available
       if (!currentRecordId && (extractedFields.Name || extractedFields["Client Company Name"])) {
         logs.push("[LLM] Creating a new draft record...");
+        currentRecordId = extractedFields.Name; // Remember the account name
         const createResponse = await createAccount.execute({
           Name: extractedFields.Name || extractedFields["Client Company Name"],
           Status: "Draft",
@@ -215,6 +215,12 @@ export async function continueConversation(history: Message[]) {
             logs,
           };
         }
+      }
+
+      // Avoid redundant prompts if the required data exists
+      if (currentRecordId && extractedFields.Name) {
+        logs.push("[LLM] Skipping redundant prompts. Account name already provided.");
+        // Proceed with next logical step
       }
 
       // Update Airtable dynamically with extracted fields in the background
