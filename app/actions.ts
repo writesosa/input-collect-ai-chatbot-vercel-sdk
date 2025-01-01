@@ -35,19 +35,33 @@ const toTitleCase = (str: string): string =>
 const cleanFields = (fields: Record<string, any>) =>
   Object.fromEntries(Object.entries(fields).filter(([_, value]) => value !== undefined));
 
-// Helper: Extract Name from the User's Message using AI
-const extractName = async (message: string, logs: string[]): Promise<string | null> => {
-  logs.push("[LLM] Attempting to extract account name from user message...");
+// Helper: Extract Name and Additional Fields from User's Message
+const extractNameAndFields = async (message: string, logs: string[]): Promise<Record<string, string>> => {
+  logs.push("[LLM] Attempting to extract account details from user message...");
   const extractionResponse = await generateText({
     model: openai("gpt-4o"),
-    system: `Extract the name provided for account creation from the user's message. If no clear name is detected, respond with "null".`,
+    system: `You are a Wonderland assistant extracting account details.
+      Extract the following fields from the message if available:
+      - Name
+      - Client Company Name
+      - Website
+      - Instagram
+      - Facebook
+      - Blog
+
+      Respond with a JSON object containing these fields. If a field is not present, omit it.`,
     messages: [{ role: "user", content: message }],
     maxToolRoundtrips: 1,
   });
 
-  const extractedName = extractionResponse.text.trim();
-  logs.push(`[LLM] Extracted name: ${extractedName}`);
-  return extractedName === "null" || !extractedName ? null : extractedName;
+  try {
+    const extractedFields = JSON.parse(extractionResponse.text.trim());
+    logs.push(`[LLM] Extracted fields: ${JSON.stringify(extractedFields)}`);
+    return extractedFields;
+  } catch (error) {
+    logs.push("[LLM] Failed to parse extracted fields. Defaulting to empty.");
+    return {};
+  }
 };
 
 export async function continueConversation(history: Message[]) {
@@ -104,50 +118,134 @@ export async function continueConversation(history: Message[]) {
     }
 
     // Handle account creation logic
-    if (userIntent === "account_creation") {
-      logs.push("[LLM] Account creation detected. Processing...");
+    // Continuously refine and update fields during account creation
+if (userIntent === "account_creation") {
+  logs.push("[LLM] Account creation detected. Processing...");
 
-      const userMessage = history[history.length - 1]?.content.trim() || "";
-      if (!currentRecordId && creationProgress === null) {
-        const extractedName = await extractName(userMessage, logs);
+  const userMessage = history[history.length - 1]?.content.trim() || "";
 
-        if (!extractedName) {
-          logs.push("[LLM] Name extraction failed. Prompting user for clarification.");
-          return {
-            messages: [
-              ...history,
-              { role: "assistant", content: "Could you please confirm the name for the new account?" },
-            ],
-            logs,
-          };
-        }
+  // Extract and refine fields from user input
+  const extractedFields = await extractAndRefineFields(userMessage, logs);
 
-        fieldsToUpdate.Name = extractedName;
-        logs.push(`[LLM] Using extracted name: ${extractedName}`);
+  // Update Airtable with extracted fields
+  for (const [key, value] of Object.entries(extractedFields)) {
+    fieldsToUpdate[key] = value;
+  }
 
-        // Proceed to create a draft account
-        logs.push("[LLM] Creating a new draft record...");
-        const createResponse = await createAccount.execute({
-          Name: extractedName,
-          Status: "Draft",
-          "Priority Image Type": "AI Generated", // Required default value
-        });
+  // If no current record, create a draft
+  if (!currentRecordId && creationProgress === null) {
+    if (!fieldsToUpdate.Name && !fieldsToUpdate["Client Company Name"]) {
+      logs.push("[LLM] Missing Name. Prompting user...");
+      return {
+        messages: [
+          ...history,
+          { role: "assistant", content: "Could you please confirm the name for the new account?" },
+        ],
+        logs,
+      };
+    }
 
-        if (createResponse.recordId) {
-          currentRecordId = createResponse.recordId;
-          logs.push(`[LLM] Draft record created with ID: ${currentRecordId}`);
-          creationProgress = 0; // Start the creation flow
-        } else {
-          logs.push("[LLM] Failed to create a draft record. Exiting process.");
-          return {
-            messages: [
-              ...history,
-              { role: "assistant", content: "An error occurred while starting account creation." },
-            ],
-            logs,
-          };
-        }
-      }
+    logs.push("[LLM] Creating a new draft record...");
+    const createResponse = await createAccount.execute({
+      ...fieldsToUpdate,
+      Status: "Draft",
+      "Priority Image Type": "AI Generated",
+    });
+
+    if (createResponse.recordId) {
+      currentRecordId = createResponse.recordId;
+      logs.push(`[LLM] Draft record created with ID: ${currentRecordId}`);
+      creationProgress = 0; // Start creation flow
+    } else {
+      logs.push("[LLM] Failed to create draft. Exiting.");
+      return {
+        messages: [
+          ...history,
+          { role: "assistant", content: "An error occurred while starting account creation." },
+        ],
+        logs,
+      };
+    }
+  }
+
+  // Handle subsequent updates
+  if (currentRecordId) {
+    try {
+      await modifyAccount.execute({
+        recordId: currentRecordId,
+        fields: cleanFields(fieldsToUpdate),
+      });
+      logs.push("[LLM] Updated account with new fields.");
+    } catch (error) {
+      logs.push(`[LLM] Error updating fields: ${error instanceof Error ? error.message : error}`);
+    }
+  }
+
+  // Determine the next question if necessary
+  questionToAsk = getNextQuestion(fieldsToUpdate, logs);
+
+  if (questionToAsk) {
+    logs.push(`[LLM] Asking next question: ${questionToAsk}`);
+    return {
+      messages: [...history, { role: "assistant", content: questionToAsk }],
+      logs,
+    };
+  }
+}
+
+// Helper: Extract All Relevant Fields and Ensure Text Refinement
+const extractAndRefineFields = async (
+  message: string,
+  logs: string[]
+): Promise<Record<string, string>> => {
+  logs.push("[LLM] Extracting account fields from user message...");
+
+  const extractionResponse = await generateText({
+    model: openai("gpt-4o"),
+    system: `You are a Wonderland assistant extracting account details.
+      Extract the following fields from the message if available:
+      - Name
+      - Client Company Name
+      - Website
+      - Instagram
+      - Facebook
+      - Blog
+      - Description
+      - About the Client
+      - Talking Points
+      - Primary Objective
+
+      Respond with a JSON object containing these fields. If a field is not present, omit it.`,
+    messages: [{ role: "user", content: message }],
+    maxToolRoundtrips: 1,
+  });
+
+  let extractedFields: Record<string, string> = {};
+
+  try {
+    extractedFields = JSON.parse(extractionResponse.text.trim());
+    logs.push(`[LLM] Extracted fields: ${JSON.stringify(extractedFields)}`);
+  } catch (error) {
+    logs.push("[LLM] Failed to parse extracted fields. Defaulting to empty.");
+  }
+
+  // Refine long-text fields
+  for (const field of ["Description", "About the Client", "Talking Points", "Primary Objective"]) {
+    if (extractedFields[field] && extractedFields[field].length < 700) {
+      logs.push(`[LLM] Refining ${field} to meet character requirements...`);
+      const refinedText = await generateText({
+        model: openai("gpt-4o"),
+        system: `Rewrite the provided text to be detailed, professional, and at least 700 characters.`,
+        messages: [{ role: "user", content: extractedFields[field] }],
+        maxTokens: 1000,
+      });
+      extractedFields[field] = refinedText.text.trim();
+      logs.push(`[LLM] Refined ${field}: ${extractedFields[field]}`);
+    }
+  }
+
+  return extractedFields;
+};
 
 
       // Ensure the record is created before proceeding
