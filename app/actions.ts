@@ -346,15 +346,16 @@ const extractAndRefineFields = async (
         }
       }
     }
-  } catch (error) {
-  if (error instanceof Error) {
-    logs.push(`[LLM] Error during conversation: ${error.message}`);
-  } else {
-    logs.push("[LLM] Unknown error occurred during conversation.");
+   } catch (error) {
+    if (error instanceof Error) {
+      logs.push(`[LLM] Error during conversation: ${error.message}`);
+    } else {
+      logs.push("[LLM] Unknown error occurred during conversation.");
+    }
+    console.error("[LLM] Error during conversation:", error);
+    return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs }; // Add semicolon
   }
-  console.error("[LLM] Error during conversation:", error);
-  return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs }; // Add semicolon
-}
+
 
 
 // Ensure proper closing of helper functions and utilities
