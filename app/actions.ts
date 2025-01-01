@@ -43,21 +43,22 @@ const extractAndRefineFields = async (
   const extractionResponse = await generateText({
     model: openai("gpt-4o"),
     system: `You are a Wonderland assistant extracting account details.
-      Extract the following fields from the user's message:
+      Extract the following fields from the user's message if available:
 
       {
-        "Name": "The name of the account. If not provided, leave it null.",
-        "Client Company Name": "The full name of the client company, if available.",
+        "Name": "Anything that sounds like an account name, company name, name for a record or something the user designates as a name.",
+        "Client Company Name": "The name of the company, account or record.",
         "Website": "A website URL, if mentioned.",
         "Instagram": "An Instagram handle or link, if mentioned.",
         "Facebook": "A Facebook handle or link, if mentioned.",
         "Blog": "A blog URL, if mentioned.",
-        "Description": "A brief description or purpose of the account.",
-        "About the Client": "Additional information about the client or company.",
-        "Talking Points": "Key objectives or talking points, if mentioned.",
-        "Primary Objective": "The main purpose or goal of creating this account."
+        "Description": "Anything that sounds like a description for the record being created.",
+        "About the Client": "Any information supplied about the client or company.",
+        "Talking Points": "Any objectives or talking points, if mentioned.",
+        "Primary Objective": "Any main purpose or goal of creating this account."
       }
-
+      Do not return anything for empty fields that aren't found.
+      Rewrite the extracted fields for clarity and to complete them.
       Respond with a JSON object strictly following this schema.`,
     messages: [{ role: "user", content: message }],
     maxToolRoundtrips: 1,
