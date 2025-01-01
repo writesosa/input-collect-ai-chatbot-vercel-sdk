@@ -147,11 +147,9 @@ export async function continueConversation(history: Message[]) {
       logs.push("[LLM] Account creation detected. Processing...");
 
       const userMessage = history[history.length - 1]?.content.trim() || "";
-
-      // Extract and refine fields from user input
       const extractedFields = await extractAndRefineFields(userMessage, logs);
 
-      // Update Airtable with extracted fields
+      // Update fields from extraction
       for (const [key, value] of Object.entries(extractedFields)) {
         fieldsToUpdate[key] = value;
       }
@@ -192,7 +190,7 @@ export async function continueConversation(history: Message[]) {
         }
       }
 
-      // Handle subsequent updates
+      // Update Airtable dynamically during conversation
       if (currentRecordId) {
         try {
           await modifyAccount.execute({
@@ -227,7 +225,7 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
-// Ensure proper closing of helper functions and utilities
+// Determine the next question in account creation flow
 const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | null => {
   if (
     (!fields.Website || !fields.Instagram || !fields.Facebook || !fields.Blog) &&
@@ -249,6 +247,7 @@ const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | 
 
   return null; // All questions completed
 };
+
 
 
 
