@@ -35,12 +35,12 @@ const toTitleCase = (str: string): string =>
 const cleanFields = (fields: Record<string, any>) =>
   Object.fromEntries(Object.entries(fields).filter(([_, value]) => value !== undefined));
 
-// Enhance name detection using AI
+// Helper: Extract Name from the User's Message using AI
 const extractName = async (message: string, logs: string[]): Promise<string | null> => {
   logs.push("[LLM] Attempting to extract account name from user message...");
   const extractionResponse = await generateText({
     model: openai("gpt-4o"),
-    system: `Extract and return the name provided for account creation from the user message. If no clear name is detected, respond with "null".`,
+    system: `Extract the name provided for account creation from the user's message. If no clear name is detected, respond with "null".`,
     messages: [{ role: "user", content: message }],
     maxToolRoundtrips: 1,
   });
@@ -82,7 +82,19 @@ export async function continueConversation(history: Message[]) {
           Reply with nicely formatted markdown. 
           Keep your replies short and concise. 
           If this is the first reply, send a nice welcome message.
-          If the selected Account is different, mention the account or company name once.`,
+          If the selected Account is different, mention the account or company name once.
+
+          Perform the following actions:
+          - Create a new account in Wonderland when the user requests it.
+          - Modify an existing account in Wonderland when the user requests it.
+          - Delete an existing account in Wonderland when the user requests it.
+          - Switch to a different account by looking up records based on a specific field and value.
+          - Answer questions you know about Wonderland.
+          - When the request is unknown, prompt the user for more information to establish intent.
+
+          When creating, modifying, or switching accounts:
+          - Confirm the action with the user before finalizing.
+          - Provide clear feedback on the current record being worked on, including its Record ID.`,
         messages: history,
         maxToolRoundtrips: 5,
       });
@@ -96,7 +108,6 @@ export async function continueConversation(history: Message[]) {
       logs.push("[LLM] Account creation detected. Processing...");
 
       const userMessage = history[history.length - 1]?.content.trim() || "";
-
       if (!currentRecordId && creationProgress === null) {
         const extractedName = await extractName(userMessage, logs);
 
@@ -247,8 +258,6 @@ export async function continueConversation(history: Message[]) {
     return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
   }
 }
-
-
 // Ensure proper closing of helper functions and utilities
 
 const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | null => {
