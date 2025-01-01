@@ -20,15 +20,6 @@ let currentRecordId: string | null = null;
 let creationProgress: number | null = null; // Track user progress in account creation
 let lastExtractedFields: Record<string, any> | null = null; // Remember the last extracted fields
 
-// Helper: Validate URLs
-const validateURL = (url: string): string | null => {
-  try {
-    const validUrl = new URL(url.startsWith("http") ? url : `https://${url}`);
-    return validUrl.href;
-  } catch {
-    return null;
-  }
-};
 
 // Helper: Convert string to Title Case
 const toTitleCase = (str: string): string =>
@@ -302,63 +293,6 @@ const validateURL = (url: string): { validUrl: string | null; suggestion: string
 };
 
 
-const processUserInput = async (userInput: string, logs: string[]) => {
-  const fieldsToUpdate: Record<string, string> = {}; // Properly define fieldsToUpdate locally
-  let isUpdated = false;
-
-  // Process Website, Instagram, Facebook, and Blog
-  if (creationProgress === 0) {
-    const inputs = userInput.split(",").map((item) => item.trim()); // Split input by commas
-
-    for (const input of inputs) {
-      if (input.includes("http")) {
-        const url = validateURL(input);
-        if (url) {
-          if (!fieldsToUpdate.Website && url.includes("www")) {
-            fieldsToUpdate.Website = url;
-            logs.push(`[LLM] Valid Website detected: ${url}`);
-          } else if (!fieldsToUpdate.Instagram && url.includes("instagram.com")) {
-            fieldsToUpdate.Instagram = url;
-            logs.push(`[LLM] Valid Instagram detected: ${url}`);
-          } else if (!fieldsToUpdate.Facebook && url.includes("facebook.com")) {
-            fieldsToUpdate.Facebook = url;
-            logs.push(`[LLM] Valid Facebook detected: ${url}`);
-          } else if (!fieldsToUpdate.Blog) {
-            fieldsToUpdate.Blog = url;
-            logs.push(`[LLM] Valid Blog detected: ${url}`);
-          }
-        }
-      }
-    }
-
-    // Update Airtable with collected links
-    await modifyAccount.execute({
-      recordId: currentRecordId!,
-      fields: fieldsToUpdate, // Use the locally defined fieldsToUpdate
-    });
-
-    isUpdated = true;
-    logs.push("[LLM] Website, Instagram, Facebook, and Blog updated successfully.");
-  }
-
-  // Process Description
-  if (creationProgress === 1) {
-    fieldsToUpdate.Description = userInput;
-    logs.push(`[LLM] Description captured: ${userInput}. Updating Airtable.`);
-    await modifyAccount.execute({ recordId: currentRecordId!, fields: { Description: userInput } });
-    isUpdated = true;
-  }
-
-  // Process Talking Points
-  if (creationProgress === 2) {
-    fieldsToUpdate["Talking Points"] = userInput;
-    logs.push(`[LLM] Talking Points captured: ${userInput}. Updating Airtable.`);
-    await modifyAccount.execute({ recordId: currentRecordId!, fields: { "Talking Points": userInput } });
-    isUpdated = true;
-  }
-
-  return isUpdated;
-};
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
