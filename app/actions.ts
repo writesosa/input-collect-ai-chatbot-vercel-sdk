@@ -346,7 +346,7 @@ const extractAndRefineFields = async (
         }
       }
     }
-  } } catch (error) {
+  } catch (error) {
   if (error instanceof Error) {
     logs.push(`[LLM] Error during conversation: ${error.message}`);
   } else {
@@ -356,7 +356,7 @@ const extractAndRefineFields = async (
   return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs }; // Add semicolon
 }
 
-  
+
 // Ensure proper closing of helper functions and utilities
 
 const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | null => {
