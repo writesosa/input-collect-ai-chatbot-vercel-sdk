@@ -328,7 +328,6 @@ const extractAndRefineFields = async (
           logs,
         };
       }
-
       if (currentRecordId && creationProgress === null) {
         logs.push(`[LLM] All details captured. Updating record ID: ${currentRecordId} to New status.`);
         try {
@@ -345,16 +344,19 @@ const extractAndRefineFields = async (
           }
         }
       }
-    }
-   } catch (error) {
+    } // End of main `if` block
+
+  } catch (error) {
+    // General error handling for the entire try block
     if (error instanceof Error) {
       logs.push(`[LLM] Error during conversation: ${error.message}`);
     } else {
       logs.push("[LLM] Unknown error occurred during conversation.");
     }
     console.error("[LLM] Error during conversation:", error);
-    return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs }; // Add semicolon
-  }
+    return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs }; // Ensure semicolon is present
+  } // End of catch block and function
+
 
 
 
