@@ -157,15 +157,27 @@ export async function continueConversation(history: Message[]) {
       // If no current record, create a draft
       if (!currentRecordId && creationProgress === null) {
         if (!fieldsToUpdate.Name && !fieldsToUpdate["Client Company Name"]) {
-          logs.push("[LLM] Missing Name. Prompting user...");
+          logs.push("[LLM] Missing Name or Client Company Name. Prompting user...");
           return {
             messages: [
               ...history,
-              { role: "assistant", content: "Could you please confirm the name for the new account?" },
+              {
+                role: "assistant",
+                content: "Please provide the name or company name to proceed with account creation.",
+              },
             ],
             logs,
           };
         }
+
+        // Ensure Name is always set before calling createAccount.execute
+        const createResponse = await createAccount.execute({
+          Name: fieldsToUpdate.Name || fieldsToUpdate["Client Company Name"], // Use whichever is available
+          ...fieldsToUpdate,
+          Status: "Draft",
+          "Priority Image Type": "AI Generated",
+        });
+
 
         logs.push("[LLM] Creating a new draft record...");
         const createResponse = await createAccount.execute({
