@@ -328,26 +328,26 @@ const extractAndRefineFields = async (
           logs,
         };
       }
-      if (currentRecordId && creationProgress === null) {
-        logs.push(`[LLM] All details captured. Updating record ID: ${currentRecordId} to New status.`);
-        try {
-          await modifyAccount.execute({
-            recordId: currentRecordId,
-            fields: { Status: "New" },
-          });
-          logs.push(`[TOOL] Record ID: ${currentRecordId} transitioned to New status.`);
-        } catch (error) {
-          if (error instanceof Error) {
-            logs.push(`[LLM] Error updating status to New: ${error.message}`);
-          } else {
-            logs.push("[LLM] Unknown error occurred while updating status to New.");
-          }
-        }
-      } // End of `if (currentRecordId && creationProgress === null)`
-    } // End of main try block
+      try {
+        if (currentRecordId && creationProgress === null) {
+    logs.push(`[LLM] All details captured. Updating record ID: ${currentRecordId} to New status.`);
+    try {
+      await modifyAccount.execute({
+        recordId: currentRecordId,
+        fields: { Status: "New" },
+      });
+      logs.push(`[TOOL] Record ID: ${currentRecordId} transitioned to New status.`);
+    } catch (error) {
+      if (error instanceof Error) {
+        logs.push(`[LLM] Error updating status to New: ${error.message}`);
+      } else {
+        logs.push("[LLM] Unknown error occurred while updating status to New.");
+      }
+    }
+  } // End of `if (currentRecordId && creationProgress === null)`
 
-catch (error) {
-  // General error handling for the entire try block
+} catch (error) {
+  // General error handling for the entire outer try block
   if (error instanceof Error) {
     logs.push(`[LLM] Error during conversation: ${error.message}`);
   } else {
@@ -359,7 +359,6 @@ catch (error) {
     logs, // Ensure semicolon is present
   };
 } // End of catch block
-
 
 
 // Ensure proper closing of helper functions and utilities
