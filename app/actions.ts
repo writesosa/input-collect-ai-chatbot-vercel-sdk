@@ -329,7 +329,8 @@ const extractAndRefineFields = async (
         };
       }
       try {
-        if (currentRecordId && creationProgress === null) {
+        try {
+  if (currentRecordId && creationProgress === null) {
     logs.push(`[LLM] All details captured. Updating record ID: ${currentRecordId} to New status.`);
     try {
       await modifyAccount.execute({
@@ -344,10 +345,8 @@ const extractAndRefineFields = async (
         logs.push("[LLM] Unknown error occurred while updating status to New.");
       }
     }
-  } // End of `if (currentRecordId && creationProgress === null)`
-
+  }
 } catch (error) {
-  // General error handling for the entire outer try block
   if (error instanceof Error) {
     logs.push(`[LLM] Error during conversation: ${error.message}`);
   } else {
@@ -356,9 +355,9 @@ const extractAndRefineFields = async (
   console.error("[LLM] Error during conversation:", error);
   return {
     messages: [...history, { role: "assistant", content: "An error occurred." }],
-    logs, // Ensure semicolon is present
+    logs,
   };
-} // End of catch block
+} // End of outer try-catch block
 
 
 // Ensure proper closing of helper functions and utilities
