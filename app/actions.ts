@@ -14,64 +14,125 @@ export interface Message {
 }
 
 let currentRecordId: string | null = null;
+let creationProgress: number | null = null; // Track user progress in account creation
 
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
+  let questionToAsk: string | null = null;
 
   try {
     logs.push("[LLM] Starting continueConversation...");
-    console.log("[LLM] Starting continueConversation...");
 
-    // Detect fields from user messages
-    for (const msg of history) {
-      if (msg.role === "user") {
-        if (!fieldsToUpdate.Name && msg.content.toLowerCase().includes("called")) {
-          fieldsToUpdate.Name = toTitleCase(msg.content.match(/called\s(.+)/i)?.[1] || "");
+    // Intent classification (NEW)
+    const intentResponse = await generateText({
+      model: openai("gpt-4o"),
+      system: `You are a Wonderland assistant.
+        Classify the user's latest message into one of the following intents:
+        - "account_creation": If the user is asking to create, update, or manage an account.
+        - "general_query": If the user is asking a general question about Wonderland or unrelated topics.
+        Respond only with the classification.`,
+      messages: history,
+      maxToolRoundtrips: 1,
+    });
+
+    const userIntent = intentResponse.text.trim();
+    logs.push(`[LLM] Detected intent: ${userIntent}`);
+
+    // Handle general queries
+    if (userIntent === "general_query") {
+      logs.push("[LLM] General query detected. Passing to standard processing.");
+      const { text, toolResults } = await generateText({
+        model: openai("gpt-4o"),
+        system: `You are a Wonderland assistant!
+          Reply with nicely formatted markdown. 
+          Keep your replies short and concise. 
+          If this is the first reply, send a nice welcome message.
+          If the selected Account is different, mention the account or company name once.
+
+          Perform the following actions:
+          - Create a new account in Wonderland when the user requests it.
+          - Modify an existing account in Wonderland when the user requests it.
+          - Delete an existing account in Wonderland when the user requests it.
+          - Switch to a different account by looking up records based on a specific field and value.
+          - Answer questions you know about Wonderland.
+          - When the request is unknown prompt the user for more information to establish intent.
+
+          When creating, modifying, or switching accounts:
+          - Confirm the action with the user before finalizing.
+          - Provide clear feedback on the current record being worked on, including its Record ID.`,
+        messages: history,
+        maxToolRoundtrips: 5,
+        tools: {
+          createAccount,
+          modifyAccount,
+          deleteAccount,
+          switchRecord,
+        },
+      });
+
+      logs.push("[LLM] General query processed successfully.");
+      return { messages: [...history, { role: "assistant", content: text }], logs };
+    }
+
+    // Handle account creation logic
+    if (userIntent === "account_creation") {
+      logs.push("[LLM] Account creation detected. Processing...");
+
+      for (const msg of history) {
+        if (msg.role === "user") {
+          if (!fieldsToUpdate.Name && msg.content.toLowerCase().includes("called")) {
+            fieldsToUpdate.Name = toTitleCase(msg.content.match(/called\s(.+)/i)?.[1] || "");
+          }
+          if (!fieldsToUpdate.Description && msg.content.toLowerCase().includes("about")) {
+            fieldsToUpdate.Description = msg.content.match(/about\s(.+)/i)?.[1];
+          }
+          if (!fieldsToUpdate.Website && msg.content.toLowerCase().includes("http")) {
+            fieldsToUpdate.Website = msg.content.match(/(http[^\s]+)/i)?.[1] || "";
+          }
         }
-        if (!fieldsToUpdate.Description && msg.content.toLowerCase().includes("about")) {
-          fieldsToUpdate.Description = msg.content.match(/about\s(.+)/i)?.[1];
+      }
+
+      if (fieldsToUpdate.Name && !currentRecordId) {
+        logs.push(`[LLM] Detected account name: ${fieldsToUpdate.Name}`);
+        const createResponse = await createAccount.execute({
+          Name: fieldsToUpdate.Name,
+          "Priority Image Type": "AI Generated",
+        });
+
+        currentRecordId = createResponse.recordId || null;
+        if (!currentRecordId) {
+          throw new Error("Failed to retrieve Record ID after creating an account.");
         }
+        logs.push(`[TOOL] Draft created with Record ID: ${currentRecordId}`);
+      }
+
+      // Determine the next question (if needed)
+      questionToAsk = getNextQuestion(fieldsToUpdate, logs);
+
+      if (questionToAsk) {
+        logs.push(`[LLM] Asking next question: ${questionToAsk}`);
+        return {
+          messages: [
+            ...history,
+            { role: "assistant", content: questionToAsk },
+          ],
+          logs,
+        };
+      }
+
+      // Finalize the account
+      if (currentRecordId) {
+        logs.push(`[LLM] All details captured. Updating record ID: ${currentRecordId} to New status.`);
+        await modifyAccount.execute({
+          recordId: currentRecordId,
+          fields: { Status: "New" },
+        });
+        logs.push(`[TOOL] Record ID: ${currentRecordId} transitioned to New status.`);
       }
     }
 
-    // Ensure draft record is created when Name is detected
-    if (fieldsToUpdate.Name && !currentRecordId) {
-      logs.push(`[LLM] Detected account name: ${fieldsToUpdate.Name}`);
-      console.log(`[LLM] Detected account name: ${fieldsToUpdate.Name}`);
-
-      const createResponse = await createAccount.execute({
-        Name: fieldsToUpdate.Name,
-        "Priority Image Type": "AI Generated", // Default value
-      });
-
-      currentRecordId = createResponse.recordId || null;
-
-      logs.push(`[TOOL] Draft created with Record ID: ${currentRecordId}`);
-    }
-
-    // Update additional fields incrementally
-    if (currentRecordId && Object.keys(fieldsToUpdate).length > 1) {
-      const updateFields = { ...fieldsToUpdate };
-      delete updateFields.Name; // Only delete 'Name' for subsequent updates
-
-      if (updateFields.Description) {
-        logs.push(`[TOOL] Updating record description to: ${updateFields.Description}`);
-      }
-
-      logs.push(`[TOOL] Updating record with ID: ${currentRecordId}`);
-      console.log("[TOOL] Updating record with fields:", updateFields);
-
-      const modifyResponse = await modifyAccount.execute({
-        recordId: currentRecordId,
-        fields: updateFields,
-      });
-
-      logs.push(`[TOOL] Fields updated successfully for Record ID: ${currentRecordId}`);
-      console.log("[TOOL] Fields updated successfully:", modifyResponse);
-    }
-
-    // Process LLM message
+    // Process LLM response for account-related actions
     const { text, toolResults } = await generateText({
       model: openai("gpt-4o"),
       system: `You are a Wonderland assistant!
@@ -101,55 +162,29 @@ export async function continueConversation(history: Message[]) {
       },
     });
 
-
-    logs.push("[LLM] Conversation processed successfully.");
-    console.log("[LLM] Conversation processed successfully.");
-
-    // Collect tool logs
-    toolResults.forEach((toolResult) => {
-      if (toolResult.result && toolResult.result.logs) {
-        toolResult.result.logs.forEach((log: string) => {
-          logs.push(log);
-          console.log("[TOOL LOG]", log);
-        });
-      }
-    });
-
-    return {
-      messages: [
-        ...history,
-        {
-          role: "assistant",
-          content: text || toolResults.map((toolResult) => toolResult.result.message).join("\n"),
-        },
-      ],
-      logs,
-    };
+    logs.push("[LLM] Account-related query processed successfully.");
+    return { messages: [...history, { role: "assistant", content: text }], logs };
   } catch (error) {
-    logs.push("[LLM] Error during conversation:", error instanceof Error ? error.message : JSON.stringify(error));
+    logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
     console.error("[LLM] Error during conversation:", error);
-
-    return {
-      messages: [
-        ...history,
-        {
-          role: "assistant",
-          content: `An error occurred: ${
-            error instanceof Error ? error.message : "Unknown error"
-          }`,
-        },
-      ],
-      logs,
-    };
+    return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
   }
 }
 
 
+// Helper: Validate URLs
+const validateURL = (url: string): string | null => {
+  try {
+    const validUrl = new URL(url.startsWith("http") ? url : `https://${url}`);
+    return validUrl.href;
+  } catch {
+    return null;
+  }
+};
+
 // Helper: Convert string to Title Case
 const toTitleCase = (str: string): string =>
   str.replace(/\w\S*/g, (word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
-
-
 
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
