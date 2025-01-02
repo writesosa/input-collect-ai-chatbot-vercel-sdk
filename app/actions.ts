@@ -224,16 +224,18 @@ if (!currentRecordId && extractedFields.Name) {
       ...cleanFields(extractedFields),
     });
 
-    // Retry logic to ensure record ID is set
+    // Ensure record ID is set or retry
     if (createResponse?.recordId) {
-      currentRecordId = createResponse.recordId;
+      currentRecordId = createResponse.recordId || null;
       logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
     } else {
       let retries = 3;
       while (!currentRecordId && retries > 0) {
         logs.push(`[LLM] Waiting for record ID... Attempts left: ${retries}`);
         await new Promise((resolve) => setTimeout(resolve, 500)); // Wait 500ms before retrying
-        currentRecordId = createResponse.recordId; // Re-check the response
+
+        // Poll for updates or retry logic to refresh createResponse
+        currentRecordId = createResponse.recordId || null; // Use the original response or refresh
         retries--;
       }
 
@@ -252,7 +254,7 @@ if (!currentRecordId && extractedFields.Name) {
     }
 
     // Initialize recordFields for the newly created record
-    if (!recordFields[currentRecordId]) {
+    if (currentRecordId && !recordFields[currentRecordId]) {
       recordFields[currentRecordId] = { ...extractedFields };
       logs.push(`[LLM] Initialized recordFields for new record ID: ${currentRecordId}`);
     }
