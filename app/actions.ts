@@ -254,10 +254,11 @@ if (!currentRecordId && extractedFields.Name) {
     }
 
     // Initialize recordFields for the newly created record
-    if (currentRecordId && !recordFields[currentRecordId]) {
-      recordFields[currentRecordId] = { ...extractedFields };
-      logs.push(`[LLM] Initialized recordFields for new record ID: ${currentRecordId}`);
-    }
+if (currentRecordId && !recordFields[currentRecordId]) {
+  recordFields[currentRecordId] = { ...extractedFields };
+  logs.push(`[LLM] Initialized recordFields for record ID: ${currentRecordId}`);
+}
+
   } catch (error) {
     logs.push(`[LLM] Error during account creation: ${error instanceof Error ? error.message : "Unknown error."}`);
     return {
@@ -275,13 +276,11 @@ if (currentRecordId && typeof currentRecordId === "string") {
   questionToAsk = getNextQuestion(currentRecordId, logs);
 
   if (!questionToAsk) {
-    if (currentRecordId) {
-      logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
-      try {
-        await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
-      } catch (syncError) {
-        logs.push(`[LLM] Failed to sync fields: ${syncError instanceof Error ? syncError.message : syncError}`);
-      }
+    logs.push(`[LLM] Syncing record fields for record ID: ${currentRecordId}`);
+    try {
+      await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
+    } catch (error) {
+      logs.push(`[LLM] Error during field sync: ${error instanceof Error ? error.message : "Unknown error."}`);
     }
 
     logs.push("[LLM] No more questions to ask. All fields have been captured.");
@@ -290,6 +289,16 @@ if (currentRecordId && typeof currentRecordId === "string") {
       logs,
     };
   }
+
+  logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
+  return {
+    messages: [...history, { role: "assistant", content: questionToAsk }],
+    logs,
+  };
+} else {
+  logs.push("[LLM] No valid record ID available to continue question flow.");
+}
+
 
   if (currentRecordId) {
     logs.push(`[LLM] Syncing record fields before progressing to the next question for record ID: ${currentRecordId}`);
@@ -376,9 +385,6 @@ const updateRecordFields = async (recordId: string, newFields: Record<string, an
     logs.push(`[LLM] Failed to update Airtable for record ID ${recordId}: ${error instanceof Error ? error.message : error}`);
   }
 };
-
-
-// Helper: Determine the next question based on missing fields
 const getNextQuestion = (recordId: string, logs: string[]): string | null => {
   const questions = [
     {
@@ -400,20 +406,16 @@ const getNextQuestion = (recordId: string, logs: string[]): string | null => {
 
   for (const question of questions) {
     if (creationProgress === question.progress) {
-      // Check if any fields in the current question category are already filled
-      const filledFields = question.fields.some((field) => recordFields[recordId]?.[field]);
+      // Check if at least one field in the current question is already filled
+      const anyFieldFilled = question.fields.some((field) => recordFields[recordId]?.[field]);
 
-      if (filledFields) {
-        logs.push(
-          `[LLM] Skipping question for progress ${question.progress} as some fields are already filled: ${question.fields.join(", ")}`
-        );
-        creationProgress++; // Advance to the next question
-        continue; // Check the next question
+      if (!anyFieldFilled) {
+        logs.push(`[LLM] Asking question for progress ${question.progress}: "${question.prompt}"`);
+        return question.prompt; // Ask the question if none of the fields are filled
       }
 
-      logs.push(`[LLM] Asking question for progress ${question.progress}: "${question.prompt}"`);
+      logs.push(`[LLM] Skipping question for progress ${question.progress} as at least one field is filled.`);
       creationProgress++; // Advance to the next question
-      return question.prompt;
     }
   }
 
