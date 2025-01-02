@@ -215,7 +215,7 @@ export async function continueConversation(history: Message[]) {
 
       // Proceed to the next question
       logs.push("[LLM] Attempting to proceed to the next question...");
-      const missingQuestion = getNextQuestion(extractedFields, currentRecordId, logs);
+      const missingQuestion = getNextQuestion(currentRecordId, logs);
       if (missingQuestion) {
         logs.push(`[LLM] Asking next question: "${missingQuestion}"`);
         return {
@@ -236,9 +236,7 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
-
-// Track fields for the current record
-// Adjusting `recordFields` initialization and updates
+// Helper: Update record fields and prevent redundant updates
 const recordFields: Record<string, Record<string, any>> = {};
 
 const updateRecordFields = (recordId: string, newFields: Record<string, any>, logs: string[]) => {
@@ -250,22 +248,14 @@ const updateRecordFields = (recordId: string, newFields: Record<string, any>, lo
     if (value && !recordFields[recordId][key]) {
       recordFields[recordId][key] = value;
       logs.push(`[LLM] Field updated: ${key} = ${value}`);
-    } else if (recordFields[recordId][key] && value) {
+    } else if (recordFields[recordId][key]) {
       logs.push(`[LLM] Field already filled: ${key}. Skipping update.`);
     }
   });
 };
 
-
-// Adjust `getNextQuestion` to dynamically check for missing fields
-const getNextQuestion = (fields: Record<string, any>, recordId: string, logs: string[]): string | null => {
-  if (!recordFields[recordId]) {
-    recordFields[recordId] = {};
-  }
-
-  // Merge the latest fields into `recordFields`
-  updateRecordFields(recordId, fields, logs);
-
+// Helper: Determine the next question based on missing fields
+const getNextQuestion = (recordId: string, logs: string[]): string | null => {
   const questions = [
     {
       progress: 0,
@@ -295,15 +285,14 @@ const getNextQuestion = (fields: Record<string, any>, recordId: string, logs: st
       }
 
       logs.push(`[LLM] Missing fields for progress ${question.progress}: ${missingFields.join(", ")}`);
-      logs.push(`[LLM] Asking question: "${question.prompt}"`);
       return question.prompt;
     }
   }
 
   logs.push("[LLM] No more questions to ask. All fields complete.");
-  return null; // All questions completed
+  return null;
 };
- 
+
 
 
 const createAccount = tool({
