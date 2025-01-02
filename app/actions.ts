@@ -91,6 +91,7 @@ const extractAndRefineFields = async (
   lastExtractedFields = { ...lastExtractedFields, ...extractedFields }; // Merge with previously extracted fields
   return extractedFields;
 };
+
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
@@ -206,8 +207,10 @@ export async function continueConversation(history: Message[]) {
         };
       }
 
+      // Update recordFields and track progress
       updateRecordFields(currentRecordId, extractedFields, logs);
 
+      // Generate the next question dynamically
       questionToAsk = getNextQuestion(currentRecordId, logs);
       if (!questionToAsk) {
         logs.push("[LLM] No more questions to ask. All fields have been captured.");
@@ -285,6 +288,7 @@ const getNextQuestion = (recordId: string, logs: string[]): string | null => {
   logs.push("[LLM] No more questions to ask. All fields complete.");
   return null;
 };
+
 
 
 
