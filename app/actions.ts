@@ -177,11 +177,11 @@ if (userIntent === "account_creation") {
     };
   }
 
+  // Create draft account if necessary
   if (!currentRecordId && extractedFields.Name) {
     logs.push("[LLM] Creating draft account, waiting for record ID...");
 
     try {
-      // Include all fields extracted so far
       const createResponse = await createAccount.execute({
         Name: extractedFields.Name,
         Status: "Draft",
@@ -191,34 +191,17 @@ if (userIntent === "account_creation") {
 
       if (createResponse?.recordId) {
         currentRecordId = createResponse.recordId || null;
+        recordFields[currentRecordId] = { ...extractedFields }; // Initialize record fields
         logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
       } else {
-        let retries = 3;
-        while (!currentRecordId && retries > 0) {
-          logs.push(`[LLM] Waiting for record ID... Attempts left: ${retries}`);
-          await new Promise((resolve) => setTimeout(resolve, 500)); // Wait 500ms before retrying
-          currentRecordId = createResponse.recordId || null;
-          retries--;
-        }
-
-        if (!currentRecordId) {
-          logs.push("[LLM] Failed to retrieve a valid record ID after retries. Exiting.");
-          return {
-            messages: [
-              ...history,
-              { role: "assistant", content: "An error occurred while creating the account. Please try again." },
-            ],
-            logs,
-          };
-        }
-
-        logs.push(`[LLM] Record ID confirmed after retries: ${currentRecordId}`);
-      }
-
-      // Initialize recordFields for the newly created record
-      if (currentRecordId && !recordFields[currentRecordId]) {
-        recordFields[currentRecordId] = { ...extractedFields };
-        logs.push(`[LLM] Initialized recordFields for record ID: ${currentRecordId}`);
+        logs.push("[LLM] Failed to create draft account.");
+        return {
+          messages: [
+            ...history,
+            { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+          ],
+          logs,
+        };
       }
     } catch (error) {
       logs.push(`[LLM] Error during account creation: ${error instanceof Error ? error.message : "Unknown error."}`);
@@ -233,7 +216,7 @@ if (userIntent === "account_creation") {
   }
 
   // Ensure questions are asked in sequence
-  if (currentRecordId && typeof currentRecordId === "string") {
+  if (currentRecordId) {
     questionToAsk = getNextQuestion(currentRecordId, logs);
 
     if (!questionToAsk) {
