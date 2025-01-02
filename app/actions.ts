@@ -157,25 +157,23 @@ export async function continueConversation(history: Message[]) {
         logs.push("[LLM] Using previously extracted Name field.");
         extractedFields.Name = lastExtractedFields.Name;
       }
+if (currentRecordId) {
+  // Merge extracted fields into recordFields
+  updateRecordFields(currentRecordId, extractedFields, logs); // Re-added explicit call
 
-      if (currentRecordId) {
-        // Merge extracted fields into recordFields
-        recordFields[currentRecordId] = {
-          ...recordFields[currentRecordId],
-          ...extractedFields,
-        };
+  logs.push(
+    `[LLM] Updated fields for record ID ${currentRecordId}: ${JSON.stringify(recordFields[currentRecordId])}`
+  );
 
-        logs.push(
-          `[LLM] Updated fields for record ID ${currentRecordId}: ${JSON.stringify(
-            recordFields[currentRecordId]
-          )}`
-        );
+  // Prevent overwriting fields with blank values
+  Object.keys(extractedFields).forEach((key) => {
+    if (!extractedFields[key]) delete recordFields[currentRecordId][key];
+  });
+}
 
-        // Prevent overwriting fields with blank values
-        Object.keys(extractedFields).forEach((key) => {
-          if (!extractedFields[key]) delete recordFields[currentRecordId][key];
-        });
-      }
+// Skip redundant questions
+questionToAsk = getNextQuestion(currentRecordId, logs);
+
 
       // If Name or equivalent is missing, prompt the user for it
       if (!currentRecordId && !extractedFields.Name) {
