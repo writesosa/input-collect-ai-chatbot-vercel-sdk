@@ -179,6 +179,7 @@ export async function continueConversation(history: Message[]) {
           logs,
         };
       }
+
 if (!currentRecordId && extractedFields.Name) {
   logs.push("[LLM] Creating draft account, waiting for record ID...");
 
@@ -289,14 +290,6 @@ if (!questionAsked) {
   }
 }
 
-  } catch (error) {
-    logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
-    return {
-      messages: [...history, { role: "assistant", content: "An error occurred while processing your request." }],
-      logs,
-    };
-  }
-}
 
 
 
