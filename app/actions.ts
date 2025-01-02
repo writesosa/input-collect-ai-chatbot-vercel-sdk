@@ -194,6 +194,8 @@ export async function continueConversation(history: Message[]) {
             if (currentRecordId) { // Check that currentRecordId is not null
               recordFields[currentRecordId] = { ...extractedFields };
               logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
+              logs.push(`[LLM] Current recordFields for record ID ${currentRecordId}: ${JSON.stringify(recordFields[currentRecordId], null, 2)}`);
+
             } else {
               logs.push("[LLM] Failed to retrieve a valid record ID after account creation.");
               return {
