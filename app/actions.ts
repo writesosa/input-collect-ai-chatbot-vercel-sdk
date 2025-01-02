@@ -290,6 +290,14 @@ if (!questionAsked) {
   }
 }
 
+  } catch (error) {
+    logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
+    return {
+      messages: [...history, { role: "assistant", content: "An error occurred while processing your request." }],
+      logs,
+    };
+  };
+}
 
 
 
