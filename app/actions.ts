@@ -148,7 +148,6 @@ export async function continueConversation(history: Message[]) {
       logs.push("[LLM] General query processed successfully.");
       return { messages: [...history, { role: "assistant", content: text }], logs };
     }
-
 // Handle account creation logic
 if (userIntent === "account_creation") {
   logs.push("[LLM] Account creation detected. Processing...");
@@ -159,17 +158,14 @@ if (userIntent === "account_creation") {
   // Update immediately upon receiving user input
   if (currentRecordId && extractedFields) {
     logs.push(`[LLM] Immediately updating Airtable for record ID: ${currentRecordId} with extracted fields.`);
-    
-    // Exclude `questionsAsked` from fields being updated in Airtable
-    const fieldsToUpdate = Object.fromEntries(
-      Object.entries(extractedFields).filter(([key]) => key !== "questionsAsked")
-    );
-
     try {
+      const fieldsToUpdate = Object.fromEntries(
+        Object.entries(extractedFields).filter(([key]) => key !== "questionsAsked")
+      );
       await updateRecordFields(currentRecordId, fieldsToUpdate, logs);
       logs.push(`[LLM] Field updated for record ID ${currentRecordId}: ${JSON.stringify(fieldsToUpdate)}`);
     } catch (error) {
-      logs.push(`[LLM] Failed to update Airtable for record ID ${currentRecordId}: ${error.message}`);
+      logs.push(`[LLM] Failed to update Airtable for record ID ${currentRecordId}: ${error instanceof Error ? error.message : "Unknown error."}`);
     }
   }
 
@@ -187,49 +183,49 @@ if (userIntent === "account_creation") {
       logs,
     };
   }
+
+  if (!currentRecordId && extractedFields.Name) {
+    logs.push("[LLM] Creating draft account, waiting for record ID...");
+
+    try {
+      const createResponse = await createAccount.execute({
+        Name: extractedFields.Name,
+        Status: "Draft",
+        ...cleanFields(extractedFields),
+      });
+
+      if (createResponse?.recordId) {
+        currentRecordId = createResponse.recordId; // Ensure currentRecordId is a string
+        recordFields[currentRecordId] = { ...extractedFields };
+        logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
+
+        // Initialize or retrieve the list of questions already asked for this record
+        const questionsAsked = recordFields[currentRecordId]?.questionsAsked || [];
+        recordFields[currentRecordId].questionsAsked = questionsAsked;
+        logs.push(`[LLM] Initialized questionsAsked for record ID ${currentRecordId}.`);
+      } else {
+        logs.push("[LLM] Failed to create draft account.");
+        return {
+          messages: [
+            ...history,
+            { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+          ],
+          logs,
+        };
+      }
+    } catch (error) {
+      logs.push(`[LLM] Error during account creation: ${error instanceof Error ? error.message : "Unknown error."}`);
+      return {
+        messages: [
+          ...history,
+          { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+        ],
+        logs,
+      };
+    }
+  }
 }
 
-
-      if (!currentRecordId && extractedFields.Name) {
-        logs.push("[LLM] Creating draft account, waiting for record ID...");
-
-        try {
-          const createResponse = await createAccount.execute({
-            Name: extractedFields.Name,
-            Status: "Draft",
-            ...cleanFields(extractedFields),
-          });
-
-          if (createResponse?.recordId) {
-            currentRecordId = createResponse.recordId; // Ensure currentRecordId is a string
-            recordFields[currentRecordId] = { ...extractedFields };
-            logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
-
-            // Initialize or retrieve the list of questions already asked for this record
-            const questionsAsked = recordFields[currentRecordId]?.questionsAsked || [];
-            recordFields[currentRecordId].questionsAsked = questionsAsked;
-            logs.push(`[LLM] Initialized questionsAsked for record ID ${currentRecordId}.`);
-          } else {
-            logs.push("[LLM] Failed to create draft account.");
-            return {
-              messages: [
-                ...history,
-                { role: "assistant", content: "An error occurred while creating the account. Please try again." },
-              ],
-              logs,
-            };
-          }
-        } catch (error) {
-          logs.push(`[LLM] Error during account creation: ${error instanceof Error ? error.message : "Unknown error."}`);
-          return {
-            messages: [
-              ...history,
-              { role: "assistant", content: "An error occurred while creating the account. Please try again." },
-            ],
-            logs,
-          };
-        }
-      }
 
       // Ensure questions are asked in sequence
       if (currentRecordId) {
