@@ -319,24 +319,33 @@ if (currentRecordId && typeof currentRecordId === "string") {
 }
 
   
-
-// Skip redundant questions
 if (currentRecordId && typeof currentRecordId === "string") {
-  // Safe usage of currentRecordId since it is explicitly checked to be a string
   questionToAsk = getNextQuestion(currentRecordId, logs);
 
-if (!questionToAsk) {
-  if (currentRecordId) {
+  if (!questionToAsk) {
     logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
-    await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
+    try {
+      await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
+    } catch (syncError) {
+      logs.push(`[LLM] Failed to sync fields: ${syncError instanceof Error ? syncError.message : syncError}`);
+    }
+
+    logs.push("[LLM] No more questions to ask. All fields have been captured.");
+    return {
+      messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+      logs,
+    };
   }
 
-  logs.push("[LLM] No more questions to ask. All fields have been captured.");
+  logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
   return {
-    messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+    messages: [...history, { role: "assistant", content: questionToAsk }],
     logs,
   };
+} else {
+  logs.push("[LLM] No valid record ID available to continue question flow.");
 }
+
 
 if (currentRecordId) {
   logs.push(`[LLM] Syncing record fields before progressing to the next question for record ID: ${currentRecordId}`);
