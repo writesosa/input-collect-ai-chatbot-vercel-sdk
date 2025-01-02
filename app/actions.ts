@@ -149,33 +149,46 @@ export async function continueConversation(history: Message[]) {
       return { messages: [...history, { role: "assistant", content: text }], logs };
     }
 
-    // Handle account creation logic
-    if (userIntent === "account_creation") {
-      logs.push("[LLM] Account creation detected. Processing...");
+// Handle account creation logic
+if (userIntent === "account_creation") {
+  logs.push("[LLM] Account creation detected. Processing...");
 
-      const userMessage = history[history.length - 1]?.content.trim() || "";
-      const extractedFields = await extractAndRefineFields(userMessage, logs);
+  const userMessage = history[history.length - 1]?.content.trim() || "";
+  const extractedFields = await extractAndRefineFields(userMessage, logs);
 
-      // Update immediately upon receiving user input
-      if (currentRecordId && extractedFields) {
-        logs.push(`[LLM] Immediately updating Airtable for record ID: ${currentRecordId} with extracted fields.`);
-        await updateRecordFields(currentRecordId, extractedFields, logs);
-      }
+  // Update immediately upon receiving user input
+  if (currentRecordId && extractedFields) {
+    logs.push(`[LLM] Immediately updating Airtable for record ID: ${currentRecordId} with extracted fields.`);
 
-      // If Name or equivalent is missing, prompt the user for it
-      if (!currentRecordId && !extractedFields.Name) {
-        logs.push("[LLM] Missing Name field. Prompting user...");
-        return {
-          messages: [
-            ...history,
-            {
-              role: "assistant",
-              content: "A name or company name is required to create an account. Please provide it.",
-            },
-          ],
-          logs,
-        };
-      }
+    // Exclude `questionsAsked` from fields being updated in Airtable
+    const fieldsToUpdate = Object.fromEntries(
+      Object.entries(extractedFields).filter(([key]) => key !== "questionsAsked")
+    );
+
+    try {
+      await updateRecordFields(currentRecordId, fieldsToUpdate, logs);
+      logs.push(`[LLM] Field updated for record ID ${currentRecordId}: ${JSON.stringify(fieldsToUpdate)}`);
+    } catch (error) {
+      logs.push(`[LLM] Failed to update Airtable for record ID ${currentRecordId}: ${error.message}`);
+    }
+  }
+
+  // If Name or equivalent is missing, prompt the user for it
+  if (!currentRecordId && !extractedFields.Name) {
+    logs.push("[LLM] Missing Name field. Prompting user...");
+    return {
+      messages: [
+        ...history,
+        {
+          role: "assistant",
+          content: "A name or company name is required to create an account. Please provide it.",
+        },
+      ],
+      logs,
+    };
+  }
+}
+
 
       if (!currentRecordId && extractedFields.Name) {
         logs.push("[LLM] Creating draft account, waiting for record ID...");
