@@ -233,34 +233,42 @@ if (!currentRecordId && extractedFields.Name) {
     };
   }
 }
+if (currentRecordId) {
+  logs.push(`[LLM] Updating Airtable record ID: ${currentRecordId} with extracted fields.`);
 
-      // Ensure questions are asked in sequence
-      if (currentRecordId) {
-        logs.push("[LLM] Preparing to invoke getNextQuestion...");
-        questionToAsk = getNextQuestion(currentRecordId, logs);
-        questionAsked = !!questionToAsk;
+  try {
+    // Merge existing fields with new ones, ignoring null/empty values
+    const updatedFields = {
+      ...recordFields[currentRecordId], // Retain existing fields
+      ...Object.fromEntries(
+        Object.entries(extractedFields).filter(
+          ([key, value]) => value !== null && value !== "" // Add only non-empty values
+        )
+      ),
+    };
 
-        if (!questionToAsk) {
-          logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
-          try {
-            await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
-          } catch (syncError) {
-            logs.push(`[LLM] Failed to sync fields: ${syncError instanceof Error ? syncError.message : syncError}`);
-          }
+    // Avoid overwriting blank values by merging with existing data
+    await updateRecordFields(currentRecordId, updatedFields, logs);
+    logs.push(`[LLM] Fields updated for record ID: ${currentRecordId}`);
+    recordFields[currentRecordId] = updatedFields; // Save updated fields locally for tracking
+  } catch (error) {
+    logs.push(`[LLM] Failed to update Airtable record ID ${currentRecordId}: ${
+      error instanceof Error ? error.message : "Unknown error"
+    }`);
+    return {
+      messages: [
+        ...history,
+        {
+          role: "assistant",
+          content: "An error occurred while syncing the account fields. Please try again later.",
+        },
+      ],
+      logs,
+    };
+  }
+}
 
-          logs.push("[LLM] No more questions to ask. All fields have been captured.");
-          return {
-            messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
-            logs,
-          };
-        }
 
-        logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
-        return {
-          messages: [...history, { role: "assistant", content: questionToAsk }],
-          logs,
-        };
-      }
 
       if (!questionAsked && currentRecordId) {
         logs.push("[LLM] Re-checking for unanswered questions...");
