@@ -215,7 +215,6 @@ export async function continueConversation(history: Message[]) {
             ...extractedFields,
           }),
         });
-
 if (createResponse.recordId) {
   currentRecordId = createResponse.recordId;
   logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
@@ -250,7 +249,11 @@ if (createResponse.recordId) {
     await updateRecordFields(currentRecordId, combinedFields, logs);
     logs.push(`[LLM] Fields synced successfully for record ID ${currentRecordId}`);
   } catch (error) {
-    logs.push(`[LLM] Failed to sync fields for record ID ${currentRecordId}: ${error.message}`);
+    if (error instanceof Error) {
+      logs.push(`[LLM] Failed to sync fields for record ID ${currentRecordId}: ${error.message}`);
+    } else {
+      logs.push(`[LLM] Failed to sync fields for record ID ${currentRecordId}: Unknown error occurred.`);
+    }
   }
 
   creationProgress = 0; // Start creation flow
@@ -264,6 +267,7 @@ if (createResponse.recordId) {
     logs,
   };
 }
+
 
       }
 
