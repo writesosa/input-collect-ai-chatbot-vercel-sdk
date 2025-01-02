@@ -91,7 +91,6 @@ const extractAndRefineFields = async (
   lastExtractedFields = { ...lastExtractedFields, ...extractedFields }; // Merge with previously extracted fields
   return extractedFields;
 };
-
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
@@ -210,10 +209,17 @@ export async function continueConversation(history: Message[]) {
       updateRecordFields(currentRecordId, extractedFields, logs);
 
       questionToAsk = getNextQuestion(currentRecordId, logs);
-      logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
+      if (!questionToAsk) {
+        logs.push("[LLM] No more questions to ask. All fields have been captured.");
+        return {
+          messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+          logs,
+        };
+      }
 
+      logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
       return {
-        messages: [...history, { role: "assistant", content: questionToAsk || "All fields have been captured." }],
+        messages: [...history, { role: "assistant", content: questionToAsk }],
         logs,
       };
     }
