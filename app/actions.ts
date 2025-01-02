@@ -199,30 +199,29 @@ export async function continueConversation(history: Message[]) {
         }
       }
 
-      // Update Airtable dynamically with extracted fields in the background
-      if (currentRecordId) {
-        try {
-          await modifyAccount.execute({
-            recordId: currentRecordId,
-            fields: cleanFields(extractedFields),
-          });
-          logs.push("[LLM] Updated account fields in Airtable.");
-        } catch (error) {
-          logs.push(`[LLM] Error updating Airtable: ${error instanceof Error ? error.message : error}`);
-        }
-      }
+      // Ensure currentRecordId is not null
+if (!currentRecordId) {
+  logs.push("[LLM] Error: currentRecordId is null. Cannot proceed to the next question.");
+  return {
+    messages: [
+      ...history,
+      { role: "assistant", content: "An error occurred: no record ID is available to continue." },
+    ],
+    logs,
+  };
+}
 
-      // Proceed to the next question
-      // Proceed to the next question
+// Proceed to the next question
+logs.push("[LLM] Attempting to proceed to the next question...");
+const missingQuestion = getNextQuestion(extractedFields, currentRecordId, logs);
+if (missingQuestion) {
+  logs.push(`[LLM] Asking next question: "${missingQuestion}"`);
+  return {
+    messages: [...history, { role: "assistant", content: missingQuestion }],
+    logs,
+  };
+}
 
-      const missingQuestion = getNextQuestion(extractedFields, currentRecordId, logs);
-      if (missingQuestion) {
-        logs.push(`[LLM] Asking next question: "${missingQuestion}"`);
-        return {
-          messages: [...history, { role: "assistant", content: missingQuestion }],
-          logs,
-        };
-      }
 
 
       logs.push("[LLM] No more questions to ask. Account creation process complete.");
