@@ -201,7 +201,8 @@ export async function continueConversation(history: Message[]) {
           ],
           logs,
         };
-      }if (!currentRecordId && extractedFields.Name) {
+      }
+if (!currentRecordId && extractedFields.Name) {
   logs.push("[LLM] Creating a new draft record...");
 
   // Include all fields extracted so far
@@ -235,6 +236,10 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
+
+
+
+
 // Skip redundant questions
 if (currentRecordId) {
   questionToAsk = getNextQuestion(currentRecordId, logs);
@@ -245,6 +250,7 @@ if (currentRecordId) {
       logs,
     };
   }
+
 
   logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
   return {
@@ -258,7 +264,6 @@ if (currentRecordId) {
     logs,
   };
 }
-
 
 // Helper: Update record fields and prevent redundant updates
 const recordFields: Record<string, Record<string, any>> = {};
