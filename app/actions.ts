@@ -159,6 +159,7 @@ export async function continueConversation(history: Message[]) {
       }
 
       if (currentRecordId && typeof currentRecordId === "string") {
+        recordFields[currentRecordId] = recordFields[currentRecordId] || {};
 
         // Merge extracted fields into recordFields
         recordFields[currentRecordId] = {
