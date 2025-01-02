@@ -188,7 +188,6 @@ export async function continueConversation(history: Message[]) {
           const createResponse = await createAccount.execute({
             Name: extractedFields.Name,
             Status: "Draft",
-            "Priority Image Type": "AI Generated",
             ...cleanFields(extractedFields),
           });
 
