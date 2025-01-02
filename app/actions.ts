@@ -240,21 +240,46 @@ if (currentRecordId) {
 }
 
 
+if (!currentRecordId && extractedFields.Name) {
+  logs.push("[LLM] Creating new record because currentRecordId is null or invalid.");
+  try {
+    const createResponse = await createAccount.execute({
+      Name: extractedFields.Name,
+      Status: "Draft",
+      ...cleanFields(extractedFields), // Ensure valid field names
+    });
+
+    if (createResponse?.recordId) {
+      currentRecordId = createResponse.recordId;
+      recordFields[currentRecordId] = { ...extractedFields, questionsAsked: [] };
+      logs.push(`[LLM] New account created successfully with ID: ${currentRecordId}`);
+    } else {
+      throw new Error("Failed to retrieve a valid record ID after account creation.");
+    }
+  } catch (error) {
+    logs.push(`[LLM] Account creation error: ${error instanceof Error ? error.message : "Unknown error"}`);
+    return {
+      messages: [
+        ...history,
+        {
+          role: "assistant",
+          content: "An error occurred while creating the account. Please try again or contact support.",
+        },
+      ],
+      logs,
+    };
+  }
+}
+
 if (currentRecordId) {
   if (!recordFields[currentRecordId]) {
-    recordFields[currentRecordId] = {};
+    recordFields[currentRecordId] = { questionsAsked: [] };
   }
 
-  // Initialize or update questionsAsked in memory
-  if (!recordFields[currentRecordId].questionsAsked) {
-    recordFields[currentRecordId].questionsAsked = [];
-  }
-
-  // Sync record fields to Airtable in the background
   const syncToAirtable = async () => {
     try {
       const fieldsToUpdate = { ...recordFields[currentRecordId] };
-      delete fieldsToUpdate.questionsAsked; // Exclude questionsAsked from being synced
+      delete fieldsToUpdate.questionsAsked; // Avoid syncing in-memory-only fields
       await updateRecordFields(currentRecordId, fieldsToUpdate, logs);
       logs.push(`[LLM] Successfully synced record fields to Airtable for record ID: ${currentRecordId}`);
     } catch (error) {
@@ -266,47 +291,84 @@ if (currentRecordId) {
     }
   };
 
-  // Start syncing in the background
-  syncToAirtable();
+  syncToAirtable(); // Run sync in the background
 
-  // Prepare to ask the next question
+  // Ensure questions are asked in sequence
   logs.push("[LLM] Preparing to invoke getNextQuestion...");
+  questionToAsk = getNextQuestion(currentRecordId, logs);
+  questionAsked = !!questionToAsk;
+
+  if (!questionToAsk) {
+    logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
+    try {
+      await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
+    } catch (syncError) {
+      logs.push(`[LLM] Failed to sync fields: ${syncError instanceof Error ? syncError.message : syncError}`);
+    }
+
+    logs.push("[LLM] No more questions to ask. All fields have been captured.");
+    return {
+      messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+      logs,
+    };
+  }
+
+  logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
+  return {
+    messages: [...history, { role: "assistant", content: questionToAsk }],
+    logs,
+  };
+}
+
+if (!questionAsked && currentRecordId) {
+  logs.push("[LLM] Re-checking for unanswered questions...");
+
   const allQuestions = [
     "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?",
     "Can you tell me more about the company, including its industry, purpose, or mission?",
     "What are the major objectives or talking points you'd like to achieve with Wonderland?",
   ];
 
-  // Filter unasked questions
-  const unaskedQuestions = allQuestions.filter(
-    (q) => !recordFields[currentRecordId].questionsAsked.includes(q)
-  );
+  let unaskedQuestions: string[] = [];
+  if (currentRecordId !== null && recordFields[currentRecordId]) {
+    const record = recordFields[currentRecordId]; // Narrow the type
+    unaskedQuestions = allQuestions.filter(
+      (q) => !record.questionsAsked?.includes(q)
+    );
+  } else {
+    logs.push("[LLM] currentRecordId is null or recordFields[currentRecordId] is undefined.");
+  }
 
   if (unaskedQuestions.length > 0) {
-    const nextQuestion = unaskedQuestions[0];
-    recordFields[currentRecordId].questionsAsked.push(nextQuestion); // Track asked question in memory
-    logs.push(`[LLM] Asking next question: "${nextQuestion}"`);
+    const nextUnaskedQuestion = unaskedQuestions[0];
+    logs.push(`[LLM] Re-asking missing question: "${nextUnaskedQuestion}"`);
+    recordFields[currentRecordId].questionsAsked = [
+      ...(recordFields[currentRecordId]?.questionsAsked || []),
+      nextUnaskedQuestion,
+    ];
     return {
-      messages: [...history, { role: "assistant", content: nextQuestion }],
+      messages: [...history, { role: "assistant", content: nextUnaskedQuestion }],
       logs,
     };
   }
 
-  logs.push("[LLM] No more questions to ask. All fields have been captured.");
-  return {
-    messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
-    logs,
-  };
+  logs.push("[LLM] Fallback confirmed all questions were asked.");
 }
 
-  } catch (error) {
-    logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
-    return {
-      messages: [...history, { role: "assistant", content: "An error occurred while processing your request." }],
-      logs,
-    };
-  }
+logs.push("[LLM] No more questions to ask. Account creation complete.");
+return {
+  messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+  logs,
+};
+
+} catch (error) {
+logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
+return {
+  messages: [...history, { role: "assistant", content: "An error occurred while processing your request." }],
+  logs,
+};
 }
+
 
 
 
