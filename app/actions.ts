@@ -91,6 +91,7 @@ const extractAndRefineFields = async (
   lastExtractedFields = { ...lastExtractedFields, ...extractedFields }; // Merge with previously extracted fields
   return extractedFields;
 };
+
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
@@ -157,7 +158,12 @@ export async function continueConversation(history: Message[]) {
         extractedFields.Name = lastExtractedFields.Name;
       }
 
-      if (currentRecordId && typeof currentRecordId === "string" && recordFields[currentRecordId]) {
+      if (currentRecordId && typeof currentRecordId === "string") {
+        // Ensure recordFields has a valid object for the currentRecordId
+        if (!recordFields[currentRecordId]) {
+          recordFields[currentRecordId] = {};
+        }
+
         // Merge extracted fields into recordFields
         recordFields[currentRecordId] = {
           ...recordFields[currentRecordId],
@@ -171,15 +177,14 @@ export async function continueConversation(history: Message[]) {
         );
 
         // Prevent overwriting fields with blank values
-        Object.keys(extractedFields).forEach((key) => {
-          if (!extractedFields[key]) {
-            delete recordFields[currentRecordId][key]; // Safe now
+        Object.entries(extractedFields).forEach(([key, value]) => {
+          if (!value) {
+            delete recordFields[currentRecordId][key];
           }
         });
       } else {
-        logs.push("[LLM] Skipping field updates: currentRecordId is null, invalid, or recordFields entry not found.");
+        logs.push("[LLM] Skipping field updates: currentRecordId is null or invalid.");
       }
-
 
       // If Name or equivalent is missing, prompt the user for it
       if (!currentRecordId && !extractedFields.Name) {
@@ -312,6 +317,7 @@ const getNextQuestion = (recordId: string, logs: string[]): string | null => {
   logs.push("[LLM] All predefined questions have been asked or skipped. No further questions.");
   return null; // All questions asked
 };
+
 
 
 
