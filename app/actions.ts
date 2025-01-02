@@ -238,9 +238,7 @@ if (!currentRecordId && extractedFields.Name) {
 
 
 
-
-
-      // Skip redundant questions
+// Skip redundant questions
 if (currentRecordId && typeof currentRecordId === "string") {
   // Safe usage of currentRecordId since it is explicitly checked to be a string
   questionToAsk = getNextQuestion(currentRecordId, logs);
@@ -261,11 +259,13 @@ if (currentRecordId && typeof currentRecordId === "string") {
 } else {
   logs.push("[LLM] No valid record ID available to continue question flow.");
 }
- catch (error) {
-    logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
-    return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
-  }
+
+// Ensure proper closure of the `try` block
+} catch (error) {
+  logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
+  return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
 }
+
 
 // Helper: Update record fields and prevent redundant updates
 const recordFields: Record<string, Record<string, any>> = {};
