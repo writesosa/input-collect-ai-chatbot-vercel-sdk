@@ -213,8 +213,10 @@ export async function continueConversation(history: Message[]) {
       }
 
       // Proceed to the next question
-      logs.push("[LLM] Attempting to proceed to the next question...");
-      const missingQuestion = getNextQuestion(extractedFields, logs);
+      // Proceed to the next question
+      const missingQuestion = getNextQuestion(extractedFields, currentRecordId, logs);
+
+      const missingQuestion = getNextQuestion(extractedFields, currentRecordId, logs);
       if (missingQuestion) {
         logs.push(`[LLM] Asking next question: "${missingQuestion}"`);
         return {
@@ -222,6 +224,7 @@ export async function continueConversation(history: Message[]) {
           logs,
         };
       }
+
 
       logs.push("[LLM] No more questions to ask. Account creation process complete.");
       return {
