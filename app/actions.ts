@@ -240,53 +240,65 @@ if (currentRecordId) {
 }
 
 
+if (currentRecordId) {
+  if (!recordFields[currentRecordId]) {
+    recordFields[currentRecordId] = {};
+  }
 
-      // Ensure questions are asked in sequence
-      if (currentRecordId) {
-        logs.push("[LLM] Preparing to invoke getNextQuestion...");
-        questionToAsk = getNextQuestion(currentRecordId, logs);
-        questionAsked = !!questionToAsk;
+  // Initialize or update questionsAsked in memory
+  if (!recordFields[currentRecordId].questionsAsked) {
+    recordFields[currentRecordId].questionsAsked = [];
+  }
 
-        if (!questionToAsk) {
-          logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
-          try {
-            await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
-          } catch (syncError) {
-            logs.push(`[LLM] Failed to sync fields: ${syncError instanceof Error ? syncError.message : syncError}`);
-          }
+  // Sync record fields to Airtable in the background
+  const syncToAirtable = async () => {
+    try {
+      const fieldsToUpdate = { ...recordFields[currentRecordId] };
+      delete fieldsToUpdate.questionsAsked; // Exclude questionsAsked from being synced
+      await updateRecordFields(currentRecordId, fieldsToUpdate, logs);
+      logs.push(`[LLM] Successfully synced record fields to Airtable for record ID: ${currentRecordId}`);
+    } catch (error) {
+      logs.push(
+        `[LLM] Failed to sync record fields for record ID: ${currentRecordId}: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
+  };
 
-          logs.push("[LLM] No more questions to ask. All fields have been captured.");
-          return {
-            messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
-            logs,
-          };
-        }
+  // Start syncing in the background
+  syncToAirtable();
 
-        logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
-        return {
-          messages: [...history, { role: "assistant", content: questionToAsk }],
-          logs,
-        };
-      }
+  // Prepare to ask the next question
+  logs.push("[LLM] Preparing to invoke getNextQuestion...");
+  const allQuestions = [
+    "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?",
+    "Can you tell me more about the company, including its industry, purpose, or mission?",
+    "What are the major objectives or talking points you'd like to achieve with Wonderland?",
+  ];
 
-      if (!questionAsked && currentRecordId) {
-        logs.push("[LLM] Re-checking for unanswered questions...");
-
-        const allQuestions = [
-          "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?",
-          "Can you tell me more about the company, including its industry, purpose, or mission?",
-          "What are the major objectives or talking points you'd like to achieve with Wonderland?",
-        ];
-
-let unaskedQuestions: string[] = [];
-if (currentRecordId !== null && recordFields[currentRecordId]) {
-  const record = recordFields[currentRecordId]; // Narrow the type
-  unaskedQuestions = allQuestions.filter(
-    (q) => !record.questionsAsked?.includes(q)
+  // Filter unasked questions
+  const unaskedQuestions = allQuestions.filter(
+    (q) => !recordFields[currentRecordId].questionsAsked.includes(q)
   );
-} else {
-  logs.push("[LLM] currentRecordId is null or recordFields[currentRecordId] is undefined.");
+
+  if (unaskedQuestions.length > 0) {
+    const nextQuestion = unaskedQuestions[0];
+    recordFields[currentRecordId].questionsAsked.push(nextQuestion); // Track asked question in memory
+    logs.push(`[LLM] Asking next question: "${nextQuestion}"`);
+    return {
+      messages: [...history, { role: "assistant", content: nextQuestion }],
+      logs,
+    };
+  }
+
+  logs.push("[LLM] No more questions to ask. All fields have been captured.");
+  return {
+    messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+    logs,
+  };
 }
+
 
         if (unaskedQuestions.length > 0) {
           const nextUnaskedQuestion = unaskedQuestions[0];
