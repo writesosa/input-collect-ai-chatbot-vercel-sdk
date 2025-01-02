@@ -179,7 +179,7 @@ export async function continueConversation(history: Message[]) {
           logs,
         };
       }
-      
+
       if (!currentRecordId && extractedFields.Name) {
         logs.push("[LLM] Creating draft account, waiting for record ID...");
 
@@ -187,7 +187,6 @@ export async function continueConversation(history: Message[]) {
           const createResponse = await createAccount.execute({
             Name: extractedFields.Name,
             Status: "Draft",
-            "Priority Image Type": "AI Generated",
             ...cleanFields(extractedFields),
           });
 
