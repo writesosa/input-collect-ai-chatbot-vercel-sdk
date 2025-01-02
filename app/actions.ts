@@ -299,28 +299,6 @@ if (currentRecordId) {
   };
 }
 
-
-        if (unaskedQuestions.length > 0) {
-          const nextUnaskedQuestion = unaskedQuestions[0];
-          logs.push(`[LLM] Re-asking missing question: "${nextUnaskedQuestion}"`);
-          recordFields[currentRecordId].questionsAsked = [
-            ...(recordFields[currentRecordId]?.questionsAsked || []),
-            nextUnaskedQuestion,
-          ];
-          return {
-            messages: [...history, { role: "assistant", content: nextUnaskedQuestion }],
-            logs,
-          };
-        }
-        logs.push("[LLM] Fallback confirmed all questions were asked.");
-      }
-
-      logs.push("[LLM] No more questions to ask. Account creation complete.");
-      return {
-        messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
-        logs,
-      };
-    }
   } catch (error) {
     logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
     return {
