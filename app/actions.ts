@@ -157,9 +157,11 @@ export async function continueConversation(history: Message[]) {
         logs.push("[LLM] Using previously extracted Name field.");
         extractedFields.Name = lastExtractedFields.Name;
       }
-
       if (currentRecordId && typeof currentRecordId === "string") {
-        recordFields[currentRecordId] = recordFields[currentRecordId] || {};
+        // Ensure recordFields has a valid object for the currentRecordId
+        if (!recordFields[currentRecordId]) {
+          recordFields[currentRecordId] = {};
+        }
 
         // Merge extracted fields into recordFields
         recordFields[currentRecordId] = {
@@ -175,8 +177,9 @@ export async function continueConversation(history: Message[]) {
 
         // Prevent overwriting fields with blank values
         Object.entries(extractedFields).forEach(([key, value]) => {
-          if (!value) {
-            delete recordFields[currentRecordId]?.[key]; // Safe deletion
+          if (!value && recordFields[currentRecordId]) {
+            // Ensure safe access
+            delete recordFields[currentRecordId]?.[key];
           }
         });
       } else {
