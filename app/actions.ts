@@ -179,62 +179,57 @@ export async function continueConversation(history: Message[]) {
           logs,
         };
       }
+      if (!currentRecordId && extractedFields.Name) {
+        logs.push("[LLM] Creating draft account, waiting for record ID...");
 
-if (!currentRecordId && extractedFields.Name) {
-  logs.push("[LLM] Creating draft account, waiting for record ID...");
+        try {
+          const createResponse = await createAccount.execute({
+            Name: extractedFields.Name,
+            Status: "Draft",
+            ...cleanFields(extractedFields),
+          });
 
-  try {
-    const createResponse = await createAccount.execute({
-      Name: extractedFields.Name,
-      Status: "Draft",
-      ...cleanFields(extractedFields),
-    });
-
-    if (createResponse?.recordId) {
-      currentRecordId = createResponse.recordId; // Ensure currentRecordId is a string
-      if (currentRecordId) { // Check that currentRecordId is not null
-        recordFields[currentRecordId] = { ...extractedFields };
-        logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
-        
-        // Initialize or retrieve the list of questions already asked for this record
-        let questionsAsked = recordFields[currentRecordId]?.questionsAsked || [];
-        recordFields[currentRecordId].questionsAsked = questionsAsked;
-        logs.push(`[LLM] Initialized questionsAsked for record ID ${currentRecordId}.`);
-      } else {
-        logs.push("[LLM] Failed to retrieve a valid record ID after account creation.");
-        return {
-          messages: [
-            ...history,
-            { role: "assistant", content: "An error occurred while creating the account. Please try again." },
-          ],
-          logs,
-        };
+          if (createResponse?.recordId) {
+            currentRecordId = createResponse.recordId; // Ensure currentRecordId is a string
+            if (currentRecordId) { // Check that currentRecordId is not null
+              recordFields[currentRecordId] = { ...extractedFields };
+              logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
+              
+              // Initialize or retrieve the list of questions already asked for this record
+              let questionsAsked = recordFields[currentRecordId]?.questionsAsked || [];
+              recordFields[currentRecordId].questionsAsked = questionsAsked;
+              logs.push(`[LLM] Initialized questionsAsked for record ID ${currentRecordId}.`);
+            } else {
+              logs.push("[LLM] Failed to retrieve a valid record ID after account creation.");
+              return {
+                messages: [
+                  ...history,
+                  { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+                ],
+                logs,
+              };
+            }
+          } else {
+            logs.push("[LLM] Failed to create draft account.");
+            return {
+              messages: [
+                ...history,
+                { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+              ],
+              logs,
+            };
+          }
+        } catch (error) {
+          logs.push(`[LLM] Error during account creation: ${error instanceof Error ? error.message : "Unknown error."}`);
+          return {
+            messages: [
+              ...history,
+              { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+            ],
+            logs,
+          };
+        }
       }
-    } else {
-      logs.push("[LLM] Failed to create draft account.");
-      return {
-        messages: [
-          ...history,
-          { role: "assistant", content: "An error occurred while creating the account. Please try again." },
-        ],
-        logs,
-      };
-    }
-  } catch (error) {
-    logs.push(`[LLM] Error during account creation: ${error instanceof Error ? error.message : "Unknown error."}`);
-    return {
-      messages: [
-        ...history,
-        { role: "assistant", content: "An error occurred while creating the account. Please try again." },
-      ],
-      logs,
-    };
-  }
-}
-
-
-
-
       // Ensure questions are asked in sequence
       if (currentRecordId && typeof currentRecordId === "string") {
         logs.push("[LLM] Preparing to invoke getNextQuestion...");
@@ -264,33 +259,32 @@ if (!currentRecordId && extractedFields.Name) {
       }
 
       if (!questionAsked) {
-  logs.push("[LLM] Re-checking for unanswered questions...");
+        logs.push("[LLM] Re-checking for unanswered questions...");
 
-  const allQuestions = [
-    "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?",
-    "Can you tell me more about the company, including its industry, purpose, or mission?",
-    "What are the major objectives or talking points you'd like to achieve with Wonderland?",
-  ];
+        const allQuestions = [
+          "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?",
+          "Can you tell me more about the company, including its industry, purpose, or mission?",
+          "What are the major objectives or talking points you'd like to achieve with Wonderland?",
+        ];
 
-  const unaskedQuestions = allQuestions.filter(
-    (q) => !recordFields[currentRecordId]?.questionsAsked?.includes(q)
-  );
+    const unaskedQuestions = allQuestions.filter(
+      (q) => !recordFields[currentRecordId]?.questionsAsked?.includes(q)
+    );
 
-  if (unaskedQuestions.length > 0) {
-    const nextUnaskedQuestion = unaskedQuestions[0];
-    logs.push(`[LLM] Re-asking missing question: "${nextUnaskedQuestion}"`);
-    recordFields[currentRecordId].questionsAsked = [
-      ...(recordFields[currentRecordId]?.questionsAsked || []),
-      nextUnaskedQuestion,
-    ]; // Update tracking
-    return {
-      messages: [...history, { role: "assistant", content: nextUnaskedQuestion }],
-      logs,
-    };
-  }
-
-  logs.push("[LLM] Fallback confirmed all questions were asked.");
-} // Add this closing brace here
+    if (unaskedQuestions.length > 0) {
+      const nextUnaskedQuestion = unaskedQuestions[0];
+      logs.push(`[LLM] Re-asking missing question: "${nextUnaskedQuestion}"`);
+      recordFields[currentRecordId].questionsAsked = [
+        ...(recordFields[currentRecordId]?.questionsAsked || []),
+        nextUnaskedQuestion,
+      ]; // Update tracking
+      return {
+        messages: [...history, { role: "assistant", content: nextUnaskedQuestion }],
+        logs,
+      };
+    }
+    logs.push("[LLM] Fallback confirmed all questions were asked.");
+  } // Add this closing brace here
 
 } catch (error) {
   logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
@@ -301,7 +295,7 @@ if (!currentRecordId && extractedFields.Name) {
 } // Close the catch block properly
 
 // Ensure all other blocks and the function are properly closed
-} // Closing brace for the function `continueConversation`
+ // Closing brace for the function `continueConversation`
 
 // Ensure no semicolons are missing in key areas
 
