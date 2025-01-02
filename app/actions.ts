@@ -182,7 +182,6 @@ export async function continueConversation(history: Message[]) {
         logs.push("[LLM] Creating draft account, waiting for record ID...");
 
         try {
-          // Include all fields extracted so far
           const createResponse = await createAccount.execute({
             Name: extractedFields.Name,
             Status: "Draft",
@@ -197,7 +196,7 @@ export async function continueConversation(history: Message[]) {
             let retries = 3;
             while (!currentRecordId && retries > 0) {
               logs.push(`[LLM] Waiting for record ID... Attempts left: ${retries}`);
-              await new Promise((resolve) => setTimeout(resolve, 500)); // Wait 500ms before retrying
+              await new Promise((resolve) => setTimeout(resolve, 500));
               currentRecordId = createResponse.recordId || null;
               retries--;
             }
@@ -216,7 +215,6 @@ export async function continueConversation(history: Message[]) {
             logs.push(`[LLM] Record ID confirmed after retries: ${currentRecordId}`);
           }
 
-          // Initialize recordFields for the newly created record
           if (currentRecordId && !recordFields[currentRecordId]) {
             recordFields[currentRecordId] = { ...extractedFields };
             logs.push(`[LLM] Initialized recordFields for record ID: ${currentRecordId}`);
@@ -224,39 +222,36 @@ export async function continueConversation(history: Message[]) {
         } catch (error) {
           logs.push(`[LLM] Error during account creation: ${error instanceof Error ? error.message : "Unknown error."}`);
           return {
-            messages: [
-              ...history,
-              { role: "assistant", content: "An error occurred while creating the account. Please try again." },
-            ],
+            messages: [...history, { role: "assistant", content: "An error occurred while creating the account. Please try again." }],
             logs,
           };
         }
       }
-    }
 
-    if (currentRecordId && typeof currentRecordId === "string") {
-      questionToAsk = getNextQuestion(currentRecordId, logs);
+      if (currentRecordId && typeof currentRecordId === "string") {
+        questionToAsk = getNextQuestion(currentRecordId, logs);
 
-      if (!questionToAsk) {
-        logs.push(`[LLM] Syncing record fields for record ID: ${currentRecordId}`);
-        try {
-          await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
-        } catch (error) {
-          logs.push(`[LLM] Error during field sync: ${error instanceof Error ? error.message : "Unknown error."}`);
+        if (!questionToAsk) {
+          logs.push(`[LLM] Syncing record fields for record ID: ${currentRecordId}`);
+          try {
+            await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
+          } catch (error) {
+            logs.push(`[LLM] Error during field sync: ${error instanceof Error ? error.message : "Unknown error."}`);
+          }
+
+          logs.push("[LLM] No more questions to ask. All fields have been captured.");
+          return {
+            messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+            logs,
+          };
         }
 
-        logs.push("[LLM] No more questions to ask. All fields have been captured.");
+        logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
         return {
-          messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+          messages: [...history, { role: "assistant", content: questionToAsk }],
           logs,
         };
       }
-
-      logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
-      return {
-        messages: [...history, { role: "assistant", content: questionToAsk }],
-        logs,
-      };
     }
   } catch (error) {
     logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
