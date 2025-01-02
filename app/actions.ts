@@ -254,7 +254,7 @@ if (!questionAsked) {
     "What are the major objectives or talking points you'd like to achieve with Wonderland?",
   ];
 
-  if (currentRecordId) {
+  if (currentRecordId !== null && recordFields[currentRecordId]) { // Ensure currentRecordId is not null
     const unaskedQuestions = allQuestions.filter(
       (q) => !recordFields[currentRecordId]?.questionsAsked?.includes(q)
     );
@@ -273,7 +273,7 @@ if (!questionAsked) {
     }
     logs.push("[LLM] Fallback confirmed all questions were asked.");
   } else {
-    logs.push("[LLM] currentRecordId is null. Unable to check unanswered questions.");
+    logs.push("[LLM] currentRecordId is null or recordFields[currentRecordId] is undefined. Unable to check unanswered questions.");
   }
 }
 
