@@ -186,45 +186,59 @@ export async function continueConversation(history: Message[]) {
       }
 
       if (!currentRecordId && extractedFields.Name) {
-        logs.push("[LLM] Creating draft account, waiting for record ID...");
+  logs.push("[LLM] Creating new record because currentRecordId is null or invalid.");
+  try {
+    const createResponse = await createAccount.execute({
+      Name: extractedFields.Name,
+      "Client Company Name": extractedFields["Client Company Name"],
+      Status: "Draft",
+      ...cleanFields(extractedFields),
+    });
 
-        try {
-          const createResponse = await createAccount.execute({
-            Name: extractedFields.Name,
-            Status: "Draft",
-            ...cleanFields(extractedFields),
-          });
+    if (createResponse?.recordId) {
+      currentRecordId = createResponse.recordId;
+      recordFields[currentRecordId] = { ...extractedFields };
+      logs.push(`[LLM] New account created successfully with ID: ${currentRecordId}`);
+    } else {
+      throw new Error("Failed to retrieve a valid record ID after account creation.");
+    }
+  } catch (error) {
+    logs.push(`[LLM] Account creation error: ${error instanceof Error ? error.message : "Unknown error"}`);
+    return {
+      messages: [
+        ...history,
+        {
+          role: "assistant",
+          content: "An error occurred while creating the account. Please try again or contact support.",
+        },
+      ],
+      logs,
+    };
+  }
+}
 
-          if (createResponse?.recordId) {
-            currentRecordId = createResponse.recordId; // Ensure currentRecordId is a string
-            recordFields[currentRecordId] = { ...extractedFields };
-            logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
+// Proceed to update the record if valid
+if (currentRecordId) {
+  try {
+    logs.push(`[LLM] Updating Airtable record ID: ${currentRecordId} with extracted fields.`);
+    await updateRecordFields(currentRecordId, extractedFields, logs);
+  } catch (error) {
+    logs.push(`[LLM] Failed to update Airtable record ID: ${currentRecordId}: ${
+      error instanceof Error ? error.message : "Unknown error"
+    }`);
+    return {
+      messages: [
+        ...history,
+        {
+          role: "assistant",
+          content: "An error occurred while updating the account. Please try again later.",
+        },
+      ],
+      logs,
+    };
+  }
+}
 
-            // Initialize or retrieve the list of questions already asked for this record
-            const questionsAsked = recordFields[currentRecordId]?.questionsAsked || [];
-            recordFields[currentRecordId].questionsAsked = questionsAsked;
-            logs.push(`[LLM] Initialized questionsAsked for record ID ${currentRecordId}.`);
-          } else {
-            logs.push("[LLM] Failed to create draft account.");
-            return {
-              messages: [
-                ...history,
-                { role: "assistant", content: "An error occurred while creating the account. Please try again." },
-              ],
-              logs,
-            };
-          }
-        } catch (error) {
-          logs.push(`[LLM] Error during account creation: ${error instanceof Error ? error.message : "Unknown error."}`);
-          return {
-            messages: [
-              ...history,
-              { role: "assistant", content: "An error occurred while creating the account. Please try again." },
-            ],
-            logs,
-          };
-        }
-      }
 
       // Ensure questions are asked in sequence
       if (currentRecordId) {
