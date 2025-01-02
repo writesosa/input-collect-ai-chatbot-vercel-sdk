@@ -91,7 +91,6 @@ const extractAndRefineFields = async (
   lastExtractedFields = { ...lastExtractedFields, ...extractedFields }; // Merge with previously extracted fields
   return extractedFields;
 };
-
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
@@ -157,6 +156,7 @@ export async function continueConversation(history: Message[]) {
         logs.push("[LLM] Using previously extracted Name field.");
         extractedFields.Name = lastExtractedFields.Name;
       }
+
       if (currentRecordId && typeof currentRecordId === "string") {
         // Ensure recordFields has a valid object for the currentRecordId
         const recordId = currentRecordId; // Explicitly narrow type to string
@@ -187,7 +187,6 @@ export async function continueConversation(history: Message[]) {
         logs.push("[LLM] Skipping field updates: currentRecordId is null or invalid.");
       }
 
-
       // If Name or equivalent is missing, prompt the user for it
       if (!currentRecordId && !extractedFields.Name) {
         logs.push("[LLM] Missing Name field. Prompting user...");
@@ -202,69 +201,68 @@ export async function continueConversation(history: Message[]) {
           logs,
         };
       }
-if (!currentRecordId && extractedFields.Name) {
-  logs.push("[LLM] Creating a new draft record...");
 
-  // Include all fields extracted so far
-  const createResponse = await createAccount.execute({
-    Name: extractedFields.Name,
-    Status: "Draft",
-    "Priority Image Type": "AI Generated",
-    ...cleanFields({
-      ...(currentRecordId ? recordFields[currentRecordId] : {}), // Ensure safe access
-      ...extractedFields,
-    }),
-  });
+      if (!currentRecordId && extractedFields.Name) {
+        logs.push("[LLM] Creating a new draft record...");
 
-  if (createResponse.recordId) {
-    currentRecordId = createResponse.recordId;
-    logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
+        // Include all fields extracted so far
+        const createResponse = await createAccount.execute({
+          Name: extractedFields.Name,
+          Status: "Draft",
+          "Priority Image Type": "AI Generated",
+          ...cleanFields({
+            ...(currentRecordId ? recordFields[currentRecordId] : {}), // Ensure safe access
+            ...extractedFields,
+          }),
+        });
 
-    // Sync fields immediately
-    updateRecordFields(currentRecordId, { ...lastExtractedFields, ...extractedFields }, logs);
+        if (createResponse.recordId) {
+          currentRecordId = createResponse.recordId;
+          logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
 
-    creationProgress = 0; // Start creation flow
-  } else {
-    logs.push("[LLM] Failed to create draft. Exiting.");
-    return {
-      messages: [
-        ...history,
-        { role: "assistant", content: "An error occurred while creating the account. Please try again." },
-      ],
-      logs,
-    };
+          // Sync fields immediately
+          updateRecordFields(currentRecordId, { ...lastExtractedFields, ...extractedFields }, logs);
+
+          creationProgress = 0; // Start creation flow
+        } else {
+          logs.push("[LLM] Failed to create draft. Exiting.");
+          return {
+            messages: [
+              ...history,
+              { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+            ],
+            logs,
+          };
+        }
+      }
+
+      // Skip redundant questions
+      if (currentRecordId && typeof currentRecordId === "string") {
+        // Safe usage of currentRecordId since it is explicitly checked to be a string
+        questionToAsk = getNextQuestion(currentRecordId, logs);
+
+        if (!questionToAsk) {
+          logs.push("[LLM] No more questions to ask. All fields have been captured.");
+          return {
+            messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+            logs,
+          };
+        }
+
+        logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
+        return {
+          messages: [...history, { role: "assistant", content: questionToAsk }],
+          logs,
+        };
+      } else {
+        logs.push("[LLM] No valid record ID available to continue question flow.");
+      }
+    }
+  } catch (error) {
+    logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
+    return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
   }
 }
-
-// Skip redundant questions
-if (currentRecordId && typeof currentRecordId === "string") {
-  // Safe usage of currentRecordId since it is explicitly checked to be a string
-  questionToAsk = getNextQuestion(currentRecordId, logs);
-
-  if (!questionToAsk) {
-    logs.push("[LLM] No more questions to ask. All fields have been captured.");
-    return {
-      messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
-      logs,
-    };
-  }
-
-  logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
-  return {
-    messages: [...history, { role: "assistant", content: questionToAsk }],
-    logs,
-  };
-} else {
-  logs.push("[LLM] No valid record ID available to continue question flow.");
-}
-
-// Ensure this block closes properly with a semicolon
-} catch (error) {
-  logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
-  return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
-}
-
-// Add closing brace for the `continueConversation` function if not already closed
 
 
 // Helper: Update record fields and prevent redundant updates
