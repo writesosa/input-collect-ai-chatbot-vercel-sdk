@@ -191,7 +191,7 @@ export async function continueConversation(history: Message[]) {
           });
 
           if (createResponse?.recordId) {
-            currentRecordId = createResponse.recordId || null;
+            currentRecordId = createResponse.recordId;
             recordFields[currentRecordId] = { ...extractedFields };
             logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
           } else {
@@ -217,7 +217,7 @@ export async function continueConversation(history: Message[]) {
       }
 
       // Ensure questions are asked in sequence
-      if (currentRecordId && typeof currentRecordId === "string") {
+      if (currentRecordId) {
         questionToAsk = getNextQuestion(currentRecordId, logs);
 
         if (!questionToAsk) {
