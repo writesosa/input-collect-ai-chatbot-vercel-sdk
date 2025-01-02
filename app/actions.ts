@@ -347,27 +347,6 @@ if (currentRecordId && typeof currentRecordId === "string") {
 }
 
 
-if (currentRecordId) {
-  logs.push(`[LLM] Syncing record fields before progressing to the next question for record ID: ${currentRecordId}`);
-  await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
-}
-
-logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
-return {
-  messages: [...history, { role: "assistant", content: questionToAsk }],
-  logs,
-};
-
-      } else {
-        logs.push("[LLM] No valid record ID available to continue question flow.");
-      }
-    }
-  } catch (error) {
-    logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
-    return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
-  }
-}
-
 
 // Helper: Update record fields and prevent redundant updates
 const recordFields: Record<string, Record<string, any>> = {};
