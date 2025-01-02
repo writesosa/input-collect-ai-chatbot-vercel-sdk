@@ -148,84 +148,83 @@ export async function continueConversation(history: Message[]) {
       logs.push("[LLM] General query processed successfully.");
       return { messages: [...history, { role: "assistant", content: text }], logs };
     }
-// Handle account creation logic
-if (userIntent === "account_creation") {
-  logs.push("[LLM] Account creation detected. Processing...");
 
-  const userMessage = history[history.length - 1]?.content.trim() || "";
-  const extractedFields = await extractAndRefineFields(userMessage, logs);
+    // Handle account creation logic
+    if (userIntent === "account_creation") {
+      logs.push("[LLM] Account creation detected. Processing...");
 
-  // Update immediately upon receiving user input
-  if (currentRecordId && extractedFields) {
-    logs.push(`[LLM] Immediately updating Airtable for record ID: ${currentRecordId} with extracted fields.`);
-    try {
-      const fieldsToUpdate = Object.fromEntries(
-        Object.entries(extractedFields).filter(([key]) => key !== "questionsAsked")
-      );
-      await updateRecordFields(currentRecordId, fieldsToUpdate, logs);
-      logs.push(`[LLM] Field updated for record ID ${currentRecordId}: ${JSON.stringify(fieldsToUpdate)}`);
-    } catch (error) {
-      logs.push(`[LLM] Failed to update Airtable for record ID ${currentRecordId}: ${error instanceof Error ? error.message : "Unknown error."}`);
-    }
-  }
+      const userMessage = history[history.length - 1]?.content.trim() || "";
+      const extractedFields = await extractAndRefineFields(userMessage, logs);
 
-  // If Name or equivalent is missing, prompt the user for it
-  if (!currentRecordId && !extractedFields.Name) {
-    logs.push("[LLM] Missing Name field. Prompting user...");
-    return {
-      messages: [
-        ...history,
-        {
-          role: "assistant",
-          content: "A name or company name is required to create an account. Please provide it.",
-        },
-      ],
-      logs,
-    };
-  }
+      // Update immediately upon receiving user input
+      if (currentRecordId && extractedFields) {
+        logs.push(`[LLM] Immediately updating Airtable for record ID: ${currentRecordId} with extracted fields.`);
+        try {
+          const fieldsToUpdate = Object.fromEntries(
+            Object.entries(extractedFields).filter(([key]) => key !== "questionsAsked")
+          );
+          await updateRecordFields(currentRecordId, fieldsToUpdate, logs);
+          logs.push(`[LLM] Field updated for record ID ${currentRecordId}: ${JSON.stringify(fieldsToUpdate)}`);
+        } catch (error) {
+          logs.push(`[LLM] Failed to update Airtable for record ID ${currentRecordId}: ${error instanceof Error ? error.message : "Unknown error."}`);
+        }
+      }
 
-  if (!currentRecordId && extractedFields.Name) {
-    logs.push("[LLM] Creating draft account, waiting for record ID...");
-
-    try {
-      const createResponse = await createAccount.execute({
-        Name: extractedFields.Name,
-        Status: "Draft",
-        ...cleanFields(extractedFields),
-      });
-
-      if (createResponse?.recordId) {
-        currentRecordId = createResponse.recordId; // Ensure currentRecordId is a string
-        recordFields[currentRecordId] = { ...extractedFields };
-        logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
-
-        // Initialize or retrieve the list of questions already asked for this record
-        const questionsAsked = recordFields[currentRecordId]?.questionsAsked || [];
-        recordFields[currentRecordId].questionsAsked = questionsAsked;
-        logs.push(`[LLM] Initialized questionsAsked for record ID ${currentRecordId}.`);
-      } else {
-        logs.push("[LLM] Failed to create draft account.");
+      // If Name or equivalent is missing, prompt the user for it
+      if (!currentRecordId && !extractedFields.Name) {
+        logs.push("[LLM] Missing Name field. Prompting user...");
         return {
           messages: [
             ...history,
-            { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+            {
+              role: "assistant",
+              content: "A name or company name is required to create an account. Please provide it.",
+            },
           ],
           logs,
         };
       }
-    } catch (error) {
-      logs.push(`[LLM] Error during account creation: ${error instanceof Error ? error.message : "Unknown error."}`);
-      return {
-        messages: [
-          ...history,
-          { role: "assistant", content: "An error occurred while creating the account. Please try again." },
-        ],
-        logs,
-      };
-    }
-  }
-}
 
+      if (!currentRecordId && extractedFields.Name) {
+        logs.push("[LLM] Creating draft account, waiting for record ID...");
+
+        try {
+          const createResponse = await createAccount.execute({
+            Name: extractedFields.Name,
+            Status: "Draft",
+            ...cleanFields(extractedFields),
+          });
+
+          if (createResponse?.recordId) {
+            currentRecordId = createResponse.recordId; // Ensure currentRecordId is a string
+            recordFields[currentRecordId] = { ...extractedFields };
+            logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
+
+            // Initialize or retrieve the list of questions already asked for this record
+            const questionsAsked = recordFields[currentRecordId]?.questionsAsked || [];
+            recordFields[currentRecordId].questionsAsked = questionsAsked;
+            logs.push(`[LLM] Initialized questionsAsked for record ID ${currentRecordId}.`);
+          } else {
+            logs.push("[LLM] Failed to create draft account.");
+            return {
+              messages: [
+                ...history,
+                { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+              ],
+              logs,
+            };
+          }
+        } catch (error) {
+          logs.push(`[LLM] Error during account creation: ${error instanceof Error ? error.message : "Unknown error."}`);
+          return {
+            messages: [
+              ...history,
+              { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+            ],
+            logs,
+          };
+        }
+      }
 
       // Ensure questions are asked in sequence
       if (currentRecordId) {
@@ -254,36 +253,34 @@ if (userIntent === "account_creation") {
           logs,
         };
       }
-if (!questionAsked) {
-  logs.push("[LLM] Re-checking for unanswered questions...");
 
-  const allQuestions = [
-    "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?",
-    "Can you tell me more about the company, including its industry, purpose, or mission?",
-    "What are the major objectives or talking points you'd like to achieve with Wonderland?",
-  ];
+      if (!questionAsked && currentRecordId) {
+        logs.push("[LLM] Re-checking for unanswered questions...");
 
-  if (currentRecordId && recordFields[currentRecordId] !== undefined) { // Ensure currentRecordId is valid
-    const record = recordFields[currentRecordId]; // Safely access the record
-    const unaskedQuestions = allQuestions.filter(
-      (q) => !record.questionsAsked?.includes(q)
-    );
+        const allQuestions = [
+          "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?",
+          "Can you tell me more about the company, including its industry, purpose, or mission?",
+          "What are the major objectives or talking points you'd like to achieve with Wonderland?",
+        ];
 
-    if (unaskedQuestions.length > 0) {
-      const nextUnaskedQuestion = unaskedQuestions[0];
-      logs.push(`[LLM] Re-asking missing question: "${nextUnaskedQuestion}"`);
-      record.questionsAsked = [...(record.questionsAsked || []), nextUnaskedQuestion];
-      return {
-        messages: [...history, { role: "assistant", content: nextUnaskedQuestion }],
-        logs,
-      };
-    }
-    logs.push("[LLM] Fallback confirmed all questions were asked.");
-  } else {
-    logs.push("[LLM] currentRecordId is invalid or recordFields[currentRecordId] is undefined.");
-  }
-}
+        const unaskedQuestions = allQuestions.filter(
+          (q) => !recordFields[currentRecordId]?.questionsAsked?.includes(q)
+        );
 
+        if (unaskedQuestions.length > 0) {
+          const nextUnaskedQuestion = unaskedQuestions[0];
+          logs.push(`[LLM] Re-asking missing question: "${nextUnaskedQuestion}"`);
+          recordFields[currentRecordId].questionsAsked = [
+            ...(recordFields[currentRecordId]?.questionsAsked || []),
+            nextUnaskedQuestion,
+          ];
+          return {
+            messages: [...history, { role: "assistant", content: nextUnaskedQuestion }],
+            logs,
+          };
+        }
+        logs.push("[LLM] Fallback confirmed all questions were asked.");
+      }
 
       logs.push("[LLM] No more questions to ask. Account creation complete.");
       return {
@@ -299,6 +296,7 @@ if (!questionAsked) {
     };
   }
 }
+
 
 
 // Avoid filling defaults for optional fields during account creation
