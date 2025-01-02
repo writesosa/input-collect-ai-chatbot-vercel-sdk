@@ -188,13 +188,25 @@ export async function continueConversation(history: Message[]) {
           const createResponse = await createAccount.execute({
             Name: extractedFields.Name,
             Status: "Draft",
+            "Priority Image Type": "AI Generated",
             ...cleanFields(extractedFields),
           });
 
           if (createResponse?.recordId) {
-            currentRecordId = createResponse.recordId || null;
-            recordFields[currentRecordId] = { ...extractedFields };
-            logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
+            currentRecordId = createResponse.recordId; // Ensure currentRecordId is a string
+            if (currentRecordId) { // Check that currentRecordId is not null
+              recordFields[currentRecordId] = { ...extractedFields };
+              logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
+            } else {
+              logs.push("[LLM] Failed to retrieve a valid record ID after account creation.");
+              return {
+                messages: [
+                  ...history,
+                  { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+                ],
+                logs,
+              };
+            }
           } else {
             logs.push("[LLM] Failed to create draft account.");
             return {
@@ -216,6 +228,7 @@ export async function continueConversation(history: Message[]) {
           };
         }
       }
+
 
       // Ensure questions are asked in sequence
       if (currentRecordId && typeof currentRecordId === "string") {
