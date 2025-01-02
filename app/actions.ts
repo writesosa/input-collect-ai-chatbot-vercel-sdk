@@ -97,6 +97,7 @@ if (!message || message.trim() === "") {
   lastExtractedFields = { ...lastExtractedFields, ...extractedFields }; // Merge with previously extracted fields
   return extractedFields;
 };
+
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
@@ -193,35 +194,43 @@ export async function continueConversation(history: Message[]) {
             currentRecordId = createResponse.recordId || null;
             logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
           } else {
+            let retries = 3;
+            while (!currentRecordId && retries > 0) {
+              logs.push(`[LLM] Waiting for record ID... Attempts left: ${retries}`);
+              await new Promise((resolve) => setTimeout(resolve, 500)); // Wait 500ms before retrying
+              currentRecordId = createResponse.recordId || null;
+              retries--;
+            }
 
+            if (!currentRecordId) {
+              logs.push("[LLM] Failed to retrieve a valid record ID after retries. Exiting.");
+              return {
+                messages: [
+                  ...history,
+                  { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+                ],
+                logs,
+              };
+            }
 
-const handleRetryLogic = async (): Promise<{ messages: Message[]; logs: string[] } | null> => {
-  let retries = 3;
-  while (!currentRecordId && retries > 0) {
-    logs.push(`[LLM] Waiting for record ID... Attempts left: ${retries}`);
-    await new Promise((resolve) => setTimeout(resolve, 500)); // Wait 500ms before retrying
-    currentRecordId = createResponse.recordId || null;
-    retries--;
-  }
+            logs.push(`[LLM] Record ID confirmed after retries: ${currentRecordId}`);
+          }
 
-  if (!currentRecordId) {
-    logs.push("[LLM] Failed to retrieve a valid record ID after retries. Exiting.");
-    return {
-      messages: [
-        ...history,
-        { role: "assistant", content: "An error occurred while creating the account. Please try again." },
-      ],
-      logs,
-    };
-  }
-
-  return null; // Success; no error occurred
-};
-
-// Call retry logic and handle the result
-const retryResult = await handleRetryLogic();
-if (retryResult) {
-  return retryResult; // Exit early if retry failed
+          // Initialize recordFields for the newly created record
+          if (currentRecordId && !recordFields[currentRecordId]) {
+            recordFields[currentRecordId] = { ...extractedFields };
+            logs.push(`[LLM] Initialized recordFields for record ID: ${currentRecordId}`);
+          }
+        } catch (error) {
+          logs.push(`[LLM] Error during account creation: ${error instanceof Error ? error.message : "Unknown error."}`);
+          return {
+            messages: [
+              ...history,
+              { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+            ],
+            logs,
+          };
+        }
       }
 
       // Skip redundant questions
