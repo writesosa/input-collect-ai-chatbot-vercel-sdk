@@ -330,6 +330,7 @@ const createAccount = tool({
     Instagram: z.string().optional(),
     Facebook: z.string().optional(),
     Blog: z.string().optional(),
+        "Client Company Name": z.string().optional(),
     "Primary Objective": z.string().optional(),
     "Talking Points": z.string().optional(),
   }),
