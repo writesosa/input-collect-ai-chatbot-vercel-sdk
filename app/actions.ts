@@ -264,9 +264,10 @@ export async function continueConversation(history: Message[]) {
         ];
 
 let unaskedQuestions: string[] = [];
-if (currentRecordId && recordFields[currentRecordId]) {
+if (currentRecordId !== null && recordFields[currentRecordId]) {
+  const record = recordFields[currentRecordId]; // Narrow the type
   unaskedQuestions = allQuestions.filter(
-    (q) => !recordFields[currentRecordId].questionsAsked?.includes(q)
+    (q) => !record.questionsAsked?.includes(q)
   );
 } else {
   logs.push("[LLM] currentRecordId is null or recordFields[currentRecordId] is undefined.");
