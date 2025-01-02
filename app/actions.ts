@@ -382,29 +382,45 @@ const getNextQuestion = (recordId: string, logs: string[]): string | null => {
 
 // Helper: Update record fields and prevent redundant updates
 const recordFields: Record<string, Record<string, any>> = {};
-const updateRecordFields = async (recordId: string, newFields: Record<string, any>, logs: string[]) => {
+
+const updateRecordFields = async (
+  recordId: string,
+  newFields: Record<string, any>,
+  logs: string[]
+) => {
   if (!recordFields[recordId]) {
     recordFields[recordId] = {};
   }
 
   Object.entries(newFields).forEach(([key, value]) => {
-    if (value && (!recordFields[recordId][key] || recordFields[recordId][key] !== value)) {
+    if (
+      value && // Only update if the new value is non-empty
+      (!recordFields[recordId][key] || recordFields[recordId][key] !== value) // Avoid overwriting existing value with the same or empty value
+    ) {
       recordFields[recordId][key] = value;
       logs.push(`[LLM] Field updated for record ID ${recordId}: ${key} = ${value}`);
     } else {
-      logs.push(`[LLM] Skipping update for field ${key} on record ID ${recordId}.`);
+      logs.push(
+        `[LLM] Skipping update for field ${key} on record ID ${recordId}. Current value: ${
+          recordFields[recordId][key]
+        }, New value: ${value}`
+      );
     }
   });
 
   try {
     if (recordId === currentRecordId) {
-      await airtableBase("Accounts").update(recordId, newFields);
+      await airtableBase("Accounts").update(recordId, recordFields[recordId]);
       logs.push(`[LLM] Airtable updated successfully for record ID: ${recordId}`);
     } else {
       logs.push(`[LLM] Skipping Airtable update for non-current record ID: ${recordId}`);
     }
   } catch (error) {
-    logs.push(`[LLM] Failed to update Airtable for record ID ${recordId}: ${error instanceof Error ? error.message : error}`);
+    logs.push(
+      `[LLM] Failed to update Airtable for record ID ${recordId}: ${
+        error instanceof Error ? error.message : error
+      }`
+    );
   }
 };
 
