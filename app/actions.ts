@@ -258,17 +258,23 @@ export async function continueConversation(history: Message[]) {
       }
 
       // If `getNextQuestion` wasn't called, invoke it again after creation
-      if (!questionAsked) {
-        logs.push("[LLM] Re-checking for unanswered questions after account creation...");
-        questionToAsk = getNextQuestion(currentRecordId, logs);
-        if (questionToAsk) {
-          logs.push(`[LLM] Asking question after re-check: "${questionToAsk}"`);
-          return {
-            messages: [...history, { role: "assistant", content: questionToAsk }],
-            logs,
-          };
-        }
-      }
+if (!questionAsked) {
+  logs.push("[LLM] Re-checking for unanswered questions after account creation...");
+  
+  if (currentRecordId) { // Ensure currentRecordId is not null
+    questionToAsk = getNextQuestion(currentRecordId, logs);
+    if (questionToAsk) {
+      logs.push(`[LLM] Asking question after re-check: "${questionToAsk}"`);
+      return {
+        messages: [...history, { role: "assistant", content: questionToAsk }],
+        logs,
+      };
+    }
+  } else {
+    logs.push("[LLM] No valid record ID available for re-checking questions.");
+  }
+}
+
     }
   } catch (error) {
     logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
