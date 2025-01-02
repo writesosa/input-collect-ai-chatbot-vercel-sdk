@@ -202,8 +202,7 @@ export async function continueConversation(history: Message[]) {
           logs,
         };
       }
-
- if (!currentRecordId && extractedFields.Name) {
+if (!currentRecordId && extractedFields.Name) {
   logs.push("[LLM] Creating a new draft record...");
 
   // Include all fields extracted so far
@@ -211,7 +210,10 @@ export async function continueConversation(history: Message[]) {
     Name: extractedFields.Name,
     Status: "Draft",
     "Priority Image Type": "AI Generated",
-    ...cleanFields({ ...lastExtractedFields, ...extractedFields }),
+    ...cleanFields({
+      ...(currentRecordId ? recordFields[currentRecordId] : {}), // Ensure safe access
+      ...extractedFields,
+    }),
   });
 
   if (createResponse.recordId) {
@@ -233,6 +235,7 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
+
 
 
 
