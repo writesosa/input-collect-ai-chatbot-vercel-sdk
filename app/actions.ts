@@ -189,31 +189,34 @@ export async function continueConversation(history: Message[]) {
             "Priority Image Type": "AI Generated",
             ...cleanFields(extractedFields),
           });
+if (createResponse?.recordId) {
+  currentRecordId = createResponse.recordId;
 
-          if (createResponse?.recordId) {
-            currentRecordId = createResponse.recordId || null;
-            recordFields[currentRecordId] = { ...extractedFields };
-            logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
-          } else {
-            logs.push("[LLM] Failed to create draft account.");
-            return {
-              messages: [
-                ...history,
-                { role: "assistant", content: "An error occurred while creating the account. Please try again." },
-              ],
-              logs,
-            };
-          }
-        } catch (error) {
-          logs.push(`[LLM] Error during account creation: ${error instanceof Error ? error.message : "Unknown error."}`);
-          return {
-            messages: [
-              ...history,
-              { role: "assistant", content: "An error occurred while creating the account. Please try again." },
-            ],
-            logs,
-          };
-        }
+  // Ensure currentRecordId is valid before using it as an index
+  if (currentRecordId) {
+    recordFields[currentRecordId] = { ...extractedFields };
+    logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
+  } else {
+    logs.push("[LLM] Received an invalid record ID (null or undefined).");
+    return {
+      messages: [
+        ...history,
+        { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+      ],
+      logs,
+    };
+  }
+} else {
+  logs.push("[LLM] Failed to create draft account.");
+  return {
+    messages: [
+      ...history,
+      { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+    ],
+    logs,
+  };
+}
+
       }
 
       // Ensure questions are asked in sequence
