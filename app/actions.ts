@@ -20,6 +20,15 @@ let currentRecordId: string | null = null;
 let creationProgress: number | null = null; // Track user progress in account creation
 let lastExtractedFields: Record<string, any> | null = null; // Remember the last extracted fields
 
+// Helper: Validate URLs
+const validateURL = (url: string): string | null => {
+  try {
+    const validUrl = new URL(url.startsWith("http") ? url : `https://${url}`);
+    return validUrl.href;
+  } catch {
+    return null;
+  }
+};
 
 // Helper: Convert string to Title Case
 const toTitleCase = (str: string): string =>
@@ -228,7 +237,8 @@ export async function continueConversation(history: Message[]) {
     return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
   }
 }
-const getNextQuestion = async (fields: Record<string, any>, logs: string[]): Promise<string | null> => {
+
+const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | null => {
   const questions = [
     {
       progress: 0,
@@ -248,51 +258,82 @@ const getNextQuestion = async (fields: Record<string, any>, logs: string[]): Pro
   ];
 
   for (const question of questions) {
-    if (creationProgress === question.progress) {
+    // If progress matches and some fields are missing, ask the question
+    if (
+      creationProgress === question.progress &&
+      question.fields.some((field) => !fields[field])
+    ) {
       const missingFields = question.fields.filter((field) => !fields[field]);
-      logs.push(`[LLM] Missing fields: ${missingFields.join(", ")}.`);
-      
-      if (missingFields.length > 0) {
-        // Process invalid URLs
-        for (const field of question.fields) {
-          if (fields[field]) {
-            const { validUrl, suggestion } = validateURL(fields[field]);
-            if (!validUrl) {
-              logs.push(`[Validation]: Invalid ${field}: "${fields[field]}". Suggestion: "${suggestion}".`);
-              return `The provided ${field} "${fields[field]}" seems invalid. Did you mean: "${suggestion}"?`;
-            }
-            fields[field] = validUrl; // Use valid URL
-          }
-        }
-        return question.prompt;
-      }
+      logs.push(
+        `[LLM] Missing fields: ${missingFields.join(", ")}. Prompting with question: "${question.prompt}"`
+      );
+      return question.prompt;
     }
   }
+
   return null; // All questions completed
 };
 
 
 
-const validateURL = (url: string): { validUrl: string | null; suggestion: string | null } => {
-  try {
-    const validUrl = new URL(url.startsWith("http") ? url : `https://${url}`);
-    return { validUrl: validUrl.href, suggestion: null };
-  } catch (error) {
-    console.error(`[URL Validation Error]: Invalid URL "${url}". Error: ${error.message}`);
-    // Suggest corrections
-    if (!url.includes(".")) {
-      const suggestion = `https://www.${url}.com`;
-      return { validUrl: null, suggestion };
+
+const processUserInput = async (userInput: string, logs: string[]) => {
+  const fieldsToUpdate: Record<string, string> = {}; // Properly define fieldsToUpdate locally
+  let isUpdated = false;
+
+  // Process Website, Instagram, Facebook, and Blog
+  if (creationProgress === 0) {
+    const inputs = userInput.split(",").map((item) => item.trim()); // Split input by commas
+
+    for (const input of inputs) {
+      if (input.includes("http")) {
+        const url = validateURL(input);
+        if (url) {
+          if (!fieldsToUpdate.Website && url.includes("www")) {
+            fieldsToUpdate.Website = url;
+            logs.push(`[LLM] Valid Website detected: ${url}`);
+          } else if (!fieldsToUpdate.Instagram && url.includes("instagram.com")) {
+            fieldsToUpdate.Instagram = url;
+            logs.push(`[LLM] Valid Instagram detected: ${url}`);
+          } else if (!fieldsToUpdate.Facebook && url.includes("facebook.com")) {
+            fieldsToUpdate.Facebook = url;
+            logs.push(`[LLM] Valid Facebook detected: ${url}`);
+          } else if (!fieldsToUpdate.Blog) {
+            fieldsToUpdate.Blog = url;
+            logs.push(`[LLM] Valid Blog detected: ${url}`);
+          }
+        }
+      }
     }
-    if (!url.startsWith("http")) {
-      const suggestion = `https://${url}`;
-      return { validUrl: null, suggestion };
-    }
-    return { validUrl: null, suggestion: null };
+
+    // Update Airtable with collected links
+    await modifyAccount.execute({
+      recordId: currentRecordId!,
+      fields: fieldsToUpdate, // Use the locally defined fieldsToUpdate
+    });
+
+    isUpdated = true;
+    logs.push("[LLM] Website, Instagram, Facebook, and Blog updated successfully.");
   }
+
+  // Process Description
+  if (creationProgress === 1) {
+    fieldsToUpdate.Description = userInput;
+    logs.push(`[LLM] Description captured: ${userInput}. Updating Airtable.`);
+    await modifyAccount.execute({ recordId: currentRecordId!, fields: { Description: userInput } });
+    isUpdated = true;
+  }
+
+  // Process Talking Points
+  if (creationProgress === 2) {
+    fieldsToUpdate["Talking Points"] = userInput;
+    logs.push(`[LLM] Talking Points captured: ${userInput}. Updating Airtable.`);
+    await modifyAccount.execute({ recordId: currentRecordId!, fields: { "Talking Points": userInput } });
+    isUpdated = true;
+  }
+
+  return isUpdated;
 };
-
-
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
