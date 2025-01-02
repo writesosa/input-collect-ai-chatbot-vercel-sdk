@@ -204,6 +204,15 @@ const handleRetry = async (): Promise<{ messages: Message[]; logs: string[] } | 
     retries--;
   }
 
+const handleRetryLogic = async () => {
+  let retries = 3;
+  while (!currentRecordId && retries > 0) {
+    logs.push(`[LLM] Waiting for record ID... Attempts left: ${retries}`);
+    await new Promise((resolve) => setTimeout(resolve, 500)); // Wait 500ms before retrying
+    currentRecordId = createResponse.recordId || null;
+    retries--;
+  }
+
   if (!currentRecordId) {
     logs.push("[LLM] Failed to retrieve a valid record ID after retries. Exiting.");
     return {
@@ -215,6 +224,13 @@ const handleRetry = async (): Promise<{ messages: Message[]; logs: string[] } | 
     };
   }
 };
+
+// Call the retry logic and handle its return
+const retryResult = await handleRetryLogic();
+if (retryResult) {
+  return retryResult; // Exit if handleRetryLogic indicates an error
+}
+
 
 const retryResult = await handleRetry();
 if (retryResult) {
