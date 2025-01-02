@@ -176,45 +176,56 @@ export async function continueConversation(history: Message[]) {
           logs,
         };
       }
+if (!currentRecordId && extractedFields.Name) {
+  logs.push("[LLM] Creating draft account, waiting for record ID...");
 
-      if (!currentRecordId && extractedFields.Name) {
-        logs.push("[LLM] Creating draft account, waiting for record ID...");
+  try {
+    // Include all fields extracted so far
+    const createResponse = await createAccount.execute({
+      Name: extractedFields.Name,
+      Status: "Draft",
+      "Priority Image Type": "AI Generated",
+      ...cleanFields(extractedFields),
+    });
 
-        try {
-          // Include all fields extracted so far
-          const createResponse = await createAccount.execute({
-            Name: extractedFields.Name,
-            Status: "Draft",
-            "Priority Image Type": "AI Generated",
-            ...cleanFields(extractedFields),
-          });
+    // Ensure record ID is set or retry
+    const handleRetry = async (): Promise<{ messages: Message[]; logs: string[] } | null> => {
+      let retries = 3;
+      while (!currentRecordId && retries > 0) {
+        logs.push(`[LLM] Waiting for record ID... Attempts left: ${retries}`);
+        await new Promise((resolve) => setTimeout(resolve, 500)); // Wait 500ms before retrying
+        currentRecordId = createResponse?.recordId || null;
+        retries--;
+      }
 
-          if (createResponse?.recordId) {
-            currentRecordId = createResponse.recordId || null;
-            logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
-          } else {
+      if (!currentRecordId) {
+        logs.push("[LLM] Failed to retrieve a valid record ID after retries. Exiting.");
+        return {
+          messages: [
+            ...history,
+            { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+          ],
+          logs,
+        };
+      }
+      return null;
+    };
 
-            
-const handleRetry = async (): Promise<{ messages: Message[]; logs: string[] } | void> => {
-  let retries = 3;
-  while (!currentRecordId && retries > 0) {
-    logs.push(`[LLM] Waiting for record ID... Attempts left: ${retries}`);
-    await new Promise((resolve) => setTimeout(resolve, 500)); // Wait 500ms before retrying
-    currentRecordId = createResponse.recordId || null;
-    retries--;
-  }
+    // Check retry result
+    const retryResult = await handleRetry();
+    if (retryResult) {
+      return retryResult; // Exit if handleRetry indicates an error
+    }
 
-const handleRetryLogic = async () => {
-  let retries = 3;
-  while (!currentRecordId && retries > 0) {
-    logs.push(`[LLM] Waiting for record ID... Attempts left: ${retries}`);
-    await new Promise((resolve) => setTimeout(resolve, 500)); // Wait 500ms before retrying
-    currentRecordId = createResponse.recordId || null;
-    retries--;
-  }
+    logs.push(`[LLM] Record ID confirmed after retries: ${currentRecordId}`);
 
-  if (!currentRecordId) {
-    logs.push("[LLM] Failed to retrieve a valid record ID after retries. Exiting.");
+    // Initialize recordFields for the newly created record
+    if (currentRecordId && !recordFields[currentRecordId]) {
+      recordFields[currentRecordId] = { ...extractedFields };
+      logs.push(`[LLM] Initialized recordFields for record ID: ${currentRecordId}`);
+    }
+  } catch (error) {
+    logs.push(`[LLM] Error during account creation: ${error instanceof Error ? error.message : "Unknown error."}`);
     return {
       messages: [
         ...history,
@@ -223,7 +234,8 @@ const handleRetryLogic = async () => {
       logs,
     };
   }
-};
+}
+
 
 // Call the retry logic and handle its return
 const retryResult = await handleRetryLogic();
