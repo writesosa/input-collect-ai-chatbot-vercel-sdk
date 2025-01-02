@@ -236,6 +236,7 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
+
 // Track fields for the current record
 // Adjusting `recordFields` initialization and updates
 const recordFields: Record<string, Record<string, any>> = {};
