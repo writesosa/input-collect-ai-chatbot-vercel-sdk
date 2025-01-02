@@ -172,11 +172,16 @@ if (currentRecordId && typeof currentRecordId === "string") {
 
   // Prevent overwriting fields with blank values
   Object.keys(extractedFields).forEach((key) => {
-    if (!extractedFields[key] && recordFields[currentRecordId]) {
-      delete recordFields[currentRecordId][key];
+    if (!extractedFields[key]) {
+      if (recordFields[currentRecordId]) {
+        delete recordFields[currentRecordId][key];
+      }
     }
   });
+} else {
+  logs.push("[LLM] Skipping field updates: currentRecordId is null or invalid.");
 }
+
 
 
 
