@@ -262,42 +262,35 @@ if (!currentRecordId && extractedFields.Name) {
           logs,
         };
       }
-
 if (!questionAsked) {
-  logs.push("[LLM] No immediate question to ask. Re-checking unanswered questions...");
-  
-  if (currentRecordId) {
-    const allQuestions = [
-      "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?",
-      "Can you tell me more about the company, including its industry, purpose, or mission?",
-      "What are the major objectives or talking points you'd like to achieve with Wonderland?",
-    ];
+  logs.push("[LLM] Re-checking for unanswered questions...");
 
-    const unaskedQuestions = allQuestions.filter((q) => !questionsAsked.includes(q));
+  const allQuestions = [
+    "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?",
+    "Can you tell me more about the company, including its industry, purpose, or mission?",
+    "What are the major objectives or talking points you'd like to achieve with Wonderland?",
+  ];
 
-    if (unaskedQuestions.length > 0) {
-      const nextUnaskedQuestion = unaskedQuestions[0]; // Ask the first unasked question
-      logs.push(`[LLM] Asking previously unasked question: "${nextUnaskedQuestion}"`);
-      questionsAsked.push(nextUnaskedQuestion); // Track it
-      recordFields[currentRecordId].questionsAsked = questionsAsked; // Persist
-      return {
-        messages: [...history, { role: "assistant", content: nextUnaskedQuestion }],
-        logs,
-      };
-    } else {
-      logs.push("[LLM] Re-check confirmed all questions were asked.");
-    }
-  }
-}
+  const unaskedQuestions = allQuestions.filter(
+    (q) => !recordFields[currentRecordId]?.questionsAsked?.includes(q)
+  );
 
-  } catch (error) {
-    logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
+  if (unaskedQuestions.length > 0) {
+    const nextUnaskedQuestion = unaskedQuestions[0];
+    logs.push(`[LLM] Re-asking missing question: "${nextUnaskedQuestion}"`);
+    recordFields[currentRecordId].questionsAsked = [
+      ...(recordFields[currentRecordId]?.questionsAsked || []),
+      nextUnaskedQuestion,
+    ]; // Update tracking
     return {
-      messages: [...history, { role: "assistant", content: "An error occurred while processing your request." }],
+      messages: [...history, { role: "assistant", content: nextUnaskedQuestion }],
       logs,
     };
-  };
+  }
+
+  logs.push("[LLM] Fallback confirmed all questions were asked.");
 }
+
 
 
 
@@ -366,6 +359,7 @@ const createAccount = tool({
     }
   },
 });
+
 const getNextQuestion = (recordId: string, logs: string[]): string | null => {
   const questions = [
     {
@@ -386,32 +380,31 @@ const getNextQuestion = (recordId: string, logs: string[]): string | null => {
   ];
 
   for (const question of questions) {
-    if (questionsAsked.includes(question.prompt)) {
+    // Skip if already asked
+    if (recordFields[recordId]?.questionsAsked?.includes(question.prompt)) {
       logs.push(`[LLM] Question already asked: "${question.prompt}"`);
-      continue; // Skip already asked questions
+      continue;
     }
 
-    if (creationProgress === question.progress) {
-      logs.push(`[LLM] Checking progress ${question.progress} for required fields.`);
+    // Check if any associated fields are missing
+    const anyFieldMissing = question.fields.some(
+      (field) => !recordFields[recordId]?.[field] || recordFields[recordId][field].trim() === ""
+    );
 
-      const anyFieldFilled = question.fields.some(
-        (field) => recordFields[recordId]?.[field] && recordFields[recordId][field].trim() !== ""
-      );
-
-      if (!anyFieldFilled) {
-        logs.push(`[LLM] Asking question: "${question.prompt}" for progress ${question.progress}`);
-        questionsAsked.push(question.prompt); // Track this question as asked
-        recordFields[recordId].questionsAsked = questionsAsked; // Persist the tracking
-        return question.prompt;
-      }
-
-      logs.push(`[LLM] Skipping question for progress ${question.progress} as at least one field is filled.`);
-      creationProgress++; // Move to the next question
+    if (anyFieldMissing) {
+      logs.push(`[LLM] Missing fields detected for progress ${question.progress}. Asking: "${question.prompt}"`);
+      recordFields[recordId].questionsAsked = [
+        ...(recordFields[recordId].questionsAsked || []),
+        question.prompt,
+      ]; // Persist question tracking
+      return question.prompt;
     }
+
+    logs.push(`[LLM] All fields complete for progress ${question.progress}. Skipping question.`);
   }
 
-  logs.push("[LLM] All predefined questions have been asked or skipped. No further questions.");
-  return null; // No more questions to ask
+  logs.push("[LLM] All questions asked or fields filled. No further questions.");
+  return null;
 };
 
 
