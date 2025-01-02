@@ -158,7 +158,7 @@ export async function continueConversation(history: Message[]) {
         extractedFields.Name = lastExtractedFields.Name;
       }
 
-if (currentRecordId) {
+if (currentRecordId && recordFields[currentRecordId]) {
   // Merge extracted fields into recordFields
   recordFields[currentRecordId] = {
     ...recordFields[currentRecordId],
@@ -173,13 +173,12 @@ if (currentRecordId) {
 
   // Prevent overwriting fields with blank values
   Object.keys(extractedFields).forEach((key) => {
-    if (!extractedFields[key]) {
-      if (recordFields[currentRecordId]) {
-        delete recordFields[currentRecordId][key];
-      }
+    if (!extractedFields[key] && recordFields[currentRecordId]) {
+      delete recordFields[currentRecordId][key];
     }
   });
 }
+
 
 
       // If Name or equivalent is missing, prompt the user for it
