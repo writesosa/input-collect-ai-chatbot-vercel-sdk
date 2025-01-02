@@ -176,12 +176,12 @@ export async function continueConversation(history: Message[]) {
         }
 
         // Ensure questions are tracked internally and not synced with Airtable
-if (currentRecordId && !recordFields[currentRecordId]?.questionsAsked) {
-  recordFields[currentRecordId] = {
-    ...recordFields[currentRecordId],
-    questionsAsked: [],
-  };
-}
+        if (currentRecordId && !recordFields[currentRecordId]?.questionsAsked) {
+          recordFields[currentRecordId] = {
+            ...recordFields[currentRecordId],
+            questionsAsked: [],
+          };
+        }
 
 
 
@@ -199,38 +199,40 @@ if (currentRecordId && !recordFields[currentRecordId]?.questionsAsked) {
           logs,
         };
       }
+if (!currentRecordId && extractedFields.Name) {
+  logs.push("[LLM] Creating new record because currentRecordId is null or invalid.");
+  try {
+    // Dynamically include all extracted fields during account creation
+    const fieldsForCreation = {
+      Name: extractedFields.Name,
+      Status: "Draft",
+      ...cleanFields(extractedFields), // Includes all other extracted fields
+    };
 
-      if (!currentRecordId && extractedFields.Name) {
-        logs.push("[LLM] Creating new record because currentRecordId is null or invalid.");
-        try {
-          const createResponse = await createAccount.execute({
-            Name: extractedFields.Name,
-            "Client Company Name": extractedFields["Client Company Name"],
-            Status: "Draft",
-            ...cleanFields(extractedFields),
-          });
+    const createResponse = await createAccount.execute(fieldsForCreation);
 
-          if (createResponse?.recordId) {
-            currentRecordId = createResponse.recordId;
-            recordFields[currentRecordId] = { ...extractedFields };
-            logs.push(`[LLM] New account created successfully with ID: ${currentRecordId}`);
-          } else {
-            throw new Error("Failed to retrieve a valid record ID after account creation.");
-          }
-        } catch (error) {
-          logs.push(`[LLM] Account creation error: ${error instanceof Error ? error.message : "Unknown error"}`);
-          return {
-            messages: [
-              ...history,
-              {
-                role: "assistant",
-                content: "An error occurred while creating the account. Please try again or contact support.",
-              },
-            ],
-            logs,
-          };
-        }
-      }
+    if (createResponse?.recordId) {
+      currentRecordId = createResponse.recordId;
+      // Store extracted fields in the recordFields for tracking
+      recordFields[currentRecordId] = { ...extractedFields, questionsAsked: [] };
+      logs.push(`[LLM] New account created successfully with ID: ${currentRecordId}`);
+    } else {
+      throw new Error("Failed to retrieve a valid record ID after account creation.");
+    }
+  } catch (error) {
+    logs.push(`[LLM] Account creation error: ${error instanceof Error ? error.message : "Unknown error"}`);
+    return {
+      messages: [
+        ...history,
+        {
+          role: "assistant",
+          content: "An error occurred while creating the account. Please try again or contact support.",
+        },
+      ],
+      logs,
+    };
+  }
+}
 
       // Ensure questions are asked in sequence
       if (currentRecordId) {
