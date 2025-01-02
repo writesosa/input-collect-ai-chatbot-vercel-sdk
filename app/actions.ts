@@ -298,9 +298,12 @@ if (!currentRecordId && extractedFields.Name) {
     messages: [...history, { role: "assistant", content: "An error occurred while processing your request." }],
     logs,
   };
-}
+} // Close the catch block properly
 
+// Ensure all other blocks and the function are properly closed
+} // Closing brace for the function `continueConversation`
 
+// Ensure no semicolons are missing in key areas
 
 
 
