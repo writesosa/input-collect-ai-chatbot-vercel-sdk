@@ -173,7 +173,7 @@ export async function continueConversation(history: Message[]) {
         // Prevent overwriting fields with blank values
         Object.keys(extractedFields).forEach((key) => {
           if (!extractedFields[key] && recordFields[currentRecordId]) {
-            delete recordFields[currentRecordId]?.[key];
+            delete recordFields[currentRecordId][key];
           }
         });
       } else {
