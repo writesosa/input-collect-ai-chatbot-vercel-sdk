@@ -306,40 +306,6 @@ if (!questionAsked) {
 
 
 
-      // If `getNextQuestion` wasn't called, invoke it again after creation
-      if (!questionAsked) {
-        logs.push("[LLM] Re-checking unanswered questions after account creation...");
-
-        if (currentRecordId) { // Ensure currentRecordId is not null
-          logs.push(`[LLM] Re-checking recordFields: ${JSON.stringify(recordFields[currentRecordId], null, 2)}`);
-          questionToAsk = getNextQuestion(currentRecordId, logs);
-
-          if (questionToAsk) {
-            questionAsked = true;
-            logs.push(`[LLM] Asking missed question: "${questionToAsk}"`);
-            return {
-              messages: [...history, { role: "assistant", content: questionToAsk }],
-              logs,
-            };
-          } else {
-            logs.push("[LLM] No additional questions found after re-check.");
-          }
-        } else {
-          logs.push("[LLM] No valid record ID for re-checking questions.");
-        }
-      }
-    }
-  } catch (error) {
-    logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
-    return {
-      messages: [...history, { role: "assistant", content: "An error occurred while processing your request." }],
-      logs,
-    };
-  }
-}
-
-
-
 // Avoid filling defaults for optional fields during account creation
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
