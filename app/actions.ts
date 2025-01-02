@@ -240,9 +240,11 @@ if (!currentRecordId && extractedFields.Name) {
 
 
 
-// Skip redundant questions
-if (currentRecordId) {
+      // Skip redundant questions
+if (currentRecordId && typeof currentRecordId === "string") {
+  // Safe usage of currentRecordId since it is explicitly checked to be a string
   questionToAsk = getNextQuestion(currentRecordId, logs);
+
   if (!questionToAsk) {
     logs.push("[LLM] No more questions to ask. All fields have been captured.");
     return {
@@ -251,18 +253,18 @@ if (currentRecordId) {
     };
   }
 
-
   logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
   return {
     messages: [...history, { role: "assistant", content: questionToAsk }],
     logs,
   };
 } else {
-  logs.push("[LLM] Cannot proceed: currentRecordId is null.");
-  return {
-    messages: [...history, { role: "assistant", content: "An error occurred: no record ID available." }],
-    logs,
-  };
+  logs.push("[LLM] No valid record ID available to continue question flow.");
+}
+ catch (error) {
+    logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
+    return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
+  }
 }
 
 // Helper: Update record fields and prevent redundant updates
