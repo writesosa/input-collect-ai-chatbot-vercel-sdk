@@ -206,11 +206,15 @@ export async function continueConversation(history: Message[]) {
       // Create draft if Name is available
       if (!currentRecordId && extractedFields.Name) {
         logs.push("[LLM] Creating a new draft record...");
+
+        // Ensure currentRecordId is not null before using it
+        const recordId = currentRecordId ?? ""; // Fallback to empty string for safety
+
         const createResponse = await createAccount.execute({
           Name: extractedFields.Name,
           Status: "Draft",
           "Priority Image Type": "AI Generated",
-          ...cleanFields({ ...recordFields[currentRecordId], ...extractedFields }), // Merge existing fields with new ones
+          ...cleanFields({ ...(recordFields[recordId] || {}), ...extractedFields }), // Safely handle potential null value
         });
 
         if (createResponse.recordId) {
@@ -228,6 +232,7 @@ export async function continueConversation(history: Message[]) {
           };
         }
       }
+
 
       if (!currentRecordId) {
         logs.push("[LLM] Error: currentRecordId is null. Cannot proceed to the next question.");
