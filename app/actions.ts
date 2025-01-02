@@ -203,23 +203,24 @@ export async function continueConversation(history: Message[]) {
         };
       }
 
-      // Create draft if Name is available
-      if (!currentRecordId && extractedFields.Name) {
+ if (!currentRecordId && extractedFields.Name) {
   logs.push("[LLM] Creating a new draft record...");
 
-  // Safely handle null or undefined currentRecordId
-  const safeRecordId = currentRecordId || "";
-
+  // Include all fields extracted so far
   const createResponse = await createAccount.execute({
     Name: extractedFields.Name,
     Status: "Draft",
     "Priority Image Type": "AI Generated",
-    ...cleanFields({ ...(recordFields[safeRecordId] || {}), ...extractedFields }), // Safely access recordFields
+    ...cleanFields({ ...lastExtractedFields, ...extractedFields }),
   });
 
   if (createResponse.recordId) {
     currentRecordId = createResponse.recordId;
     logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
+
+    // Sync fields immediately
+    updateRecordFields(currentRecordId, { ...lastExtractedFields, ...extractedFields }, logs);
+
     creationProgress = 0; // Start creation flow
   } else {
     logs.push("[LLM] Failed to create draft. Exiting.");
@@ -233,13 +234,6 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
-if (!currentRecordId) {
-  logs.push("[LLM] Error: currentRecordId is null. Cannot proceed to the next question.");
-  return {
-    messages: [...history, { role: "assistant", content: "No record ID available to continue." }],
-    logs,
-  };
-}
 
 
       // Skip redundant questions
