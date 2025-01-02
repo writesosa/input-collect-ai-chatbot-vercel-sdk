@@ -202,39 +202,55 @@ export async function continueConversation(history: Message[]) {
         };
       }
 
-      if (!currentRecordId && extractedFields.Name) {
-        logs.push("[LLM] Creating a new draft record...");
+      if (createResponse.recordId) {
+  currentRecordId = createResponse.recordId;
+  logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
 
-        // Include all fields extracted so far
-        const createResponse = await createAccount.execute({
-          Name: extractedFields.Name,
-          Status: "Draft",
-          "Priority Image Type": "AI Generated",
-          ...cleanFields({
-            ...(currentRecordId ? recordFields[currentRecordId] : {}), // Ensure safe access
-            ...extractedFields,
-          }),
-        });
+  // Validate and retry if needed
+  let retries = 3;
+  while (!currentRecordId && retries > 0) {
+    logs.push(`[LLM] Record ID not yet available. Retrying... Attempts left: ${retries}`);
+    await new Promise((resolve) => setTimeout(resolve, 500)); // Wait 500ms before retrying
+    currentRecordId = createResponse.recordId; // Re-check recordId
+    retries--;
+  }
 
-        if (createResponse.recordId) {
-          currentRecordId = createResponse.recordId;
-          logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
+  if (!currentRecordId) {
+    logs.push("[LLM] Failed to retrieve a valid record ID after retries. Exiting.");
+    return {
+      messages: [
+        ...history,
+        { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+      ],
+      logs,
+    };
+  }
 
-          // Sync fields immediately
-          updateRecordFields(currentRecordId, { ...lastExtractedFields, ...extractedFields }, logs);
+  logs.push(`[LLM] Record ID confirmed: ${currentRecordId}`);
 
-          creationProgress = 0; // Start creation flow
-        } else {
-          logs.push("[LLM] Failed to create draft. Exiting.");
-          return {
-            messages: [
-              ...history,
-              { role: "assistant", content: "An error occurred while creating the account. Please try again." },
-            ],
-            logs,
-          };
-        }
-      }
+  // Ensure all fields are updated immediately
+  const combinedFields = { ...lastExtractedFields, ...extractedFields };
+  logs.push(`[LLM] Syncing fields for new record ID ${currentRecordId}: ${JSON.stringify(combinedFields)}`);
+
+  try {
+    await updateRecordFields(currentRecordId, combinedFields, logs);
+    logs.push(`[LLM] Fields synced successfully for record ID ${currentRecordId}`);
+  } catch (error) {
+    logs.push(`[LLM] Failed to sync fields for record ID ${currentRecordId}: ${error.message}`);
+  }
+
+  creationProgress = 0; // Start creation flow
+} else {
+  logs.push("[LLM] Failed to create draft. Exiting.");
+  return {
+    messages: [
+      ...history,
+      { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+    ],
+    logs,
+  };
+}
+
 
       // Skip redundant questions
       if (currentRecordId && typeof currentRecordId === "string") {
