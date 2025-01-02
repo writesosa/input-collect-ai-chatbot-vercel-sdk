@@ -202,7 +202,21 @@ export async function continueConversation(history: Message[]) {
         };
       }
 
-      if (createResponse.recordId) {
+      if (!currentRecordId && extractedFields.Name) {
+        logs.push("[LLM] Creating a new draft record...");
+
+        // Include all fields extracted so far
+        const createResponse = await createAccount.execute({
+          Name: extractedFields.Name,
+          Status: "Draft",
+          "Priority Image Type": "AI Generated",
+          ...cleanFields({
+            ...(currentRecordId ? recordFields[currentRecordId] : {}), // Ensure safe access
+            ...extractedFields,
+          }),
+        });
+
+if (createResponse.recordId) {
   currentRecordId = createResponse.recordId;
   logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
 
@@ -251,6 +265,7 @@ export async function continueConversation(history: Message[]) {
   };
 }
 
+      }
 
       // Skip redundant questions
       if (currentRecordId && typeof currentRecordId === "string") {
