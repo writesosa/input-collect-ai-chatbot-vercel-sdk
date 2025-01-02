@@ -92,28 +92,6 @@ const extractAndRefineFields = async (
   return extractedFields;
 };
 
-const validateAndLogURLsInBackground = async (fields: Record<string, any>, recordId: string, logs: string[]) => {
-  const urlFields = ["Website", "Instagram", "Facebook", "Blog"];
-  for (const field of urlFields) {
-    if (fields[field]) {
-      const { validUrl, suggestion } = validateURL(fields[field]);
-      if (!validUrl) {
-        logs.push(`[Validation]: Invalid ${field}: "${fields[field]}". Suggestion: "${suggestion}".`);
-      } else {
-        logs.push(`[Validation]: Validating ${field}: "${fields[field]}" to "${validUrl}".`);
-        try {
-          await modifyAccount.execute({
-            recordId,
-            fields: { [field]: validUrl },
-          });
-          logs.push(`[Validation]: Updated ${field} to "${validUrl}" in background.`);
-        } catch (error) {
-          logs.push(`[Validation]: Failed to update ${field} in Airtable: ${error instanceof Error ? error.message : error}`);
-        }
-      }
-    }
-  }
-};
 
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
@@ -144,6 +122,7 @@ export async function continueConversation(history: Message[]) {
       const { text } = await generateText({
         model: openai("gpt-4o"),
         system: `You are a Wonderland assistant!
+          You only know about Wonderland and can only anwer questions related to Wonderland.
           Reply with nicely formatted markdown. 
           Keep your replies short and concise. 
           If this is the first reply, send a nice welcome message.
@@ -182,8 +161,8 @@ export async function continueConversation(history: Message[]) {
       }
 
       // If Name or equivalent is missing, prompt the user for it
-      if (!currentRecordId && !extractedFields.Name) {
-        logs.push("[LLM] Missing Name field. Prompting user...");
+      if (!currentRecordId && !extractedFields.Name && !extractedFields["Client Company Name"]) {
+        logs.push("[LLM] Missing Name or Client Company Name. Prompting user...");
         return {
           messages: [
             ...history,
@@ -197,10 +176,10 @@ export async function continueConversation(history: Message[]) {
       }
 
       // Create draft if Name is available
-      if (!currentRecordId && extractedFields.Name) {
+      if (!currentRecordId && (extractedFields.Name || extractedFields["Client Company Name"])) {
         logs.push("[LLM] Creating a new draft record...");
         const createResponse = await createAccount.execute({
-          Name: extractedFields.Name,
+          Name: extractedFields.Name || extractedFields["Client Company Name"],
           Status: "Draft",
           "Priority Image Type": "AI Generated",
           ...cleanFields(extractedFields),
@@ -210,7 +189,6 @@ export async function continueConversation(history: Message[]) {
           currentRecordId = createResponse.recordId;
           logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
           creationProgress = 0; // Start creation flow
-          validateAndLogURLsInBackground(extractedFields, currentRecordId, logs); // URL validation in the background
         } else {
           logs.push("[LLM] Failed to create draft. Exiting.");
           return {
@@ -236,22 +214,14 @@ export async function continueConversation(history: Message[]) {
         }
       }
 
-      // Proceed to the next question
-      logs.push("[LLM] Attempting to proceed to the next question...");
+      // Prompt user for missing fields if necessary
       const missingQuestion = getNextQuestion(extractedFields, logs);
       if (missingQuestion) {
-        logs.push(`[LLM] Asking next question: "${missingQuestion}"`);
         return {
           messages: [...history, { role: "assistant", content: missingQuestion }],
           logs,
         };
       }
-
-      logs.push("[LLM] No more questions to ask. Account creation process complete.");
-      return {
-        messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
-        logs,
-      };
     }
   } catch (error) {
     logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
@@ -281,8 +251,19 @@ const getNextQuestion = async (fields: Record<string, any>, logs: string[]): Pro
     if (creationProgress === question.progress) {
       const missingFields = question.fields.filter((field) => !fields[field]);
       logs.push(`[LLM] Missing fields: ${missingFields.join(", ")}.`);
-
+      
       if (missingFields.length > 0) {
+        // Process invalid URLs
+        for (const field of question.fields) {
+          if (fields[field]) {
+            const { validUrl, suggestion } = validateURL(fields[field]);
+            if (!validUrl) {
+              logs.push(`[Validation]: Invalid ${field}: "${fields[field]}". Suggestion: "${suggestion}".`);
+              return `The provided ${field} "${fields[field]}" seems invalid. Did you mean: "${suggestion}"?`;
+            }
+            fields[field] = validUrl; // Use valid URL
+          }
+        }
         return question.prompt;
       }
     }
@@ -290,26 +271,27 @@ const getNextQuestion = async (fields: Record<string, any>, logs: string[]): Pro
   return null; // All questions completed
 };
 
+
+
 const validateURL = (url: string): { validUrl: string | null; suggestion: string | null } => {
   try {
     const validUrl = new URL(url.startsWith("http") ? url : `https://${url}`);
     return { validUrl: validUrl.href, suggestion: null };
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "An unknown error occurred during URL validation.";
-    console.error(`[URL Validation Error]: Invalid URL "${url}". Error: ${errorMessage}`);
-
+    console.error(`[URL Validation Error]: Invalid URL "${url}". Error: ${error.message}`);
     // Suggest corrections
-    let suggestion = null;
     if (!url.includes(".")) {
-      suggestion = `https://www.${url}.com`;
-    } else if (!url.startsWith("http")) {
-      suggestion = `https://${url}`;
+      const suggestion = `https://www.${url}.com`;
+      return { validUrl: null, suggestion };
     }
-
-    return { validUrl: null, suggestion };
+    if (!url.startsWith("http")) {
+      const suggestion = `https://${url}`;
+      return { validUrl: null, suggestion };
+    }
+    return { validUrl: null, suggestion: null };
   }
 };
+
 
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
@@ -320,14 +302,7 @@ const createAccount = tool({
       .string()
       .optional()
       .default("AI Generated")
-      .refine(
-        (type) =>
-          ["AI Generated", "Google Images", "Stock Images", "Uploaded Media", "Social Media"].includes(type),
-        { message: "Invalid 'Priority Image Type'. Must be one of the predefined values." }
-      )
-      .describe(
-        "The priority image type for the account, defaults to 'AI Generated'. Allowed values: AI Generated, Google Images, Stock Images, Uploaded Media, Social Media."
-      ),
+      .describe("The priority image type for the account, defaults to 'AI Generated'."),
     Description: z.string().optional().describe("A description for the account."),
     Website: z.string().optional().describe("The website URL of the client."),
     Instagram: z.string().optional().describe("The Instagram link of the client."),
@@ -339,7 +314,6 @@ const createAccount = tool({
   execute: async (fields) => {
     const logs: string[] = [];
     let recordId: string | null = null;
-    const maxRetries = 3;
 
     try {
       logs.push("[TOOL] Starting createAccount...");
@@ -349,19 +323,6 @@ const createAccount = tool({
       if (!fields.Name) {
         logs.push("[TOOL] Missing required field: Name.");
         throw new Error("The 'Name' field is required to create an account.");
-      }
-
-      // Validate Priority Image Type
-      const allowedImageTypes = [
-        "AI Generated",
-        "Google Images",
-        "Stock Images",
-        "Uploaded Media",
-        "Social Media",
-      ];
-      if (!allowedImageTypes.includes(fields["Priority Image Type"])) {
-        logs.push(`[TOOL] Invalid 'Priority Image Type': "${fields["Priority Image Type"]}". Defaulting to 'AI Generated'.`);
-        fields["Priority Image Type"] = "AI Generated";
       }
 
       // Check for existing draft account
@@ -377,45 +338,32 @@ const createAccount = tool({
         recordId = existingDraft[0].id;
         logs.push(`[TOOL] Reusing existing draft account with Record ID: ${recordId}`);
       } else {
+        // Populate missing optional fields with defaults
         logs.push("[TOOL] Creating a new draft account...");
-        for (let attempt = 1; attempt <= maxRetries; attempt++) {
-          try {
-            logs.push(`[TOOL] Attempt ${attempt} to create a new draft account.`);
-            const response = await airtableBase("Accounts").create({
-              Name: fields.Name,
-              Status: fields.Status || "Draft",
-              Description: fields.Description || `A general account for ${fields.Name}.`,
-              Website: fields.Website || "",
-              Instagram: fields.Instagram || "",
-              Facebook: fields.Facebook || "",
-              Blog: fields.Blog || "",
-              "Primary Objective":
-                fields["Primary Objective"] || `Increase visibility for ${fields.Name}.`,
-              "Talking Points":
-                fields["Talking Points"] || `Focus on innovation and engagement for ${fields.Name}.`,
-              "Priority Image Type": fields["Priority Image Type"],
-            });
-
-            logs.push(`[TOOL] API Response: ${JSON.stringify(response)}`);
-            if (response?.id) {
-              recordId = response.id;
-              logs.push(`[TOOL] Draft created successfully with ID: ${recordId}`);
-              break;
-            } else {
-              logs.push(`[TOOL] No record ID returned in attempt ${attempt}.`);
-            }
-          } catch (error) {
-            logs.push(`[TOOL] Error during attempt ${attempt}: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
-          }
-
-          if (attempt < maxRetries) {
-            await new Promise((resolve) => setTimeout(resolve, 1000)); // Delay before retry
-          }
+        try {
+          const record = await airtableBase("Accounts").create({
+            Name: fields.Name,
+            Status: fields.Status || "Draft",
+            Description: fields.Description || `A general account for ${fields.Name}.`,
+            Website: fields.Website || "",
+            Instagram: fields.Instagram || "",
+            Facebook: fields.Facebook || "",
+            Blog: fields.Blog || "",
+            "Primary Objective":
+              fields["Primary Objective"] || `Increase visibility for ${fields.Name}.`,
+            "Talking Points":
+              fields["Talking Points"] || `Focus on innovation and engagement for ${fields.Name}.`,
+            "Priority Image Type": fields["Priority Image Type"], // Default to "AI Generated"
+          });
+          recordId = record.id;
+          logs.push(`[TOOL] New draft account created with Record ID: ${recordId}`);
+        } catch (createError) {
+          logs.push(
+            "[TOOL] Error creating new draft account:",
+            createError instanceof Error ? createError.message : JSON.stringify(createError)
+          );
+          throw createError;
         }
-      }
-
-      if (!recordId) {
-        throw new Error("Failed to create account after multiple attempts. Manual intervention required.");
       }
 
       return {
@@ -424,7 +372,10 @@ const createAccount = tool({
         logs,
       };
     } catch (error) {
-      logs.push(`[TOOL] Error during account creation: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
+      logs.push(
+        "[TOOL] Error during account creation:",
+        error instanceof Error ? error.message : JSON.stringify(error)
+      );
       console.error("[TOOL] Error during account creation:", error);
 
       return {
