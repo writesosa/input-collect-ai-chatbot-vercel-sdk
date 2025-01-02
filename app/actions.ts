@@ -176,47 +176,36 @@ export async function continueConversation(history: Message[]) {
           logs,
         };
       }
-if (!currentRecordId && extractedFields.Name) {
-  logs.push("[LLM] Creating draft account, waiting for record ID...");
 
-  try {
-    // Include all fields extracted so far
-    const createResponse = await createAccount.execute({
-      Name: extractedFields.Name,
-      Status: "Draft",
-      "Priority Image Type": "AI Generated",
-      ...cleanFields(extractedFields),
-    });
+      if (!currentRecordId && extractedFields.Name) {
+        logs.push("[LLM] Creating draft account, waiting for record ID...");
 
-    // Retry logic to ensure record ID is set
-    let retries = 3;
-    while (!currentRecordId && retries > 0) {
-      logs.push(`[LLM] Waiting for record ID... Attempts left: ${retries}`);
-      await new Promise((resolve) => setTimeout(resolve, 500)); // Wait 500ms before retrying
-      currentRecordId = createResponse?.recordId || null;
-      retries--;
-    }
+        try {
+          // Include all fields extracted so far
+          const createResponse = await createAccount.execute({
+            Name: extractedFields.Name,
+            Status: "Draft",
+            "Priority Image Type": "AI Generated",
+            ...cleanFields(extractedFields),
+          });
 
-    if (!currentRecordId) {
-      logs.push("[LLM] Failed to retrieve a valid record ID after retries. Exiting.");
-      return {
-        messages: [
-          ...history,
-          { role: "assistant", content: "An error occurred while creating the account. Please try again." },
-        ],
-        logs,
-      };
-    }
+          if (createResponse?.recordId) {
+            currentRecordId = createResponse.recordId || null;
+            logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
+          } else {
 
-    logs.push(`[LLM] Record ID confirmed after retries: ${currentRecordId}`);
+            
+const handleRetryLogic = async () => {
+  let retries = 3;
+  while (!currentRecordId && retries > 0) {
+    logs.push(`[LLM] Waiting for record ID... Attempts left: ${retries}`);
+    await new Promise((resolve) => setTimeout(resolve, 500)); // Wait 500ms before retrying
+    currentRecordId = createResponse.recordId || null;
+    retries--;
+  }
 
-    // Initialize recordFields for the newly created record
-    if (currentRecordId && !recordFields[currentRecordId]) {
-      recordFields[currentRecordId] = { ...extractedFields };
-      logs.push(`[LLM] Initialized recordFields for record ID: ${currentRecordId}`);
-    }
-  } catch (error) {
-    logs.push(`[LLM] Error during account creation: ${error instanceof Error ? error.message : "Unknown error."}`);
+  if (!currentRecordId) {
+    logs.push("[LLM] Failed to retrieve a valid record ID after retries. Exiting.");
     return {
       messages: [
         ...history,
@@ -225,34 +214,70 @@ if (!currentRecordId && extractedFields.Name) {
       logs,
     };
   }
+};
+
+// Call the retry logic and handle its return
+const retryResult = await handleRetryLogic();
+if (retryResult) {
+  return retryResult; // Exit if handleRetryLogic indicates an error
 }
 
-// Skip redundant questions
-if (currentRecordId && typeof currentRecordId === "string") {
-  questionToAsk = getNextQuestion(currentRecordId, logs);
 
-  if (!questionToAsk) {
-    logs.push(`[LLM] Syncing record fields for record ID: ${currentRecordId}`);
-    try {
-      await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
-    } catch (error) {
-      logs.push(`[LLM] Error during field sync: ${error instanceof Error ? error.message : "Unknown error."}`);
+
+            logs.push(`[LLM] Record ID confirmed after retries: ${currentRecordId}`);
+          }
+
+          // Initialize recordFields for the newly created record
+          if (currentRecordId && !recordFields[currentRecordId]) {
+            recordFields[currentRecordId] = { ...extractedFields };
+            logs.push(`[LLM] Initialized recordFields for record ID: ${currentRecordId}`);
+          }
+        } catch (error) {
+          logs.push(`[LLM] Error during account creation: ${error instanceof Error ? error.message : "Unknown error."}`);
+          return {
+            messages: [
+              ...history,
+              { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+            ],
+            logs,
+          };
+        }
+      }
+
+      // Skip redundant questions
+      if (currentRecordId && typeof currentRecordId === "string") {
+        questionToAsk = getNextQuestion(currentRecordId, logs);
+
+        if (!questionToAsk) {
+          logs.push(`[LLM] Syncing record fields for record ID: ${currentRecordId}`);
+          try {
+            await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
+          } catch (error) {
+            logs.push(`[LLM] Error during field sync: ${error instanceof Error ? error.message : "Unknown error."}`);
+          }
+
+          logs.push("[LLM] No more questions to ask. All fields have been captured.");
+          return {
+            messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+            logs,
+          };
+        }
+
+        logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
+        return {
+          messages: [...history, { role: "assistant", content: questionToAsk }],
+          logs,
+        };
+      }
     }
-
-    logs.push("[LLM] No more questions to ask. All fields have been captured.");
+  } catch (error) {
+    logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
     return {
-      messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+      messages: [...history, { role: "assistant", content: "An error occurred while processing your request." }],
       logs,
     };
   }
-
-  logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
-  return {
-    messages: [...history, { role: "assistant", content: questionToAsk }],
-    logs,
-  };
 }
-
 
 
   
