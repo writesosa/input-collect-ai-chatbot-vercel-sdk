@@ -230,25 +230,45 @@ export async function continueConversation(history: Message[]) {
 
 
       // Ensure questions are asked in sequence
-      if (currentRecordId && typeof currentRecordId === "string") {
-        logs.push("[LLM] Preparing to invoke getNextQuestion...");
-        questionToAsk = getNextQuestion(currentRecordId, logs);
-        questionAsked = !!questionToAsk;
+if (currentRecordId && typeof currentRecordId === "string") {
+  logs.push("[LLM] Preparing to invoke getNextQuestion...");
+  questionToAsk = getNextQuestion(currentRecordId, logs);
 
-        if (!questionToAsk) {
-          logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
-          try {
-            await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
-          } catch (syncError) {
-            logs.push(`[LLM] Failed to sync fields: ${syncError instanceof Error ? syncError.message : syncError}`);
-          }
+  if (questionToAsk) {
+    questionAsked = true;
+    logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
+    return {
+      messages: [...history, { role: "assistant", content: questionToAsk }],
+      logs,
+    };
+  }
 
-          logs.push("[LLM] No more questions to ask. All fields have been captured.");
-          return {
-            messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
-            logs,
-          };
-        }
+  logs.push("[LLM] No immediate question to ask. Re-checking unanswered questions...");
+  
+  // Re-check for unanswered questions after creation
+  questionToAsk = getNextQuestion(currentRecordId, logs);
+  if (questionToAsk) {
+    logs.push(`[LLM] Asking missed question: "${questionToAsk}"`);
+    return {
+      messages: [...history, { role: "assistant", content: questionToAsk }],
+      logs,
+    };
+  }
+
+  logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
+  try {
+    await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
+  } catch (syncError) {
+    logs.push(`[LLM] Failed to sync fields: ${syncError instanceof Error ? syncError.message : syncError}`);
+  }
+
+  logs.push("[LLM] No more questions to ask. All fields have been captured.");
+  return {
+    messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+    logs,
+  };
+}
+
 
         logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
         return {
