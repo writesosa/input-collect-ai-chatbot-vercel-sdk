@@ -91,7 +91,6 @@ const extractAndRefineFields = async (
   lastExtractedFields = { ...lastExtractedFields, ...extractedFields }; // Merge with previously extracted fields
   return extractedFields;
 };
-
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
@@ -157,34 +156,29 @@ export async function continueConversation(history: Message[]) {
         logs.push("[LLM] Using previously extracted Name field.");
         extractedFields.Name = lastExtractedFields.Name;
       }
-if (currentRecordId && typeof currentRecordId === "string") {
-  // Merge extracted fields into recordFields
-  recordFields[currentRecordId] = {
-    ...recordFields[currentRecordId],
-    ...extractedFields,
-  };
 
-  logs.push(
-    `[LLM] Updated fields for record ID ${currentRecordId}: ${JSON.stringify(
-      recordFields[currentRecordId]
-    )}`
-  );
+      if (currentRecordId && typeof currentRecordId === "string") {
+        // Merge extracted fields into recordFields
+        recordFields[currentRecordId] = {
+          ...recordFields[currentRecordId],
+          ...extractedFields,
+        };
 
-  // Prevent overwriting fields with blank values
-  Object.keys(extractedFields).forEach((key) => {
-    if (!extractedFields[key]) {
-      if (recordFields[currentRecordId]) {
-        delete recordFields[currentRecordId][key];
+        logs.push(
+          `[LLM] Updated fields for record ID ${currentRecordId}: ${JSON.stringify(
+            recordFields[currentRecordId]
+          )}`
+        );
+
+        // Prevent overwriting fields with blank values
+        Object.keys(extractedFields).forEach((key) => {
+          if (!extractedFields[key] && recordFields[currentRecordId]) {
+            delete recordFields[currentRecordId]?.[key];
+          }
+        });
+      } else {
+        logs.push("[LLM] Skipping field updates: currentRecordId is null or invalid.");
       }
-    }
-  });
-} else {
-  logs.push("[LLM] Skipping field updates: currentRecordId is null or invalid.");
-}
-
-
-
-
 
       // If Name or equivalent is missing, prompt the user for it
       if (!currentRecordId && !extractedFields.Name) {
