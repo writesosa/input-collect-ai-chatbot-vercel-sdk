@@ -277,6 +277,34 @@ if (!questionAsked) {
   }
 }
 
+if (!questionAsked) {
+  logs.push("[LLM] No immediate question to ask. Re-checking unanswered questions...");
+  
+  if (currentRecordId) {
+    const allQuestions = [
+      "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?",
+      "Can you tell me more about the company, including its industry, purpose, or mission?",
+      "What are the major objectives or talking points you'd like to achieve with Wonderland?",
+    ];
+
+    const unaskedQuestions = allQuestions.filter((q) => !questionsAsked.includes(q));
+
+    if (unaskedQuestions.length > 0) {
+      const nextUnaskedQuestion = unaskedQuestions[0]; // Ask the first unasked question
+      logs.push(`[LLM] Asking previously unasked question: "${nextUnaskedQuestion}"`);
+      questionsAsked.push(nextUnaskedQuestion); // Track it
+      recordFields[currentRecordId].questionsAsked = questionsAsked; // Persist
+      return {
+        messages: [...history, { role: "assistant", content: nextUnaskedQuestion }],
+        logs,
+      };
+    } else {
+      logs.push("[LLM] Re-check confirmed all questions were asked.");
+    }
+  }
+}
+
+
 
       // If `getNextQuestion` wasn't called, invoke it again after creation
       if (!questionAsked) {
@@ -375,8 +403,6 @@ const createAccount = tool({
     }
   },
 });
-
-// Correct handling of progress and questions
 const getNextQuestion = (recordId: string, logs: string[]): string | null => {
   const questions = [
     {
@@ -397,19 +423,26 @@ const getNextQuestion = (recordId: string, logs: string[]): string | null => {
   ];
 
   for (const question of questions) {
+    if (questionsAsked.includes(question.prompt)) {
+      logs.push(`[LLM] Question already asked: "${question.prompt}"`);
+      continue; // Skip already asked questions
+    }
+
     if (creationProgress === question.progress) {
       logs.push(`[LLM] Checking progress ${question.progress} for required fields.`);
 
-      const missingFields = question.fields.filter(
-        (field) => !recordFields[recordId]?.[field] || recordFields[recordId][field].trim() === ""
+      const anyFieldFilled = question.fields.some(
+        (field) => recordFields[recordId]?.[field] && recordFields[recordId][field].trim() !== ""
       );
 
-      if (missingFields.length > 0) {
-        logs.push(`[LLM] Missing fields: ${missingFields.join(", ")}. Asking question: "${question.prompt}".`);
+      if (!anyFieldFilled) {
+        logs.push(`[LLM] Asking question: "${question.prompt}" for progress ${question.progress}`);
+        questionsAsked.push(question.prompt); // Track this question as asked
+        recordFields[recordId].questionsAsked = questionsAsked; // Persist the tracking
         return question.prompt;
       }
 
-      logs.push(`[LLM] Skipping question for progress ${question.progress}. All required fields are filled.`);
+      logs.push(`[LLM] Skipping question for progress ${question.progress} as at least one field is filled.`);
       creationProgress++; // Move to the next question
     }
   }
@@ -417,7 +450,6 @@ const getNextQuestion = (recordId: string, logs: string[]): string | null => {
   logs.push("[LLM] All predefined questions have been asked or skipped. No further questions.");
   return null; // No more questions to ask
 };
-
 
 
 
