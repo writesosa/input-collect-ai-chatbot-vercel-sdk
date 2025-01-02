@@ -176,12 +176,13 @@ export async function continueConversation(history: Message[]) {
         }
 
         // Ensure questions are tracked internally and not synced with Airtable
-        if (!recordFields[currentRecordId]?.questionsAsked) {
-          recordFields[currentRecordId] = {
-            ...recordFields[currentRecordId],
-            questionsAsked: [],
-          };
-        }
+if (currentRecordId && !recordFields[currentRecordId]?.questionsAsked) {
+  recordFields[currentRecordId] = {
+    ...recordFields[currentRecordId],
+    questionsAsked: [],
+  };
+}
+
 
 
       // If Name or equivalent is missing, prompt the user for it
