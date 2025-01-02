@@ -205,42 +205,42 @@ export async function continueConversation(history: Message[]) {
 
       // Create draft if Name is available
       if (!currentRecordId && extractedFields.Name) {
-        logs.push("[LLM] Creating a new draft record...");
+  logs.push("[LLM] Creating a new draft record...");
 
-        // Ensure currentRecordId is not null before using it
-        const recordId = currentRecordId ?? ""; // Fallback to empty string for safety
+  // Safely handle null or undefined currentRecordId
+  const safeRecordId = currentRecordId || "";
 
-        const createResponse = await createAccount.execute({
-          Name: extractedFields.Name,
-          Status: "Draft",
-          "Priority Image Type": "AI Generated",
-          ...cleanFields({ ...(recordFields[recordId] || {}), ...extractedFields }), // Safely handle potential null value
-        });
+  const createResponse = await createAccount.execute({
+    Name: extractedFields.Name,
+    Status: "Draft",
+    "Priority Image Type": "AI Generated",
+    ...cleanFields({ ...(recordFields[safeRecordId] || {}), ...extractedFields }), // Safely access recordFields
+  });
 
-        if (createResponse.recordId) {
-          currentRecordId = createResponse.recordId;
-          logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
-          creationProgress = 0; // Start creation flow
-        } else {
-          logs.push("[LLM] Failed to create draft. Exiting.");
-          return {
-            messages: [
-              ...history,
-              { role: "assistant", content: "An error occurred while creating the account. Please try again." },
-            ],
-            logs,
-          };
-        }
-      }
+  if (createResponse.recordId) {
+    currentRecordId = createResponse.recordId;
+    logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
+    creationProgress = 0; // Start creation flow
+  } else {
+    logs.push("[LLM] Failed to create draft. Exiting.");
+    return {
+      messages: [
+        ...history,
+        { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+      ],
+      logs,
+    };
+  }
+}
 
+if (!currentRecordId) {
+  logs.push("[LLM] Error: currentRecordId is null. Cannot proceed to the next question.");
+  return {
+    messages: [...history, { role: "assistant", content: "No record ID available to continue." }],
+    logs,
+  };
+}
 
-      if (!currentRecordId) {
-        logs.push("[LLM] Error: currentRecordId is null. Cannot proceed to the next question.");
-        return {
-          messages: [...history, { role: "assistant", content: "No record ID available to continue." }],
-          logs,
-        };
-      }
 
       // Skip redundant questions
       questionToAsk = getNextQuestion(currentRecordId, logs);
