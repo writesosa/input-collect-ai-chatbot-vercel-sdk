@@ -194,7 +194,7 @@ export async function continueConversation(history: Message[]) {
             logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
           } else {
 
-            
+
 const handleRetryLogic = async (): Promise<{ messages: Message[]; logs: string[] } | null> => {
   let retries = 3;
   while (!currentRecordId && retries > 0) {
@@ -222,29 +222,6 @@ const handleRetryLogic = async (): Promise<{ messages: Message[]; logs: string[]
 const retryResult = await handleRetryLogic();
 if (retryResult) {
   return retryResult; // Exit early if retry failed
-}
-
-
-
-
-            logs.push(`[LLM] Record ID confirmed after retries: ${currentRecordId}`);
-          }
-
-          // Initialize recordFields for the newly created record
-          if (currentRecordId && !recordFields[currentRecordId]) {
-            recordFields[currentRecordId] = { ...extractedFields };
-            logs.push(`[LLM] Initialized recordFields for record ID: ${currentRecordId}`);
-          }
-        } catch (error) {
-          logs.push(`[LLM] Error during account creation: ${error instanceof Error ? error.message : "Unknown error."}`);
-          return {
-            messages: [
-              ...history,
-              { role: "assistant", content: "An error occurred while creating the account. Please try again." },
-            ],
-            logs,
-          };
-        }
       }
 
       // Skip redundant questions
