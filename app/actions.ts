@@ -151,6 +151,11 @@ export async function continueConversation(history: Message[]) {
       const userMessage = history[history.length - 1]?.content.trim() || "";
       let extractedFields = await extractAndRefineFields(userMessage, logs);
 
+      if (currentRecordId) {
+        logs.push(`[LLM] Syncing extracted fields to Airtable for record ID: ${currentRecordId}`);
+        await updateRecordFields(currentRecordId, extractedFields, logs);
+      }
+
       // Use previously extracted fields if available and valid
       if (!extractedFields.Name && lastExtractedFields?.Name) {
         logs.push("[LLM] Using previously extracted Name field.");
@@ -276,19 +281,30 @@ if (createResponse.recordId) {
         // Safe usage of currentRecordId since it is explicitly checked to be a string
         questionToAsk = getNextQuestion(currentRecordId, logs);
 
-        if (!questionToAsk) {
-          logs.push("[LLM] No more questions to ask. All fields have been captured.");
-          return {
-            messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
-            logs,
-          };
-        }
+if (!questionToAsk) {
+  if (currentRecordId) {
+    logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
+    await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
+  }
 
-        logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
-        return {
-          messages: [...history, { role: "assistant", content: questionToAsk }],
-          logs,
-        };
+  logs.push("[LLM] No more questions to ask. All fields have been captured.");
+  return {
+    messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+    logs,
+  };
+}
+
+if (currentRecordId) {
+  logs.push(`[LLM] Syncing record fields before progressing to the next question for record ID: ${currentRecordId}`);
+  await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
+}
+
+logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
+return {
+  messages: [...history, { role: "assistant", content: questionToAsk }],
+  logs,
+};
+
       } else {
         logs.push("[LLM] No valid record ID available to continue question flow.");
       }
@@ -303,7 +319,7 @@ if (createResponse.recordId) {
 // Helper: Update record fields and prevent redundant updates
 const recordFields: Record<string, Record<string, any>> = {};
 
-const updateRecordFields = (recordId: string, newFields: Record<string, any>, logs: string[]) => {
+const updateRecordFields = async (recordId: string, newFields: Record<string, any>, logs: string[]) => {
   if (!recordFields[recordId]) {
     recordFields[recordId] = {};
   }
@@ -316,6 +332,14 @@ const updateRecordFields = (recordId: string, newFields: Record<string, any>, lo
       logs.push(`[LLM] Field already filled: ${key}. Skipping update.`);
     }
   });
+
+  // Sync with Airtable
+  try {
+    await airtableBase('Accounts').update(recordId, newFields);
+    logs.push(`[LLM] Airtable updated successfully for record ID: ${recordId}`);
+  } catch (error) {
+    logs.push(`[LLM] Failed to update Airtable for record ID ${recordId}: ${error instanceof Error ? error.message : error}`);
+  }
 };
 
 // Helper: Determine the next question based on missing fields
