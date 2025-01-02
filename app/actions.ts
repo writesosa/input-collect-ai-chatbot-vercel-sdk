@@ -235,7 +235,6 @@ if (!currentRecordId && extractedFields.Name) {
 }
 if (currentRecordId) {
   logs.push(`[LLM] Updating Airtable record ID: ${currentRecordId} with extracted fields.`);
-
   try {
     // Merge existing fields with new ones, ignoring null/empty values
     const updatedFields = {
@@ -247,26 +246,41 @@ if (currentRecordId) {
       ),
     };
 
-    // Avoid overwriting blank values by merging with existing data
+    // Perform the update
     await updateRecordFields(currentRecordId, updatedFields, logs);
-    logs.push(`[LLM] Fields updated for record ID: ${currentRecordId}`);
-    recordFields[currentRecordId] = updatedFields; // Save updated fields locally for tracking
-  } catch (error) {
-    logs.push(`[LLM] Failed to update Airtable record ID ${currentRecordId}: ${
-      error instanceof Error ? error.message : "Unknown error"
+
+    // Save updated fields locally for tracking
+    recordFields[currentRecordId] = updatedFields;
+
+    logs.push(`[LLM] Fields updated successfully for record ID: ${currentRecordId}`);
+  } catch (updateError) {
+    logs.push(`[LLM] Initial update failed for record ID ${currentRecordId}: ${
+      updateError instanceof Error ? updateError.message : "Unknown error"
     }`);
-    return {
-      messages: [
-        ...history,
-        {
-          role: "assistant",
-          content: "An error occurred while syncing the account fields. Please try again later.",
-        },
-      ],
-      logs,
-    };
+
+    // Retry logic for failed updates
+    try {
+      logs.push("[LLM] Retrying field update...");
+      await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
+      logs.push(`[LLM] Retry successful for record ID: ${currentRecordId}`);
+    } catch (retryError) {
+      logs.push(`[LLM] Retry failed for record ID ${currentRecordId}: ${
+        retryError instanceof Error ? retryError.message : "Unknown error"
+      }`);
+      return {
+        messages: [
+          ...history,
+          {
+            role: "assistant",
+            content: "An error occurred while syncing the account fields. Please try again later.",
+          },
+        ],
+        logs,
+      };
+    }
   }
 }
+
 
 
 
@@ -320,9 +334,6 @@ if (currentRecordId) {
 }
 
 
-
-
-// Avoid filling defaults for optional fields during account creation
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -333,7 +344,7 @@ const createAccount = tool({
     Instagram: z.string().optional(),
     Facebook: z.string().optional(),
     Blog: z.string().optional(),
-        "Client Company Name": z.string().optional(),
+    "Client Company Name": z.string().optional(),
     "Primary Objective": z.string().optional(),
     "Talking Points": z.string().optional(),
   }),
@@ -361,12 +372,9 @@ const createAccount = tool({
         recordId = existingDraft[0].id;
         logs.push(`[TOOL] Reusing existing draft account with Record ID: ${recordId}`);
       } else {
-        const record = await airtableBase("Accounts").create({
-          Name: fields.Name,
-          Status: fields.Status || "Draft",
-        });
+        const record = await airtableBase("Accounts").create(fields);
         recordId = record.id;
-        logs.push(`[TOOL] New draft account created with Record ID: ${recordId}`);
+        logs.push(`[TOOL] New account created with Record ID: ${recordId}`);
       }
 
       return {
