@@ -260,11 +260,7 @@ const createAccount = tool({
   parameters: z.object({
     Name: z.string().describe("The name of the account holder. This field is required."),
     Status: z.string().optional().default("Draft").describe("The status of the account."),
-    "Priority Image Type": z
-      .string()
-      .optional()
-      .default("AI Generated")
-      .describe("The priority image type for the account."),
+        "Priority Image Type": "AI Generated", // Default value
     Description: z.string().optional(),
     Website: z.string().optional(),
     Instagram: z.string().optional(),
