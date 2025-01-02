@@ -254,18 +254,16 @@ if (!questionAsked) {
     "What are the major objectives or talking points you'd like to achieve with Wonderland?",
   ];
 
-  if (currentRecordId !== null && recordFields[currentRecordId]) { // Ensure currentRecordId is not null
+  if (currentRecordId && recordFields[currentRecordId] !== undefined) { // Ensure currentRecordId is valid
+    const record = recordFields[currentRecordId]; // Safely access the record
     const unaskedQuestions = allQuestions.filter(
-      (q) => !recordFields[currentRecordId]?.questionsAsked?.includes(q)
+      (q) => !record.questionsAsked?.includes(q)
     );
 
     if (unaskedQuestions.length > 0) {
       const nextUnaskedQuestion = unaskedQuestions[0];
       logs.push(`[LLM] Re-asking missing question: "${nextUnaskedQuestion}"`);
-      recordFields[currentRecordId].questionsAsked = [
-        ...(recordFields[currentRecordId]?.questionsAsked || []),
-        nextUnaskedQuestion,
-      ];
+      record.questionsAsked = [...(record.questionsAsked || []), nextUnaskedQuestion];
       return {
         messages: [...history, { role: "assistant", content: nextUnaskedQuestion }],
         logs,
@@ -273,7 +271,7 @@ if (!questionAsked) {
     }
     logs.push("[LLM] Fallback confirmed all questions were asked.");
   } else {
-    logs.push("[LLM] currentRecordId is null or recordFields[currentRecordId] is undefined. Unable to check unanswered questions.");
+    logs.push("[LLM] currentRecordId is invalid or recordFields[currentRecordId] is undefined.");
   }
 }
 
