@@ -262,21 +262,6 @@ if (currentRecordId && typeof currentRecordId === "string") {
   };
 }
 
-// If no question was asked, re-check unanswered questions after account creation
-if (!questionAsked) {
-  logs.push("[LLM] No immediate question to ask. Re-checking unanswered questions...");
-  if (currentRecordId) {
-    questionToAsk = getNextQuestion(currentRecordId, logs);
-    if (questionToAsk) {
-      logs.push(`[LLM] Asking question after re-check: "${questionToAsk}"`);
-      return {
-        messages: [...history, { role: "assistant", content: questionToAsk }],
-        logs,
-      };
-    }
-  }
-}
-
 if (!questionAsked) {
   logs.push("[LLM] No immediate question to ask. Re-checking unanswered questions...");
   
