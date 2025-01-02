@@ -220,24 +220,25 @@ export async function continueConversation(history: Message[]) {
 // Proceed to update the record if valid
 if (currentRecordId) {
   try {
-    logs.push(`[LLM] Updating Airtable record ID: ${currentRecordId} with extracted fields.`);
-    await updateRecordFields(currentRecordId, extractedFields, logs);
-  } catch (error) {
-    logs.push(`[LLM] Failed to update Airtable record ID: ${currentRecordId}: ${
-      error instanceof Error ? error.message : "Unknown error"
-    }`);
-    return {
-      messages: [
-        ...history,
-        {
-          role: "assistant",
-          content: "An error occurred while updating the account. Please try again later.",
-        },
-      ],
-      logs,
+    logs.push(`[LLM] Syncing record fields for record ID: ${currentRecordId}`);
+
+    // Transform questionsAsked to a format compatible with Airtable
+    const transformedQuestions = Array.isArray(recordFields[currentRecordId]?.questionsAsked)
+      ? recordFields[currentRecordId].questionsAsked.join(", ")
+      : recordFields[currentRecordId]?.questionsAsked || "";
+
+    // Prepare the fields for Airtable update
+    const fieldsToUpdate = {
+      ...recordFields[currentRecordId],
+      questionsAsked: transformedQuestions, // Ensure questionsAsked is stored as a string
     };
+
+    await updateRecordFields(currentRecordId, fieldsToUpdate, logs);
+  } catch (syncError) {
+    logs.push(`[LLM] Failed to sync fields for record ID ${currentRecordId}: ${syncError instanceof Error ? syncError.message : syncError}`);
   }
 }
+
 
 
       // Ensure questions are asked in sequence
