@@ -95,6 +95,9 @@ const extractAndRefineFields = async (
   lastExtractedFields = { ...lastExtractedFields, ...extractedFields }; // Merge with previously extracted fields
   return extractedFields;
 };
+
+
+
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
@@ -186,99 +189,36 @@ export async function continueConversation(history: Message[]) {
       }
 
       if (!currentRecordId && extractedFields.Name) {
-  logs.push("[LLM] Creating new record because currentRecordId is null or invalid.");
-  try {
-    const createResponse = await createAccount.execute({
-      Name: extractedFields.Name,
-      "Client Company Name": extractedFields["Client Company Name"],
-      Status: "Draft",
-      ...cleanFields(extractedFields),
-    });
+        logs.push("[LLM] Creating new record because currentRecordId is null or invalid.");
+        try {
+          const createResponse = await createAccount.execute({
+            Name: extractedFields.Name,
+            "Client Company Name": extractedFields["Client Company Name"],
+            Status: "Draft",
+            ...cleanFields(extractedFields),
+          });
 
-    if (createResponse?.recordId) {
-      currentRecordId = createResponse.recordId;
-      recordFields[currentRecordId] = { ...extractedFields };
-      logs.push(`[LLM] New account created successfully with ID: ${currentRecordId}`);
-    } else {
-      throw new Error("Failed to retrieve a valid record ID after account creation.");
-    }
-  } catch (error) {
-    logs.push(`[LLM] Account creation error: ${error instanceof Error ? error.message : "Unknown error"}`);
-    return {
-      messages: [
-        ...history,
-        {
-          role: "assistant",
-          content: "An error occurred while creating the account. Please try again or contact support.",
-        },
-      ],
-      logs,
-    };
-  }
-}
-
-// Proceed to update the record if valid
-if (currentRecordId) {
-  if (!recordFields[currentRecordId]) {
-    recordFields[currentRecordId] = {};
-  }
-
-  // Initialize or update questionsAsked in memory
-  if (!recordFields[currentRecordId].questionsAsked) {
-    recordFields[currentRecordId].questionsAsked = [];
-  }
-
-  // Sync record fields to Airtable in the background
-  const syncToAirtable = async () => {
-    try {
-      const fieldsToUpdate = { ...recordFields[currentRecordId] };
-      delete fieldsToUpdate.questionsAsked; // Exclude questionsAsked from being synced
-      await updateRecordFields(currentRecordId, fieldsToUpdate, logs);
-      logs.push(`[LLM] Successfully synced record fields to Airtable for record ID: ${currentRecordId}`);
-    } catch (error) {
-      logs.push(
-        `[LLM] Failed to sync record fields for record ID: ${currentRecordId}: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
-    }
-  };
-
-  // Start syncing in the background
-  syncToAirtable();
-
-  // Prepare to ask the next question
-  logs.push("[LLM] Preparing to invoke getNextQuestion...");
-  const allQuestions = [
-    "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?",
-    "Can you tell me more about the company, including its industry, purpose, or mission?",
-    "What are the major objectives or talking points you'd like to achieve with Wonderland?",
-  ];
-
-  // Filter unasked questions
-  const unaskedQuestions = allQuestions.filter(
-    (q) => !recordFields[currentRecordId].questionsAsked.includes(q)
-  );
-
-  if (unaskedQuestions.length > 0) {
-    const nextQuestion = unaskedQuestions[0];
-    recordFields[currentRecordId].questionsAsked.push(nextQuestion); // Track asked question in memory
-    logs.push(`[LLM] Asking next question: "${nextQuestion}"`);
-    return {
-      messages: [...history, { role: "assistant", content: nextQuestion }],
-      logs,
-    };
-  }
-
-  logs.push("[LLM] No more questions to ask. All fields have been captured.");
-  return {
-    messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
-    logs,
-  };
-}
-
-}
-
+          if (createResponse?.recordId) {
+            currentRecordId = createResponse.recordId;
+            recordFields[currentRecordId] = { ...extractedFields };
+            logs.push(`[LLM] New account created successfully with ID: ${currentRecordId}`);
+          } else {
+            throw new Error("Failed to retrieve a valid record ID after account creation.");
+          }
+        } catch (error) {
+          logs.push(`[LLM] Account creation error: ${error instanceof Error ? error.message : "Unknown error"}`);
+          return {
+            messages: [
+              ...history,
+              {
+                role: "assistant",
+                content: "An error occurred while creating the account. Please try again or contact support.",
+              },
+            ],
+            logs,
+          };
+        }
+      }
 
       // Ensure questions are asked in sequence
       if (currentRecordId) {
@@ -317,15 +257,15 @@ if (currentRecordId) {
           "What are the major objectives or talking points you'd like to achieve with Wonderland?",
         ];
 
-let unaskedQuestions: string[] = [];
-if (currentRecordId !== null && recordFields[currentRecordId]) {
-  const record = recordFields[currentRecordId]; // Narrow the type
-  unaskedQuestions = allQuestions.filter(
-    (q) => !record.questionsAsked?.includes(q)
-  );
-} else {
-  logs.push("[LLM] currentRecordId is null or recordFields[currentRecordId] is undefined.");
-}
+        let unaskedQuestions: string[] = [];
+        if (currentRecordId !== null && recordFields[currentRecordId]) {
+          const record = recordFields[currentRecordId];
+          unaskedQuestions = allQuestions.filter(
+            (q) => !record.questionsAsked?.includes(q)
+          );
+        } else {
+          logs.push("[LLM] currentRecordId is null or recordFields[currentRecordId] is undefined.");
+        }
 
         if (unaskedQuestions.length > 0) {
           const nextUnaskedQuestion = unaskedQuestions[0];
@@ -356,6 +296,7 @@ if (currentRecordId !== null && recordFields[currentRecordId]) {
     };
   }
 }
+
 
 
 
