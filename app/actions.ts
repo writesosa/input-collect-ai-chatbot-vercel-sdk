@@ -232,32 +232,31 @@ export async function continueConversation(history: Message[]) {
           };
         }
       }
+    }
 
-      // Skip redundant questions
-      if (currentRecordId && typeof currentRecordId === "string") {
-        questionToAsk = getNextQuestion(currentRecordId, logs);
+    if (currentRecordId && typeof currentRecordId === "string") {
+      questionToAsk = getNextQuestion(currentRecordId, logs);
 
-        if (!questionToAsk) {
-          logs.push(`[LLM] Syncing record fields for record ID: ${currentRecordId}`);
-          try {
-            await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
-          } catch (error) {
-            logs.push(`[LLM] Error during field sync: ${error instanceof Error ? error.message : "Unknown error."}`);
-          }
-
-          logs.push("[LLM] No more questions to ask. All fields have been captured.");
-          return {
-            messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
-            logs,
-          };
+      if (!questionToAsk) {
+        logs.push(`[LLM] Syncing record fields for record ID: ${currentRecordId}`);
+        try {
+          await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
+        } catch (error) {
+          logs.push(`[LLM] Error during field sync: ${error instanceof Error ? error.message : "Unknown error."}`);
         }
 
-        logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
+        logs.push("[LLM] No more questions to ask. All fields have been captured.");
         return {
-          messages: [...history, { role: "assistant", content: questionToAsk }],
+          messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
           logs,
         };
       }
+
+      logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
+      return {
+        messages: [...history, { role: "assistant", content: questionToAsk }],
+        logs,
+      };
     }
   } catch (error) {
     logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
@@ -267,6 +266,7 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
+
 
 
   if (currentRecordId && typeof currentRecordId === "string") {
