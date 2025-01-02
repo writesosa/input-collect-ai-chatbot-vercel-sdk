@@ -92,7 +92,6 @@ const extractAndRefineFields = async (
   return extractedFields;
 };
 
-
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
@@ -122,7 +121,6 @@ export async function continueConversation(history: Message[]) {
       const { text } = await generateText({
         model: openai("gpt-4o"),
         system: `You are a Wonderland assistant!
-          You only know about Wonderland and can only anwer questions related to Wonderland.
           Reply with nicely formatted markdown. 
           Keep your replies short and concise. 
           If this is the first reply, send a nice welcome message.
@@ -161,8 +159,8 @@ export async function continueConversation(history: Message[]) {
       }
 
       // If Name or equivalent is missing, prompt the user for it
-      if (!currentRecordId && !extractedFields.Name && !extractedFields["Client Company Name"]) {
-        logs.push("[LLM] Missing Name or Client Company Name. Prompting user...");
+      if (!currentRecordId && !extractedFields.Name) {
+        logs.push("[LLM] Missing Name field. Prompting user...");
         return {
           messages: [
             ...history,
@@ -176,10 +174,10 @@ export async function continueConversation(history: Message[]) {
       }
 
       // Create draft if Name is available
-      if (!currentRecordId && (extractedFields.Name || extractedFields["Client Company Name"])) {
+      if (!currentRecordId && extractedFields.Name) {
         logs.push("[LLM] Creating a new draft record...");
         const createResponse = await createAccount.execute({
-          Name: extractedFields.Name || extractedFields["Client Company Name"],
+          Name: extractedFields.Name,
           Status: "Draft",
           "Priority Image Type": "AI Generated",
           ...cleanFields(extractedFields),
@@ -214,20 +212,29 @@ export async function continueConversation(history: Message[]) {
         }
       }
 
-      // Prompt user for missing fields if necessary
+      // Proceed to the next question
+      logs.push("[LLM] Attempting to proceed to the next question...");
       const missingQuestion = getNextQuestion(extractedFields, logs);
       if (missingQuestion) {
+        logs.push(`[LLM] Asking next question: "${missingQuestion}"`);
         return {
           messages: [...history, { role: "assistant", content: missingQuestion }],
           logs,
         };
       }
+
+      logs.push("[LLM] No more questions to ask. Account creation process complete.");
+      return {
+        messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+        logs,
+      };
     }
   } catch (error) {
     logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
     return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
   }
 }
+
 const getNextQuestion = async (fields: Record<string, any>, logs: string[]): Promise<string | null> => {
   const questions = [
     {
