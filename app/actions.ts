@@ -149,94 +149,103 @@ export async function continueConversation(history: Message[]) {
       logs.push("[LLM] General query processed successfully.");
       return { messages: [...history, { role: "assistant", content: text }], logs };
     }
-// Handle account creation logic
-if (userIntent === "account_creation") {
-  logs.push("[LLM] Account creation detected. Processing...");
 
-  const userMessage = history[history.length - 1]?.content.trim() || "";
-  let extractedFields = await extractAndRefineFields(userMessage, logs);
+    // Handle account creation logic
+    if (userIntent === "account_creation") {
+      logs.push("[LLM] Account creation detected. Processing...");
 
-  // Update immediately upon receiving user input
-  if (currentRecordId && extractedFields) {
-    logs.push(`[LLM] Immediately updating Airtable for record ID: ${currentRecordId} with extracted fields.`);
-    await updateRecordFields(currentRecordId, extractedFields, logs);
-  }
+      const userMessage = history[history.length - 1]?.content.trim() || "";
+      let extractedFields = await extractAndRefineFields(userMessage, logs);
 
-  // If Name or equivalent is missing, prompt the user for it
-  if (!currentRecordId && !extractedFields.Name) {
-    logs.push("[LLM] Missing Name field. Prompting user...");
-    return {
-      messages: [
-        ...history,
-        {
-          role: "assistant",
-          content: "A name or company name is required to create an account. Please provide it.",
-        },
-      ],
-      logs,
-    };
-  }
+      // Update immediately upon receiving user input
+      if (currentRecordId && extractedFields) {
+        logs.push(`[LLM] Immediately updating Airtable for record ID: ${currentRecordId} with extracted fields.`);
+        await updateRecordFields(currentRecordId, extractedFields, logs);
+      }
 
-  // Create draft account if necessary
-  if (!currentRecordId && extractedFields.Name) {
-    logs.push("[LLM] Creating draft account, waiting for record ID...");
-
-    try {
-      const createResponse = await createAccount.execute({
-        Name: extractedFields.Name,
-        Status: "Draft",
-        "Priority Image Type": "AI Generated",
-        ...cleanFields(extractedFields),
-      });
-
-      if (createResponse?.recordId) {
-        currentRecordId = createResponse.recordId || null;
-        recordFields[currentRecordId] = { ...extractedFields }; // Initialize record fields
-        logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
-      } else {
-        logs.push("[LLM] Failed to create draft account.");
+      // If Name or equivalent is missing, prompt the user for it
+      if (!currentRecordId && !extractedFields.Name) {
+        logs.push("[LLM] Missing Name field. Prompting user...");
         return {
           messages: [
             ...history,
-            { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+            {
+              role: "assistant",
+              content: "A name or company name is required to create an account. Please provide it.",
+            },
           ],
           logs,
         };
       }
-    } catch (error) {
-      logs.push(`[LLM] Error during account creation: ${error instanceof Error ? error.message : "Unknown error."}`);
-      return {
-        messages: [
-          ...history,
-          { role: "assistant", content: "An error occurred while creating the account. Please try again." },
-        ],
-        logs,
-      };
-    }
-  }
 
-  // Ensure questions are asked in sequence
-  if (currentRecordId) {
-    questionToAsk = getNextQuestion(currentRecordId, logs);
+      // Create draft account if necessary
+      if (!currentRecordId && extractedFields.Name) {
+        logs.push("[LLM] Creating draft account, waiting for record ID...");
 
-    if (!questionToAsk) {
-      logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
-      try {
-        await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
-      } catch (syncError) {
-        logs.push(`[LLM] Failed to sync fields: ${syncError instanceof Error ? syncError.message : syncError}`);
+        try {
+          const createResponse = await createAccount.execute({
+            Name: extractedFields.Name,
+            Status: "Draft",
+            "Priority Image Type": "AI Generated",
+            ...cleanFields(extractedFields),
+          });
+
+          if (createResponse?.recordId) {
+            currentRecordId = createResponse.recordId || null;
+            recordFields[currentRecordId] = { ...extractedFields };
+            logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
+          } else {
+            logs.push("[LLM] Failed to create draft account.");
+            return {
+              messages: [
+                ...history,
+                { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+              ],
+              logs,
+            };
+          }
+        } catch (error) {
+          logs.push(`[LLM] Error during account creation: ${error instanceof Error ? error.message : "Unknown error."}`);
+          return {
+            messages: [
+              ...history,
+              { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+            ],
+            logs,
+          };
+        }
       }
 
-      logs.push("[LLM] No more questions to ask. All fields have been captured.");
-      return {
-        messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
-        logs,
-      };
-    }
+      // Ensure questions are asked in sequence
+      if (currentRecordId) {
+        questionToAsk = getNextQuestion(currentRecordId, logs);
 
-    logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
+        if (!questionToAsk) {
+          logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
+          try {
+            await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
+          } catch (syncError) {
+            logs.push(`[LLM] Failed to sync fields: ${syncError instanceof Error ? syncError.message : syncError}`);
+          }
+
+          logs.push("[LLM] No more questions to ask. All fields have been captured.");
+          return {
+            messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+            logs,
+          };
+        }
+
+        logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
+        return {
+          messages: [...history, { role: "assistant", content: questionToAsk }],
+          logs,
+        };
+      }
+    }
+  } catch (error) {
+    logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
     return {
-      messages: [...history, { role: "assistant", content: questionToAsk }],
+      messages: [...history, { role: "assistant", content: "An error occurred while processing your request." }],
       logs,
     };
   }
