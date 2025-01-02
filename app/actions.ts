@@ -255,33 +255,6 @@ const updateRecordFields = async (
   }
 };
 
-const createAccount = tool({
-  description: "Create a new account in Wonderland.",
-  parameters: z.object({
-    Name: z.string(),
-    Status: z.string().default("Draft"),
-    Description: z.string().optional(),
-    Website: z.string().optional(),
-    Instagram: z.string().optional(),
-    Facebook: z.string().optional(),
-    Blog: z.string().optional(),
-    "Primary Objective": z.string().optional(),
-    "Talking Points": z.string().optional(),
-  }),
-  execute: async (fields) => {
-    const logs: string[] = [];
-    try {
-      const record = await airtableBase("Accounts").create(fields);
-      logs.push(`[TOOL] Account created with ID: ${record.id}`);
-      return { recordId: record.id, logs };
-    } catch (error) {
-      logs.push(`[TOOL] Error creating account: ${error}`);
-      throw new Error("Account creation failed.");
-    }
-  },
-});
-
-
 
 // Avoid filling defaults for optional fields during account creation
 const createAccount = tool({
