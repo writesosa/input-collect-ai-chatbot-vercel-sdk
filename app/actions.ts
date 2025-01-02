@@ -92,6 +92,29 @@ const extractAndRefineFields = async (
   return extractedFields;
 };
 
+const validateAndLogURLsInBackground = async (fields: Record<string, any>, recordId: string, logs: string[]) => {
+  const urlFields = ["Website", "Instagram", "Facebook", "Blog"];
+  for (const field of urlFields) {
+    if (fields[field]) {
+      const { validUrl, suggestion } = validateURL(fields[field]);
+      if (!validUrl) {
+        logs.push(`[Validation]: Invalid ${field}: "${fields[field]}". Suggestion: "${suggestion}".`);
+      } else {
+        logs.push(`[Validation]: Validating ${field}: "${fields[field]}" to "${validUrl}".`);
+        try {
+          await modifyAccount.execute({
+            recordId,
+            fields: { [field]: validUrl },
+          });
+          logs.push(`[Validation]: Updated ${field} to "${validUrl}" in background.`);
+        } catch (error) {
+          logs.push(`[Validation]: Failed to update ${field} in Airtable: ${error instanceof Error ? error.message : error}`);
+        }
+      }
+    }
+  }
+};
+
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
@@ -187,6 +210,7 @@ export async function continueConversation(history: Message[]) {
           currentRecordId = createResponse.recordId;
           logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
           creationProgress = 0; // Start creation flow
+          validateAndLogURLsInBackground(extractedFields, currentRecordId, logs); // URL validation in the background
         } else {
           logs.push("[LLM] Failed to create draft. Exiting.");
           return {
@@ -234,7 +258,6 @@ export async function continueConversation(history: Message[]) {
     return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
   }
 }
-
 const getNextQuestion = async (fields: Record<string, any>, logs: string[]): Promise<string | null> => {
   const questions = [
     {
@@ -258,19 +281,8 @@ const getNextQuestion = async (fields: Record<string, any>, logs: string[]): Pro
     if (creationProgress === question.progress) {
       const missingFields = question.fields.filter((field) => !fields[field]);
       logs.push(`[LLM] Missing fields: ${missingFields.join(", ")}.`);
-      
+
       if (missingFields.length > 0) {
-        // Process invalid URLs
-        for (const field of question.fields) {
-          if (fields[field]) {
-            const { validUrl, suggestion } = validateURL(fields[field]);
-            if (!validUrl) {
-              logs.push(`[Validation]: Invalid ${field}: "${fields[field]}". Suggestion: "${suggestion}".`);
-              return `The provided ${field} "${fields[field]}" seems invalid. Did you mean: "${suggestion}"?`;
-            }
-            fields[field] = validUrl; // Use valid URL
-          }
-        }
         return question.prompt;
       }
     }
