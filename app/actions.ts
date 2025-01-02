@@ -270,13 +270,6 @@ if (currentRecordId && typeof currentRecordId === "string") {
 }
 
 
-        logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
-        return {
-          messages: [...history, { role: "assistant", content: questionToAsk }],
-          logs,
-        };
-      }
-
       // If `getNextQuestion` wasn't called, invoke it again after creation
 if (!questionAsked) {
   logs.push("[LLM] Re-checking for unanswered questions after account creation...");
