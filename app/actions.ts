@@ -179,8 +179,7 @@ export async function continueConversation(history: Message[]) {
           logs,
         };
       }
-
-      // Create draft account if necessary
+      
       if (!currentRecordId && extractedFields.Name) {
         logs.push("[LLM] Creating draft account, waiting for record ID...");
 
@@ -228,6 +227,7 @@ export async function continueConversation(history: Message[]) {
           };
         }
       }
+
 
 
       // Ensure questions are asked in sequence
