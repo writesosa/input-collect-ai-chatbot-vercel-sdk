@@ -292,8 +292,6 @@ const validateURL = (url: string): { validUrl: string | null; suggestion: string
   }
 };
 
-
-
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -303,7 +301,14 @@ const createAccount = tool({
       .string()
       .optional()
       .default("AI Generated")
-      .describe("The priority image type for the account, defaults to 'AI Generated'."),
+      .refine(
+        (type) =>
+          ["AI Generated", "Google Images", "Stock Images", "Uploaded Media", "Social Media"].includes(type),
+        { message: "Invalid 'Priority Image Type'. Must be one of the predefined values." }
+      )
+      .describe(
+        "The priority image type for the account, defaults to 'AI Generated'. Allowed values: AI Generated, Google Images, Stock Images, Uploaded Media, Social Media."
+      ),
     Description: z.string().optional().describe("A description for the account."),
     Website: z.string().optional().describe("The website URL of the client."),
     Instagram: z.string().optional().describe("The Instagram link of the client."),
@@ -315,6 +320,7 @@ const createAccount = tool({
   execute: async (fields) => {
     const logs: string[] = [];
     let recordId: string | null = null;
+    const maxRetries = 3;
 
     try {
       logs.push("[TOOL] Starting createAccount...");
@@ -324,6 +330,19 @@ const createAccount = tool({
       if (!fields.Name) {
         logs.push("[TOOL] Missing required field: Name.");
         throw new Error("The 'Name' field is required to create an account.");
+      }
+
+      // Validate Priority Image Type
+      const allowedImageTypes = [
+        "AI Generated",
+        "Google Images",
+        "Stock Images",
+        "Uploaded Media",
+        "Social Media",
+      ];
+      if (!allowedImageTypes.includes(fields["Priority Image Type"])) {
+        logs.push(`[TOOL] Invalid 'Priority Image Type': "${fields["Priority Image Type"]}". Defaulting to 'AI Generated'.`);
+        fields["Priority Image Type"] = "AI Generated";
       }
 
       // Check for existing draft account
@@ -339,32 +358,45 @@ const createAccount = tool({
         recordId = existingDraft[0].id;
         logs.push(`[TOOL] Reusing existing draft account with Record ID: ${recordId}`);
       } else {
-        // Populate missing optional fields with defaults
         logs.push("[TOOL] Creating a new draft account...");
-        try {
-          const record = await airtableBase("Accounts").create({
-            Name: fields.Name,
-            Status: fields.Status || "Draft",
-            Description: fields.Description || `A general account for ${fields.Name}.`,
-            Website: fields.Website || "",
-            Instagram: fields.Instagram || "",
-            Facebook: fields.Facebook || "",
-            Blog: fields.Blog || "",
-            "Primary Objective":
-              fields["Primary Objective"] || `Increase visibility for ${fields.Name}.`,
-            "Talking Points":
-              fields["Talking Points"] || `Focus on innovation and engagement for ${fields.Name}.`,
-            "Priority Image Type": fields["Priority Image Type"], // Default to "AI Generated"
-          });
-          recordId = record.id;
-          logs.push(`[TOOL] New draft account created with Record ID: ${recordId}`);
-        } catch (createError) {
-          logs.push(
-            "[TOOL] Error creating new draft account:",
-            createError instanceof Error ? createError.message : JSON.stringify(createError)
-          );
-          throw createError;
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            logs.push(`[TOOL] Attempt ${attempt} to create a new draft account.`);
+            const response = await airtableBase("Accounts").create({
+              Name: fields.Name,
+              Status: fields.Status || "Draft",
+              Description: fields.Description || `A general account for ${fields.Name}.`,
+              Website: fields.Website || "",
+              Instagram: fields.Instagram || "",
+              Facebook: fields.Facebook || "",
+              Blog: fields.Blog || "",
+              "Primary Objective":
+                fields["Primary Objective"] || `Increase visibility for ${fields.Name}.`,
+              "Talking Points":
+                fields["Talking Points"] || `Focus on innovation and engagement for ${fields.Name}.`,
+              "Priority Image Type": fields["Priority Image Type"],
+            });
+
+            logs.push(`[TOOL] API Response: ${JSON.stringify(response)}`);
+            if (response?.id) {
+              recordId = response.id;
+              logs.push(`[TOOL] Draft created successfully with ID: ${recordId}`);
+              break;
+            } else {
+              logs.push(`[TOOL] No record ID returned in attempt ${attempt}.`);
+            }
+          } catch (error) {
+            logs.push(`[TOOL] Error during attempt ${attempt}: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
+          }
+
+          if (attempt < maxRetries) {
+            await new Promise((resolve) => setTimeout(resolve, 1000)); // Delay before retry
+          }
         }
+      }
+
+      if (!recordId) {
+        throw new Error("Failed to create account after multiple attempts. Manual intervention required.");
       }
 
       return {
@@ -373,10 +405,7 @@ const createAccount = tool({
         logs,
       };
     } catch (error) {
-      logs.push(
-        "[TOOL] Error during account creation:",
-        error instanceof Error ? error.message : JSON.stringify(error)
-      );
+      logs.push(`[TOOL] Error during account creation: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
       console.error("[TOOL] Error during account creation:", error);
 
       return {
