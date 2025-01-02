@@ -195,7 +195,7 @@ export async function continueConversation(history: Message[]) {
           } else {
 
             
-const handleRetryLogic = async () => {
+const handleRetryLogic = async (): Promise<{ messages: Message[]; logs: string[] } | null> => {
   let retries = 3;
   while (!currentRecordId && retries > 0) {
     logs.push(`[LLM] Waiting for record ID... Attempts left: ${retries}`);
@@ -214,13 +214,16 @@ const handleRetryLogic = async () => {
       logs,
     };
   }
+
+  return null; // Success; no error occurred
 };
 
-// Call the retry logic and handle its return
+// Call retry logic and handle the result
 const retryResult = await handleRetryLogic();
 if (retryResult) {
-  return retryResult; // Exit if handleRetryLogic indicates an error
+  return retryResult; // Exit early if retry failed
 }
+
 
 
 
