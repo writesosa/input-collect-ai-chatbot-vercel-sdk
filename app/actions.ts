@@ -159,27 +159,28 @@ export async function continueConversation(history: Message[]) {
       }
       if (currentRecordId && typeof currentRecordId === "string") {
         // Ensure recordFields has a valid object for the currentRecordId
-        if (!recordFields[currentRecordId]) {
-          recordFields[currentRecordId] = {};
+        const recordId = currentRecordId; // Explicitly narrow type to string
+
+        if (!recordFields[recordId]) {
+          recordFields[recordId] = {};
         }
 
         // Merge extracted fields into recordFields
-        recordFields[currentRecordId] = {
-          ...recordFields[currentRecordId],
+        recordFields[recordId] = {
+          ...recordFields[recordId],
           ...extractedFields,
         };
 
         logs.push(
-          `[LLM] Updated fields for record ID ${currentRecordId}: ${JSON.stringify(
-            recordFields[currentRecordId]
+          `[LLM] Updated fields for record ID ${recordId}: ${JSON.stringify(
+            recordFields[recordId]
           )}`
         );
 
         // Prevent overwriting fields with blank values
         Object.entries(extractedFields).forEach(([key, value]) => {
-          if (!value && recordFields[currentRecordId]) {
-            // Ensure safe access
-            delete recordFields[currentRecordId]?.[key];
+          if (!value) {
+            delete recordFields[recordId][key]; // Safe deletion with recordId
           }
         });
       } else {
