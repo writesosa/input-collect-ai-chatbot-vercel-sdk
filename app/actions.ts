@@ -212,6 +212,107 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
+// Helper: Update record fields and prevent redundant updates
+const recordFields: Record<string, Record<string, any>> = {};
+
+const updateRecordFields = async (recordId: string, newFields: Record<string, any>, logs: string[]) => {
+  if (!recordFields[recordId]) {
+    recordFields[recordId] = {};
+  }
+
+  Object.entries(newFields).forEach(([key, value]) => {
+    if (value && (!recordFields[recordId][key] || recordFields[recordId][key] !== value)) {
+      recordFields[recordId][key] = value;
+      logs.push(`[LLM] Field updated: ${key} = ${value}`);
+    } else {
+      logs.push(`[LLM] Skipping update for field: ${key}`);
+    }
+  });
+
+  // Sync with Airtable only for the current record
+  try {
+    if (recordId === currentRecordId) {
+      await airtableBase('Accounts').update(recordId, newFields);
+      logs.push(`[LLM] Airtable updated successfully for record ID: ${recordId}`);
+    } else {
+      logs.push(`[LLM] Skipping Airtable update for non-current record ID: ${recordId}`);
+    }
+  } catch (error) {
+    logs.push(`[LLM] Failed to update Airtable for record ID ${recordId}: ${error instanceof Error ? error.message : error}`);
+  }
+};
+
+// Avoid filling defaults for optional fields during account creation
+const createAccount = tool({
+  description: "Create a new account in Wonderland with comprehensive details.",
+  parameters: z.object({
+    Name: z.string().describe("The name of the account holder. This field is required."),
+    Status: z.string().optional().default("Draft").describe("The status of the account."),
+    "Priority Image Type": z
+      .string()
+      .optional()
+      .default("AI Generated")
+      .describe("The priority image type for the account."),
+    Description: z.string().optional(),
+    Website: z.string().optional(),
+    Instagram: z.string().optional(),
+    Facebook: z.string().optional(),
+    Blog: z.string().optional(),
+    "Primary Objective": z.string().optional(),
+    "Talking Points": z.string().optional(),
+  }),
+  execute: async (fields) => {
+    const logs: string[] = [];
+    let recordId: string | null = null;
+
+    try {
+      logs.push("[TOOL] Starting createAccount...");
+      logs.push("[TOOL] Initial fields received:", JSON.stringify(fields, null, 2));
+
+      if (!fields.Name) {
+        logs.push("[TOOL] Missing required field: Name.");
+        throw new Error("The 'Name' field is required to create an account.");
+      }
+
+      const existingDraft = await airtableBase("Accounts")
+        .select({
+          filterByFormula: `AND({Name} = "${fields.Name}", {Status} = "Draft")`,
+          maxRecords: 1,
+        })
+        .firstPage();
+
+      if (existingDraft.length > 0) {
+        recordId = existingDraft[0].id;
+        logs.push(`[TOOL] Reusing existing draft account with Record ID: ${recordId}`);
+      } else {
+        const record = await airtableBase("Accounts").create({
+          Name: fields.Name,
+          Status: fields.Status || "Draft",
+          "Priority Image Type": fields["Priority Image Type"],
+        });
+        recordId = record.id;
+        logs.push(`[TOOL] New draft account created with Record ID: ${recordId}`);
+      }
+
+      return {
+        message: `Account successfully created or reused for "${fields.Name}".`,
+        recordId,
+        logs,
+      };
+    } catch (error) {
+      logs.push(
+        "[TOOL] Error during account creation:",
+        error instanceof Error ? error.message : JSON.stringify(error)
+      );
+      return {
+        message: "An error occurred while creating the account.",
+        logs,
+      };
+    }
+  },
+});
+
+// Correct handling of progress and questions
 const getNextQuestion = (recordId: string, logs: string[]): string | null => {
   const questions = [
     {
@@ -234,18 +335,20 @@ const getNextQuestion = (recordId: string, logs: string[]): string | null => {
   for (const question of questions) {
     if (creationProgress === question.progress) {
       const anyFieldFilled = question.fields.some((field) => recordFields[recordId]?.[field]);
+
       if (!anyFieldFilled) {
         logs.push(`[LLM] Asking question for progress ${question.progress}: "${question.prompt}"`);
-        return question.prompt; // Return the first unanswered question
+        return question.prompt;
       }
+
+      logs.push(`[LLM] Skipping question for progress ${question.progress} as at least one field is filled.`);
+      creationProgress++; // Advance only after question handling
     }
   }
 
-  logs.push("[LLM] All predefined questions have been asked or skipped.");
-  return null; // All questions answered or skipped
+  logs.push("[LLM] All predefined questions have been asked or skipped. No further questions.");
+  return null;
 };
-
-
 
 
 
@@ -274,103 +377,6 @@ const updateRecordFields = async (recordId: string, newFields: Record<string, an
     logs.push(`[LLM] Failed to update Airtable for record ID ${recordId}: ${error instanceof Error ? error.message : error}`);
   }
 };
-
-
-
-const createAccount = tool({
-  description: "Create a new account in Wonderland with comprehensive details.",
-  parameters: z.object({
-    Name: z.string().describe("The name of the account holder. This field is required."),
-    Status: z.string().optional().default("Draft").describe("The status of the account."),
-    "Priority Image Type": z
-      .string()
-      .optional()
-      .default("AI Generated")
-      .describe("The priority image type for the account, defaults to 'AI Generated'."),
-    Description: z.string().optional().describe("A description for the account."),
-    Website: z.string().optional().describe("The website URL of the client."),
-    Instagram: z.string().optional().describe("The Instagram link of the client."),
-    Facebook: z.string().optional().describe("The Facebook link of the client."),
-    Blog: z.string().optional().describe("The blog URL of the client."),
-    "Primary Objective": z.string().optional().describe("The primary objective of the account."),
-    "Talking Points": z.string().optional().describe("Key talking points for the account."),
-  }),
-  execute: async (fields) => {
-    const logs: string[] = [];
-    let recordId: string | null = null;
-
-    try {
-      logs.push("[TOOL] Starting createAccount...");
-      logs.push("[TOOL] Initial fields received:", JSON.stringify(fields, null, 2));
-
-      // Ensure account name is provided
-      if (!fields.Name) {
-        logs.push("[TOOL] Missing required field: Name.");
-        throw new Error("The 'Name' field is required to create an account.");
-      }
-
-      // Check for existing draft account
-      logs.push("[TOOL] Checking for existing draft account with the same name...");
-      const existingDraft = await airtableBase("Accounts")
-        .select({
-          filterByFormula: `AND({Name} = "${fields.Name}", {Status} = "Draft")`,
-          maxRecords: 1,
-        })
-        .firstPage();
-
-      if (existingDraft.length > 0) {
-        recordId = existingDraft[0].id;
-        logs.push(`[TOOL] Reusing existing draft account with Record ID: ${recordId}`);
-      } else {
-        // Populate missing optional fields with defaults
-        logs.push("[TOOL] Creating a new draft account...");
-        try {
-          const record = await airtableBase("Accounts").create({
-            Name: fields.Name,
-            Status: fields.Status || "Draft",
-            Description: fields.Description || `A general account for ${fields.Name}.`,
-            Website: fields.Website || "",
-            Instagram: fields.Instagram || "",
-            Facebook: fields.Facebook || "",
-            Blog: fields.Blog || "",
-            "Primary Objective":
-              fields["Primary Objective"] || `Increase visibility for ${fields.Name}.`,
-            "Talking Points":
-              fields["Talking Points"] || `Focus on innovation and engagement for ${fields.Name}.`,
-            "Priority Image Type": fields["Priority Image Type"], // Default to "AI Generated"
-          });
-          recordId = record.id;
-          logs.push(`[TOOL] New draft account created with Record ID: ${recordId}`);
-        } catch (createError) {
-          logs.push(
-            "[TOOL] Error creating new draft account:",
-            createError instanceof Error ? createError.message : JSON.stringify(createError)
-          );
-          throw createError;
-        }
-      }
-
-      return {
-        message: `Account successfully created or reused for "${fields.Name}".`,
-        recordId,
-        logs,
-      };
-    } catch (error) {
-      logs.push(
-        "[TOOL] Error during account creation:",
-        error instanceof Error ? error.message : JSON.stringify(error)
-      );
-      console.error("[TOOL] Error during account creation:", error);
-
-      return {
-        message: "An error occurred while creating the account. Please check the logs for more details.",
-        logs,
-      };
-    }
-  },
-});
-
-
 
 
 
