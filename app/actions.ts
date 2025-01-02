@@ -212,35 +212,6 @@ export async function continueConversation(history: Message[]) {
   }
 }
 
-// Helper: Update record fields and prevent redundant updates
-const recordFields: Record<string, Record<string, any>> = {};
-
-const updateRecordFields = async (recordId: string, newFields: Record<string, any>, logs: string[]) => {
-  if (!recordFields[recordId]) {
-    recordFields[recordId] = {};
-  }
-
-  Object.entries(newFields).forEach(([key, value]) => {
-    if (value && (!recordFields[recordId][key] || recordFields[recordId][key] !== value)) {
-      recordFields[recordId][key] = value;
-      logs.push(`[LLM] Field updated: ${key} = ${value}`);
-    } else {
-      logs.push(`[LLM] Skipping update for field: ${key}`);
-    }
-  });
-
-  // Sync with Airtable only for the current record
-  try {
-    if (recordId === currentRecordId) {
-      await airtableBase('Accounts').update(recordId, newFields);
-      logs.push(`[LLM] Airtable updated successfully for record ID: ${recordId}`);
-    } else {
-      logs.push(`[LLM] Skipping Airtable update for non-current record ID: ${recordId}`);
-    }
-  } catch (error) {
-    logs.push(`[LLM] Failed to update Airtable for record ID ${recordId}: ${error instanceof Error ? error.message : error}`);
-  }
-};
 
 // Avoid filling defaults for optional fields during account creation
 const createAccount = tool({
@@ -352,6 +323,7 @@ const getNextQuestion = (recordId: string, logs: string[]): string | null => {
 
 
 
+
 // Helper: Update record fields and prevent redundant updates
 const recordFields: Record<string, Record<string, any>> = {};
 
@@ -361,23 +333,26 @@ const updateRecordFields = async (recordId: string, newFields: Record<string, an
   }
 
   Object.entries(newFields).forEach(([key, value]) => {
-    if (value && !recordFields[recordId][key]) {
+    if (value && (!recordFields[recordId][key] || recordFields[recordId][key] !== value)) {
       recordFields[recordId][key] = value;
       logs.push(`[LLM] Field updated: ${key} = ${value}`);
-    } else if (recordFields[recordId][key]) {
-      logs.push(`[LLM] Field already filled: ${key}. Skipping update.`);
+    } else {
+      logs.push(`[LLM] Skipping update for field: ${key}`);
     }
   });
 
-  // Sync with Airtable
+  // Sync with Airtable only for the current record
   try {
-    await airtableBase('Accounts').update(recordId, newFields);
-    logs.push(`[LLM] Airtable updated successfully for record ID: ${recordId}`);
+    if (recordId === currentRecordId) {
+      await airtableBase('Accounts').update(recordId, newFields);
+      logs.push(`[LLM] Airtable updated successfully for record ID: ${recordId}`);
+    } else {
+      logs.push(`[LLM] Skipping Airtable update for non-current record ID: ${recordId}`);
+    }
   } catch (error) {
     logs.push(`[LLM] Failed to update Airtable for record ID ${recordId}: ${error instanceof Error ? error.message : error}`);
   }
 };
-
 
 
 const modifyAccount = tool({
