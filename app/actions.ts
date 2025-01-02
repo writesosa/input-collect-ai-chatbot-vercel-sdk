@@ -91,7 +91,6 @@ const extractAndRefineFields = async (
   lastExtractedFields = { ...lastExtractedFields, ...extractedFields }; // Merge with previously extracted fields
   return extractedFields;
 };
-
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
@@ -200,29 +199,30 @@ export async function continueConversation(history: Message[]) {
       }
 
       // Ensure currentRecordId is not null
-if (!currentRecordId) {
-  logs.push("[LLM] Error: currentRecordId is null. Cannot proceed to the next question.");
-  return {
-    messages: [
-      ...history,
-      { role: "assistant", content: "An error occurred: no record ID is available to continue." },
-    ],
-    logs,
-  };
-}
+      if (!currentRecordId) {
+        logs.push("[LLM] Error: currentRecordId is null. Cannot proceed to the next question.");
+        return {
+          messages: [
+            ...history,
+            { role: "assistant", content: "An error occurred: no record ID is available to continue." },
+          ],
+          logs,
+        };
+      }
 
-// Proceed to the next question
-logs.push("[LLM] Attempting to proceed to the next question...");
-const missingQuestion = getNextQuestion(extractedFields, currentRecordId, logs);
-if (missingQuestion) {
-  logs.push(`[LLM] Asking next question: "${missingQuestion}"`);
-  return {
-    messages: [...history, { role: "assistant", content: missingQuestion }],
-    logs,
-  };
-}
+      // Update recordFields to prevent overwrites
+      updateRecordFields(currentRecordId, extractedFields, logs);
 
-
+      // Proceed to the next question
+      logs.push("[LLM] Attempting to proceed to the next question...");
+      const missingQuestion = getNextQuestion(extractedFields, currentRecordId, logs);
+      if (missingQuestion) {
+        logs.push(`[LLM] Asking next question: "${missingQuestion}"`);
+        return {
+          messages: [...history, { role: "assistant", content: missingQuestion }],
+          logs,
+        };
+      }
 
       logs.push("[LLM] No more questions to ask. Account creation process complete.");
       return {
@@ -235,17 +235,35 @@ if (missingQuestion) {
     return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
   }
 }
+
 // Track fields for the current record
+// Adjusting `recordFields` initialization and updates
 const recordFields: Record<string, Record<string, any>> = {};
 
-const getNextQuestion = (fields: Record<string, any>, recordId: string, logs: string[]): string | null => {
-  // Ensure recordFields is initialized for the current record
+const updateRecordFields = (recordId: string, newFields: Record<string, any>, logs: string[]) => {
   if (!recordFields[recordId]) {
     recordFields[recordId] = {};
   }
 
-  // Update captured fields for the current record
-  Object.assign(recordFields[recordId], fields);
+  Object.entries(newFields).forEach(([key, value]) => {
+    if (value && !recordFields[recordId][key]) {
+      recordFields[recordId][key] = value;
+      logs.push(`[LLM] Field updated: ${key} = ${value}`);
+    } else if (recordFields[recordId][key] && value) {
+      logs.push(`[LLM] Field already filled: ${key}. Skipping update.`);
+    }
+  });
+};
+
+
+// Adjust `getNextQuestion` to dynamically check for missing fields
+const getNextQuestion = (fields: Record<string, any>, recordId: string, logs: string[]): string | null => {
+  if (!recordFields[recordId]) {
+    recordFields[recordId] = {};
+  }
+
+  // Merge the latest fields into `recordFields`
+  updateRecordFields(recordId, fields, logs);
 
   const questions = [
     {
@@ -267,7 +285,6 @@ const getNextQuestion = (fields: Record<string, any>, recordId: string, logs: st
 
   for (const question of questions) {
     if (creationProgress === question.progress) {
-      // Get missing fields for the current question
       const missingFields = question.fields.filter((field) => !recordFields[recordId][field]);
 
       if (missingFields.length === 0) {
@@ -276,7 +293,6 @@ const getNextQuestion = (fields: Record<string, any>, recordId: string, logs: st
         continue; // Check the next question
       }
 
-      // Log missing fields and ask the next question
       logs.push(`[LLM] Missing fields for progress ${question.progress}: ${missingFields.join(", ")}`);
       logs.push(`[LLM] Asking question: "${question.prompt}"`);
       return question.prompt;
@@ -286,7 +302,6 @@ const getNextQuestion = (fields: Record<string, any>, recordId: string, logs: st
   logs.push("[LLM] No more questions to ask. All fields complete.");
   return null; // All questions completed
 };
-
  
 
 
