@@ -91,6 +91,7 @@ const extractAndRefineFields = async (
   lastExtractedFields = { ...lastExtractedFields, ...extractedFields }; // Merge with previously extracted fields
   return extractedFields;
 };
+
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
@@ -198,35 +199,21 @@ export async function continueConversation(history: Message[]) {
         }
       }
 
-      // Ensure currentRecordId is not null
       if (!currentRecordId) {
         logs.push("[LLM] Error: currentRecordId is null. Cannot proceed to the next question.");
         return {
-          messages: [
-            ...history,
-            { role: "assistant", content: "An error occurred: no record ID is available to continue." },
-          ],
+          messages: [...history, { role: "assistant", content: "No record ID available to continue." }],
           logs,
         };
       }
 
-      // Update recordFields to prevent overwrites
       updateRecordFields(currentRecordId, extractedFields, logs);
 
-      // Proceed to the next question
-      logs.push("[LLM] Attempting to proceed to the next question...");
-      const missingQuestion = getNextQuestion(currentRecordId, logs);
-      if (missingQuestion) {
-        logs.push(`[LLM] Asking next question: "${missingQuestion}"`);
-        return {
-          messages: [...history, { role: "assistant", content: missingQuestion }],
-          logs,
-        };
-      }
+      questionToAsk = getNextQuestion(currentRecordId, logs);
+      logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
 
-      logs.push("[LLM] No more questions to ask. Account creation process complete.");
       return {
-        messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+        messages: [...history, { role: "assistant", content: questionToAsk || "All fields have been captured." }],
         logs,
       };
     }
