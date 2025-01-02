@@ -158,23 +158,30 @@ export async function continueConversation(history: Message[]) {
 
       const userMessage = history[history.length - 1]?.content.trim() || "";
       const extractedFields = await extractAndRefineFields(userMessage, logs);
-
-      // Update immediately upon receiving user input
-      if (currentRecordId && extractedFields) {
-        logs.push(`[LLM] Immediately updating Airtable for record ID: ${currentRecordId} with extracted fields.`);
-        try {
-          // Exclude questionsAsked from being updated in Airtable
-          const fieldsToUpdate = Object.fromEntries(
-            Object.entries(extractedFields).filter(([key]) => key !== "questionsAsked")
-          );
-          await updateRecordFields(currentRecordId, fieldsToUpdate, logs);
-          logs.push(`[LLM] Field updated for record ID ${currentRecordId}: ${JSON.stringify(fieldsToUpdate)}`);
-        } catch (error) {
-          logs.push(`[LLM] Failed to update Airtable for record ID ${currentRecordId}: ${
-            error instanceof Error ? error.message : "Unknown error."
-          }`);
+        // Update immediately upon receiving user input
+        if (currentRecordId && extractedFields) {
+          logs.push(`[LLM] Immediately updating Airtable for record ID: ${currentRecordId} with extracted fields.`);
+          try {
+            // Exclude questionsAsked from the update payload
+            const fieldsToUpdate = Object.fromEntries(
+              Object.entries(extractedFields).filter(([key]) => key !== "questionsAsked")
+            );
+            await updateRecordFields(currentRecordId, fieldsToUpdate, logs);
+            logs.push(`[LLM] Field updated for record ID ${currentRecordId}: ${JSON.stringify(fieldsToUpdate)}`);
+          } catch (error) {
+            logs.push(`[LLM] Failed to update Airtable for record ID ${currentRecordId}: ${
+              error instanceof Error ? error.message : "Unknown error."
+            }`);
+          }
         }
-      }
+
+        // Ensure questions are tracked internally and not synced with Airtable
+        if (!recordFields[currentRecordId]?.questionsAsked) {
+          recordFields[currentRecordId] = {
+            ...recordFields[currentRecordId],
+            questionsAsked: [],
+          };
+        }
 
 
       // If Name or equivalent is missing, prompt the user for it
