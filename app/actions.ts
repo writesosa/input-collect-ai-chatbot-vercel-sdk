@@ -214,7 +214,6 @@ export async function continueConversation(history: Message[]) {
 
       // Proceed to the next question
       // Proceed to the next question
-      const missingQuestion = getNextQuestion(extractedFields, currentRecordId, logs);
 
       const missingQuestion = getNextQuestion(extractedFields, currentRecordId, logs);
       if (missingQuestion) {
