@@ -186,7 +186,6 @@ export async function continueConversation(history: Message[]) {
           const createResponse = await createAccount.execute({
             Name: extractedFields.Name,
             Status: "Draft",
-            "Priority Image Type": "AI Generated",
             ...cleanFields(extractedFields),
           });
 
@@ -260,7 +259,6 @@ const createAccount = tool({
   parameters: z.object({
     Name: z.string().describe("The name of the account holder. This field is required."),
     Status: z.string().optional().default("Draft").describe("The status of the account."),
-        "Priority Image Type": "AI Generated", // Default value
     Description: z.string().optional(),
     Website: z.string().optional(),
     Instagram: z.string().optional(),
@@ -296,7 +294,6 @@ const createAccount = tool({
         const record = await airtableBase("Accounts").create({
           Name: fields.Name,
           Status: fields.Status || "Draft",
-          "Priority Image Type": fields["Priority Image Type"],
         });
         recordId = record.id;
         logs.push(`[TOOL] New draft account created with Record ID: ${recordId}`);
