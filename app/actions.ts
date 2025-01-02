@@ -201,8 +201,7 @@ export async function continueConversation(history: Message[]) {
           ],
           logs,
         };
-      }
-if (!currentRecordId && extractedFields.Name) {
+      }if (!currentRecordId && extractedFields.Name) {
   logs.push("[LLM] Creating a new draft record...");
 
   // Include all fields extracted so far
@@ -236,30 +235,30 @@ if (!currentRecordId && extractedFields.Name) {
   }
 }
 
-
-
-
-      // Skip redundant questions
-      questionToAsk = getNextQuestion(currentRecordId, logs);
-      if (!questionToAsk) {
-        logs.push("[LLM] No more questions to ask. All fields have been captured.");
-        return {
-          messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
-          logs,
-        };
-      }
-
-      logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
-      return {
-        messages: [...history, { role: "assistant", content: questionToAsk }],
-        logs,
-      };
-    }
-  } catch (error) {
-    logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
-    return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
+// Skip redundant questions
+if (currentRecordId) {
+  questionToAsk = getNextQuestion(currentRecordId, logs);
+  if (!questionToAsk) {
+    logs.push("[LLM] No more questions to ask. All fields have been captured.");
+    return {
+      messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+      logs,
+    };
   }
+
+  logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
+  return {
+    messages: [...history, { role: "assistant", content: questionToAsk }],
+    logs,
+  };
+} else {
+  logs.push("[LLM] Cannot proceed: currentRecordId is null.");
+  return {
+    messages: [...history, { role: "assistant", content: "An error occurred: no record ID available." }],
+    logs,
+  };
 }
+
 
 // Helper: Update record fields and prevent redundant updates
 const recordFields: Record<string, Record<string, any>> = {};
