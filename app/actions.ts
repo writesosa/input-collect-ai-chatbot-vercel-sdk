@@ -159,10 +159,6 @@ export async function continueConversation(history: Message[]) {
       }
 
       if (currentRecordId && typeof currentRecordId === "string") {
-        // Ensure recordFields has a valid object for the currentRecordId
-        if (!recordFields[currentRecordId]) {
-          recordFields[currentRecordId] = {};
-        }
 
         // Merge extracted fields into recordFields
         recordFields[currentRecordId] = {
@@ -176,16 +172,15 @@ export async function continueConversation(history: Message[]) {
           )}`
         );
 
-// Prevent overwriting fields with blank values
-if (currentRecordId && typeof currentRecordId === "string" && recordFields[currentRecordId]) {
-  Object.entries(extractedFields).forEach(([key, value]) => {
-    if (!value) {
-      delete recordFields[currentRecordId][key]; // Safe access
-    }
-  });
-} else {
-  logs.push("[LLM] Skipping field updates: currentRecordId is null, invalid, or recordFields entry missing.");
-}
+        // Prevent overwriting fields with blank values
+        Object.entries(extractedFields).forEach(([key, value]) => {
+          if (!value) {
+            delete recordFields[currentRecordId]?.[key]; // Safe deletion
+          }
+        });
+      } else {
+        logs.push("[LLM] Skipping field updates: currentRecordId is null or invalid.");
+      }
 
 
       // If Name or equivalent is missing, prompt the user for it
