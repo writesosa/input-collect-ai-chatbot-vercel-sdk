@@ -159,7 +159,7 @@ if (userIntent === "account_creation") {
   // Update immediately upon receiving user input
   if (currentRecordId && extractedFields) {
     logs.push(`[LLM] Immediately updating Airtable for record ID: ${currentRecordId} with extracted fields.`);
-
+    
     // Exclude `questionsAsked` from fields being updated in Airtable
     const fieldsToUpdate = Object.fromEntries(
       Object.entries(extractedFields).filter(([key]) => key !== "questionsAsked")
