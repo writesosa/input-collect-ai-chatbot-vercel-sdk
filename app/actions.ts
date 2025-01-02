@@ -157,8 +157,7 @@ export async function continueConversation(history: Message[]) {
         logs.push("[LLM] Using previously extracted Name field.");
         extractedFields.Name = lastExtractedFields.Name;
       }
-
-if (currentRecordId && recordFields[currentRecordId]) {
+if (currentRecordId && typeof currentRecordId === "string") {
   // Merge extracted fields into recordFields
   recordFields[currentRecordId] = {
     ...recordFields[currentRecordId],
@@ -178,6 +177,7 @@ if (currentRecordId && recordFields[currentRecordId]) {
     }
   });
 }
+
 
 
 
