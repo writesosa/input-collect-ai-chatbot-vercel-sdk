@@ -272,21 +272,25 @@ const getNextQuestion = (recordId: string, logs: string[]): string | null => {
 
   for (const question of questions) {
     if (creationProgress === question.progress) {
-      const missingFields = question.fields.filter((field) => !recordFields[recordId][field]);
+      // Check if any fields in the current question category are already filled
+      const filledFields = question.fields.some((field) => recordFields[recordId]?.[field]);
 
-      if (missingFields.length === 0) {
-        logs.push(`[LLM] All fields for progress ${question.progress} captured. Moving to the next step.`);
-        creationProgress++; // Advance progress
+      if (filledFields) {
+        logs.push(
+          `[LLM] Skipping question for progress ${question.progress} as some fields are already filled: ${question.fields.join(", ")}`
+        );
+        creationProgress++; // Advance to the next question
         continue; // Check the next question
       }
 
-      logs.push(`[LLM] Missing fields for progress ${question.progress}: ${missingFields.join(", ")}`);
+      logs.push(`[LLM] Asking question for progress ${question.progress}: "${question.prompt}"`);
+      creationProgress++; // Advance to the next question
       return question.prompt;
     }
   }
 
-  logs.push("[LLM] No more questions to ask. All fields complete.");
-  return null;
+  logs.push("[LLM] All predefined questions have been asked or skipped. No further questions.");
+  return null; // All questions asked
 };
 
 
