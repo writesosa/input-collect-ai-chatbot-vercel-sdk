@@ -157,7 +157,7 @@ export async function continueConversation(history: Message[]) {
         extractedFields.Name = lastExtractedFields.Name;
       }
 
-      if (currentRecordId && typeof currentRecordId === "string") {
+      if (currentRecordId && typeof currentRecordId === "string" && recordFields[currentRecordId]) {
         // Merge extracted fields into recordFields
         recordFields[currentRecordId] = {
           ...recordFields[currentRecordId],
@@ -172,13 +172,14 @@ export async function continueConversation(history: Message[]) {
 
         // Prevent overwriting fields with blank values
         Object.keys(extractedFields).forEach((key) => {
-          if (!extractedFields[key] && recordFields[currentRecordId]) {
-            delete recordFields[currentRecordId][key];
+          if (!extractedFields[key]) {
+            delete recordFields[currentRecordId][key]; // Safe now
           }
         });
       } else {
-        logs.push("[LLM] Skipping field updates: currentRecordId is null or invalid.");
+        logs.push("[LLM] Skipping field updates: currentRecordId is null, invalid, or recordFields entry not found.");
       }
+
 
       // If Name or equivalent is missing, prompt the user for it
       if (!currentRecordId && !extractedFields.Name) {
