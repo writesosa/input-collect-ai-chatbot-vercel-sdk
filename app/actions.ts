@@ -158,6 +158,25 @@ export async function continueConversation(history: Message[]) {
         extractedFields.Name = lastExtractedFields.Name;
       }
 
+      if (currentRecordId) {
+        // Merge extracted fields into recordFields
+        recordFields[currentRecordId] = {
+          ...recordFields[currentRecordId],
+          ...extractedFields,
+        };
+
+        logs.push(
+          `[LLM] Updated fields for record ID ${currentRecordId}: ${JSON.stringify(
+            recordFields[currentRecordId]
+          )}`
+        );
+
+        // Prevent overwriting fields with blank values
+        Object.keys(extractedFields).forEach((key) => {
+          if (!extractedFields[key]) delete recordFields[currentRecordId][key];
+        });
+      }
+
       // If Name or equivalent is missing, prompt the user for it
       if (!currentRecordId && !extractedFields.Name) {
         logs.push("[LLM] Missing Name field. Prompting user...");
@@ -180,7 +199,7 @@ export async function continueConversation(history: Message[]) {
           Name: extractedFields.Name,
           Status: "Draft",
           "Priority Image Type": "AI Generated",
-          ...cleanFields(extractedFields),
+          ...cleanFields({ ...recordFields[currentRecordId], ...extractedFields }), // Merge existing fields with new ones
         });
 
         if (createResponse.recordId) {
@@ -207,10 +226,7 @@ export async function continueConversation(history: Message[]) {
         };
       }
 
-      // Update recordFields and track progress
-      updateRecordFields(currentRecordId, extractedFields, logs);
-
-      // Generate the next question dynamically
+      // Skip redundant questions
       questionToAsk = getNextQuestion(currentRecordId, logs);
       if (!questionToAsk) {
         logs.push("[LLM] No more questions to ask. All fields have been captured.");
