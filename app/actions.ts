@@ -234,7 +234,18 @@ export async function continueConversation(history: Message[]) {
     return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
   }
 }
-const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | null => {
+// Track fields for the current record
+const recordFields: Record<string, Record<string, any>> = {};
+
+const getNextQuestion = (fields: Record<string, any>, recordId: string, logs: string[]): string | null => {
+  // Ensure recordFields is initialized for the current record
+  if (!recordFields[recordId]) {
+    recordFields[recordId] = {};
+  }
+
+  // Update captured fields for the current record
+  Object.assign(recordFields[recordId], fields);
+
   const questions = [
     {
       progress: 0,
@@ -255,19 +266,26 @@ const getNextQuestion = (fields: Record<string, any>, logs: string[]): string | 
 
   for (const question of questions) {
     if (creationProgress === question.progress) {
-      const missingFields = question.fields.filter((field) => !fields[field]);
-      logs.push(`[LLM] Missing fields for progress ${question.progress}: ${missingFields.join(", ")}.`);
+      // Get missing fields for the current question
+      const missingFields = question.fields.filter((field) => !recordFields[recordId][field]);
 
-      if (missingFields.length > 0) {
-        logs.push(`[LLM] Asking next question: "${question.prompt}"`);
-        return question.prompt;
+      if (missingFields.length === 0) {
+        logs.push(`[LLM] All fields for progress ${question.progress} captured. Moving to the next step.`);
+        creationProgress++; // Advance progress
+        continue; // Check the next question
       }
+
+      // Log missing fields and ask the next question
+      logs.push(`[LLM] Missing fields for progress ${question.progress}: ${missingFields.join(", ")}`);
+      logs.push(`[LLM] Asking question: "${question.prompt}"`);
+      return question.prompt;
     }
   }
 
   logs.push("[LLM] No more questions to ask. All fields complete.");
   return null; // All questions completed
 };
+
  
 
 
