@@ -97,7 +97,6 @@ if (!message || message.trim() === "") {
   lastExtractedFields = { ...lastExtractedFields, ...extractedFields }; // Merge with previously extracted fields
   return extractedFields;
 };
-
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
@@ -158,95 +157,46 @@ export async function continueConversation(history: Message[]) {
       const userMessage = history[history.length - 1]?.content.trim() || "";
       let extractedFields = await extractAndRefineFields(userMessage, logs);
 
-      if (currentRecordId) {
-        logs.push(`[LLM] Syncing extracted fields to Airtable for record ID: ${currentRecordId}`);
-        await updateRecordFields(currentRecordId, extractedFields, logs);
-      }
-
-      // If Name or equivalent is missing, prompt the user for it
-      if (!currentRecordId && !extractedFields.Name) {
-        logs.push("[LLM] Missing Name field. Prompting user...");
-        return {
-          messages: [
-            ...history,
-            {
-              role: "assistant",
-              content: "A name or company name is required to create an account. Please provide it.",
-            },
-          ],
-          logs,
-        };
-      }
-
       if (!currentRecordId && extractedFields.Name) {
-        logs.push("[LLM] Creating draft account, waiting for record ID...");
+        logs.push("[LLM] Creating draft account and initializing progress...");
 
-        try {
-          const createResponse = await createAccount.execute({
-            Name: extractedFields.Name,
-            Status: "Draft",
-            "Priority Image Type": "AI Generated",
-            ...cleanFields(extractedFields),
-          });
+        const createResponse = await createAccount.execute({
+          Name: extractedFields.Name,
+          Status: "Draft",
+          "Priority Image Type": "AI Generated",
+          ...cleanFields(extractedFields),
+        });
 
-          if (createResponse?.recordId) {
-            currentRecordId = createResponse.recordId || null;
-            logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
-          } else {
-            let retries = 3;
-            while (!currentRecordId && retries > 0) {
-              logs.push(`[LLM] Waiting for record ID... Attempts left: ${retries}`);
-              await new Promise((resolve) => setTimeout(resolve, 500));
-              currentRecordId = createResponse.recordId || null;
-              retries--;
-            }
-
-            if (!currentRecordId) {
-              logs.push("[LLM] Failed to retrieve a valid record ID after retries. Exiting.");
-              return {
-                messages: [
-                  ...history,
-                  { role: "assistant", content: "An error occurred while creating the account. Please try again." },
-                ],
-                logs,
-              };
-            }
-
-            logs.push(`[LLM] Record ID confirmed after retries: ${currentRecordId}`);
-          }
-
-          if (currentRecordId && !recordFields[currentRecordId]) {
-            recordFields[currentRecordId] = { ...extractedFields };
-            logs.push(`[LLM] Initialized recordFields for record ID: ${currentRecordId}`);
-          }
-        } catch (error) {
-          logs.push(`[LLM] Error during account creation: ${error instanceof Error ? error.message : "Unknown error."}`);
+        if (createResponse?.recordId) {
+          currentRecordId = createResponse.recordId;
+          creationProgress = 0; // Initialize progress
+          recordFields[currentRecordId] = { ...extractedFields };
+          logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
+        } else {
+          logs.push("[LLM] Failed to create draft account.");
           return {
-            messages: [...history, { role: "assistant", content: "An error occurred while creating the account. Please try again." }],
+            messages: [
+              ...history,
+              { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+            ],
             logs,
           };
         }
       }
 
-      if (currentRecordId && typeof currentRecordId === "string") {
+      if (currentRecordId) {
         questionToAsk = getNextQuestion(currentRecordId, logs);
 
         if (!questionToAsk) {
-          logs.push(`[LLM] Syncing record fields for record ID: ${currentRecordId}`);
-          try {
-            await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
-          } catch (error) {
-            logs.push(`[LLM] Error during field sync: ${error instanceof Error ? error.message : "Unknown error."}`);
-          }
-
-          logs.push("[LLM] No more questions to ask. All fields have been captured.");
+          logs.push(`[LLM] All questions answered or skipped for record ID: ${currentRecordId}`);
           return {
             messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
             logs,
           };
         }
 
-        logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
+        logs.push(`[LLM] Asking next question: "${questionToAsk}"`);
+        creationProgress! += 1; // Increment progress
         return {
           messages: [...history, { role: "assistant", content: questionToAsk }],
           logs,
@@ -261,6 +211,40 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
+
+const getNextQuestion = (recordId: string, logs: string[]): string | null => {
+  const questions = [
+    {
+      progress: 0,
+      prompt: "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?",
+      fields: ["Website", "Instagram", "Facebook", "Blog"],
+    },
+    {
+      progress: 1,
+      prompt: "Can you tell me more about the company, including its industry, purpose, or mission?",
+      fields: ["Description", "About the Client", "Industry"],
+    },
+    {
+      progress: 2,
+      prompt: "What are the major objectives or talking points you'd like to achieve with Wonderland?",
+      fields: ["Talking Points", "Primary Objective"],
+    },
+  ];
+
+  for (const question of questions) {
+    if (creationProgress === question.progress) {
+      const anyFieldFilled = question.fields.some((field) => recordFields[recordId]?.[field]);
+      if (!anyFieldFilled) {
+        logs.push(`[LLM] Asking question for progress ${question.progress}: "${question.prompt}"`);
+        return question.prompt; // Return the first unanswered question
+      }
+    }
+  }
+
+  logs.push("[LLM] All predefined questions have been asked or skipped.");
+  return null; // All questions answered or skipped
+};
+
 
 
 
@@ -290,45 +274,6 @@ const updateRecordFields = async (recordId: string, newFields: Record<string, an
     logs.push(`[LLM] Failed to update Airtable for record ID ${recordId}: ${error instanceof Error ? error.message : error}`);
   }
 };
-const getNextQuestion = (recordId: string, logs: string[]): string | null => {
-  const questions = [
-    {
-      progress: 0,
-      prompt: "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?",
-      fields: ["Website", "Instagram", "Facebook", "Blog"],
-    },
-    {
-      progress: 1,
-      prompt: "Can you tell me more about the company, including its industry, purpose, or mission?",
-      fields: ["Description", "About the Client", "Industry"],
-    },
-    {
-      progress: 2,
-      prompt: "What are the major objectives or talking points you'd like to achieve with Wonderland?",
-      fields: ["Talking Points", "Primary Objective"],
-    },
-  ];
-
-  for (const question of questions) {
-    if (creationProgress === question.progress) {
-      // Check if at least one field in the current question is already filled
-      const anyFieldFilled = question.fields.some((field) => recordFields[recordId]?.[field]);
-
-      if (!anyFieldFilled) {
-        logs.push(`[LLM] Asking question for progress ${question.progress}: "${question.prompt}"`);
-        return question.prompt; // Ask the question if none of the fields are filled
-      }
-
-      logs.push(`[LLM] Skipping question for progress ${question.progress} as at least one field is filled.`);
-      creationProgress++; // Advance to the next question
-    }
-  }
-
-  logs.push("[LLM] All predefined questions have been asked or skipped. No further questions.");
-  return null; // All questions asked
-};
-
-
 
 
 
