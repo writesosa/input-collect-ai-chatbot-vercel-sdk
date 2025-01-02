@@ -262,6 +262,7 @@ if (currentRecordId && typeof currentRecordId === "string") {
   };
 }
 
+
 if (!questionAsked) {
   logs.push("[LLM] No immediate question to ask. Re-checking unanswered questions...");
   
@@ -288,7 +289,6 @@ if (!questionAsked) {
     }
   }
 }
-
 
 
 // Avoid filling defaults for optional fields during account creation
