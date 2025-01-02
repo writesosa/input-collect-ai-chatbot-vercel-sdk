@@ -36,6 +36,12 @@ const extractAndRefineFields = async (
 ): Promise<Record<string, string>> => {
   logs.push("[LLM] Extracting account fields from user message...");
 
+if (!message || message.trim() === "") {
+  logs.push("[LLM] Empty user message detected. Skipping field extraction.");
+  return {};
+}
+
+
   const combinedMessage = previousMessage ? `${previousMessage} ${message}` : message;
 
   const extractionResponse = await generateText({
@@ -206,35 +212,60 @@ export async function continueConversation(history: Message[]) {
           logs,
         };
       }
+if (!currentRecordId && extractedFields.Name) {
+  logs.push("[LLM] Creating a new draft record...");
 
-      if (!currentRecordId && extractedFields.Name) {
-        logs.push("[LLM] Creating a new draft record...");
+  try {
+    // Include all fields extracted so far
+    const createResponse = await createAccount.execute({
+      Name: extractedFields.Name,
+      Status: "Draft",
+      "Priority Image Type": "AI Generated",
+      ...cleanFields({
+        ...(currentRecordId ? recordFields[currentRecordId] : {}), // Ensure safe access
+        ...extractedFields,
+      }),
+    });
 
-        // Include all fields extracted so far
-        const createResponse = await createAccount.execute({
-          Name: extractedFields.Name,
-          Status: "Draft",
-          "Priority Image Type": "AI Generated",
-          ...cleanFields({
-            ...(currentRecordId ? recordFields[currentRecordId] : {}), // Ensure safe access
-            ...extractedFields,
-          }),
-        });
-if (createResponse.recordId) {
-  currentRecordId = createResponse.recordId;
-  logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
+    if (createResponse?.recordId) {
+      currentRecordId = createResponse.recordId;
+      logs.push(`[LLM] Draft created successfully with ID: ${currentRecordId}`);
 
-  // Validate and retry if needed
-  let retries = 3;
-  while (!currentRecordId && retries > 0) {
-    logs.push(`[LLM] Record ID not yet available. Retrying... Attempts left: ${retries}`);
-    await new Promise((resolve) => setTimeout(resolve, 500)); // Wait 500ms before retrying
-    currentRecordId = createResponse.recordId; // Re-check recordId
-    retries--;
-  }
+      // Retry logic to ensure record ID is set
+      let retries = 3;
+      while (!currentRecordId && retries > 0) {
+        logs.push(`[LLM] Record ID not yet available. Retrying... Attempts left: ${retries}`);
+        await new Promise((resolve) => setTimeout(resolve, 500)); // Wait 500ms before retrying
 
-  if (!currentRecordId) {
-    logs.push("[LLM] Failed to retrieve a valid record ID after retries. Exiting.");
+        // Re-check the response for a valid record ID
+        currentRecordId = createResponse.recordId;
+        retries--;
+      }
+
+      if (!currentRecordId) {
+        logs.push("[LLM] Failed to retrieve a valid record ID after retries. Exiting.");
+        return {
+          messages: [
+            ...history,
+            { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+          ],
+          logs,
+        };
+      }
+
+      logs.push(`[LLM] Record ID confirmed after retries: ${currentRecordId}`);
+    } else {
+      logs.push("[LLM] Failed to create draft. Exiting.");
+      return {
+        messages: [
+          ...history,
+          { role: "assistant", content: "An error occurred while creating the account. Please try again." },
+        ],
+        logs,
+      };
+    }
+  } catch (error) {
+    logs.push(`[LLM] Error during account creation: ${error instanceof Error ? error.message : "Unknown error."}`);
     return {
       messages: [
         ...history,
@@ -243,43 +274,13 @@ if (createResponse.recordId) {
       logs,
     };
   }
-
-  logs.push(`[LLM] Record ID confirmed: ${currentRecordId}`);
-
-  // Ensure all fields are updated immediately
-  const combinedFields = { ...lastExtractedFields, ...extractedFields };
-  logs.push(`[LLM] Syncing fields for new record ID ${currentRecordId}: ${JSON.stringify(combinedFields)}`);
-
-  try {
-    await updateRecordFields(currentRecordId, combinedFields, logs);
-    logs.push(`[LLM] Fields synced successfully for record ID ${currentRecordId}`);
-  } catch (error) {
-    if (error instanceof Error) {
-      logs.push(`[LLM] Failed to sync fields for record ID ${currentRecordId}: ${error.message}`);
-    } else {
-      logs.push(`[LLM] Failed to sync fields for record ID ${currentRecordId}: Unknown error occurred.`);
-    }
-  }
-
-  creationProgress = 0; // Start creation flow
-} else {
-  logs.push("[LLM] Failed to create draft. Exiting.");
-  return {
-    messages: [
-      ...history,
-      { role: "assistant", content: "An error occurred while creating the account. Please try again." },
-    ],
-    logs,
-  };
 }
+  
 
-
-      }
-
-      // Skip redundant questions
-      if (currentRecordId && typeof currentRecordId === "string") {
-        // Safe usage of currentRecordId since it is explicitly checked to be a string
-        questionToAsk = getNextQuestion(currentRecordId, logs);
+// Skip redundant questions
+if (currentRecordId && typeof currentRecordId === "string") {
+  // Safe usage of currentRecordId since it is explicitly checked to be a string
+  questionToAsk = getNextQuestion(currentRecordId, logs);
 
 if (!questionToAsk) {
   if (currentRecordId) {
@@ -341,6 +342,7 @@ const updateRecordFields = async (recordId: string, newFields: Record<string, an
     logs.push(`[LLM] Failed to update Airtable for record ID ${recordId}: ${error instanceof Error ? error.message : error}`);
   }
 };
+
 
 // Helper: Determine the next question based on missing fields
 const getNextQuestion = (recordId: string, logs: string[]): string | null => {
