@@ -163,15 +163,19 @@ export async function continueConversation(history: Message[]) {
       if (currentRecordId && extractedFields) {
         logs.push(`[LLM] Immediately updating Airtable for record ID: ${currentRecordId} with extracted fields.`);
         try {
+          // Exclude questionsAsked from being updated in Airtable
           const fieldsToUpdate = Object.fromEntries(
             Object.entries(extractedFields).filter(([key]) => key !== "questionsAsked")
           );
           await updateRecordFields(currentRecordId, fieldsToUpdate, logs);
           logs.push(`[LLM] Field updated for record ID ${currentRecordId}: ${JSON.stringify(fieldsToUpdate)}`);
         } catch (error) {
-          logs.push(`[LLM] Failed to update Airtable for record ID ${currentRecordId}: ${error instanceof Error ? error.message : "Unknown error."}`);
+          logs.push(`[LLM] Failed to update Airtable for record ID ${currentRecordId}: ${
+            error instanceof Error ? error.message : "Unknown error."
+          }`);
         }
       }
+
 
       // If Name or equivalent is missing, prompt the user for it
       if (!currentRecordId && !extractedFields.Name) {
