@@ -232,32 +232,49 @@ export async function continueConversation(history: Message[]) {
       }
 
       // Ensure questions are asked in sequence
-      if (currentRecordId && typeof currentRecordId === "string") {
-        logs.push("[LLM] Preparing to invoke getNextQuestion...");
-        questionToAsk = getNextQuestion(currentRecordId, logs);
-        questionAsked = !!questionToAsk;
+// Ensure questions are asked in sequence
+if (currentRecordId && typeof currentRecordId === "string") {
+  logs.push("[LLM] Preparing to invoke getNextQuestion...");
+  questionToAsk = getNextQuestion(currentRecordId, logs);
+  questionAsked = !!questionToAsk;
 
-        if (!questionToAsk) {
-          logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
-          try {
-            await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
-          } catch (syncError) {
-            logs.push(`[LLM] Failed to sync fields: ${syncError instanceof Error ? syncError.message : syncError}`);
-          }
+  if (!questionToAsk) {
+    logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
+    try {
+      await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
+    } catch (syncError) {
+      logs.push(`[LLM] Failed to sync fields: ${syncError instanceof Error ? syncError.message : syncError}`);
+    }
 
-          logs.push("[LLM] No more questions to ask. All fields have been captured.");
-          return {
-            messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
-            logs,
-          };
-        }
+    logs.push("[LLM] No more questions to ask. All fields have been captured.");
+    return {
+      messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+      logs,
+    };
+  }
 
-        logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
-        return {
-          messages: [...history, { role: "assistant", content: questionToAsk }],
-          logs,
-        };
-      }
+  logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
+  return {
+    messages: [...history, { role: "assistant", content: questionToAsk }],
+    logs,
+  };
+}
+
+// If no question was asked, re-check unanswered questions after account creation
+if (!questionAsked) {
+  logs.push("[LLM] No immediate question to ask. Re-checking unanswered questions...");
+  if (currentRecordId) {
+    questionToAsk = getNextQuestion(currentRecordId, logs);
+    if (questionToAsk) {
+      logs.push(`[LLM] Asking question after re-check: "${questionToAsk}"`);
+      return {
+        messages: [...history, { role: "assistant", content: questionToAsk }],
+        logs,
+      };
+    }
+  }
+}
+
 
       // If `getNextQuestion` wasn't called, invoke it again after creation
       if (!questionAsked) {
@@ -381,18 +398,16 @@ const getNextQuestion = (recordId: string, logs: string[]): string | null => {
     if (creationProgress === question.progress) {
       logs.push(`[LLM] Checking progress ${question.progress} for required fields.`);
 
-      const anyFieldFilled = question.fields.some((field) => {
-        const value = recordFields[recordId]?.[field];
-        logs.push(`[LLM] Checking field "${field}": ${value ? `Populated with "${value}"` : "Empty or undefined"}`);
-        return value && value.trim() !== ""; // Ensure value is not just empty or whitespace
-      });
+      const missingFields = question.fields.filter(
+        (field) => !recordFields[recordId]?.[field] || recordFields[recordId][field].trim() === ""
+      );
 
-      if (!anyFieldFilled) {
-        logs.push(`[LLM] Asking question: "${question.prompt}" for progress ${question.progress}`);
+      if (missingFields.length > 0) {
+        logs.push(`[LLM] Missing fields: ${missingFields.join(", ")}. Asking question: "${question.prompt}".`);
         return question.prompt;
       }
 
-      logs.push(`[LLM] Skipping question for progress ${question.progress} as at least one field is populated.`);
+      logs.push(`[LLM] Skipping question for progress ${question.progress}. All required fields are filled.`);
       creationProgress++; // Move to the next question
     }
   }
@@ -400,7 +415,6 @@ const getNextQuestion = (recordId: string, logs: string[]): string | null => {
   logs.push("[LLM] All predefined questions have been asked or skipped. No further questions.");
   return null; // No more questions to ask
 };
-
 
 
 
