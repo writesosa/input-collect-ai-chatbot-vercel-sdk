@@ -255,41 +255,35 @@ export async function continueConversation(history: Message[]) {
           logs,
         };
       }
+if (!questionAsked) {
+  logs.push("[LLM] Re-checking for unanswered questions...");
 
-      if (!questionAsked) {
-        logs.push("[LLM] Re-checking for unanswered questions...");
+  if (currentRecordId) {
+    const allQuestions = [
+      "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?",
+      "Can you tell me more about the company, including its industry, purpose, or mission?",
+      "What are the major objectives or talking points you'd like to achieve with Wonderland?",
+    ];
 
-        const allQuestions = [
-          "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?",
-          "Can you tell me more about the company, including its industry, purpose, or mission?",
-          "What are the major objectives or talking points you'd like to achieve with Wonderland?",
-        ];
+    const unaskedQuestions = allQuestions.filter(
+      (q) => !recordFields[currentRecordId]?.questionsAsked?.includes(q)
+    );
 
-        const unaskedQuestions = allQuestions.filter(
-          (q) => !recordFields[currentRecordId]?.questionsAsked?.includes(q)
-        );
-
-        if (unaskedQuestions.length > 0) {
-          const nextUnaskedQuestion = unaskedQuestions[0];
-          logs.push(`[LLM] Re-asking missing question: "${nextUnaskedQuestion}"`);
-          recordFields[currentRecordId].questionsAsked = [
-            ...(recordFields[currentRecordId]?.questionsAsked || []),
-            nextUnaskedQuestion,
-          ]; // Update tracking
-          return {
-            messages: [...history, { role: "assistant", content: nextUnaskedQuestion }],
-            logs,
-          };
-        }
-        logs.push("[LLM] Fallback confirmed all questions were asked.");
-      }
+    if (unaskedQuestions.length > 0) {
+      const nextUnaskedQuestion = unaskedQuestions[0];
+      logs.push(`[LLM] Re-asking missing question: "${nextUnaskedQuestion}"`);
+      recordFields[currentRecordId].questionsAsked = [
+        ...(recordFields[currentRecordId]?.questionsAsked || []),
+        nextUnaskedQuestion,
+      ]; // Update tracking
+      return {
+        messages: [...history, { role: "assistant", content: nextUnaskedQuestion }],
+        logs,
+      };
     }
-  } catch (error) {
-    logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
-    return {
-      messages: [...history, { role: "assistant", content: "An error occurred while processing your request." }],
-      logs,
-    };
+    logs.push("[LLM] Fallback confirmed all questions were asked.");
+  } else {
+    logs.push("[LLM] currentRecordId is null. Unable to check unanswered questions.");
   }
 }
 
