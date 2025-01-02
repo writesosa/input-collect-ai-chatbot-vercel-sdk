@@ -236,8 +236,6 @@ if (!currentRecordId && extractedFields.Name) {
   }
 }
 
-
-
 // Skip redundant questions
 if (currentRecordId && typeof currentRecordId === "string") {
   // Safe usage of currentRecordId since it is explicitly checked to be a string
@@ -260,11 +258,13 @@ if (currentRecordId && typeof currentRecordId === "string") {
   logs.push("[LLM] No valid record ID available to continue question flow.");
 }
 
-// Ensure proper closure of the `try` block
+// Ensure this block closes properly with a semicolon
 } catch (error) {
   logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
   return { messages: [...history, { role: "assistant", content: "An error occurred." }], logs };
 }
+
+// Add closing brace for the `continueConversation` function if not already closed
 
 
 // Helper: Update record fields and prevent redundant updates
