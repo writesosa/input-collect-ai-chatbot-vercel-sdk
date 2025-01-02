@@ -262,7 +262,8 @@ if (!currentRecordId && extractedFields.Name) {
           logs,
         };
       }
-if (!questionAsked) {
+
+      if (!questionAsked) {
   logs.push("[LLM] Re-checking for unanswered questions...");
 
   const allQuestions = [
@@ -289,6 +290,14 @@ if (!questionAsked) {
   }
 
   logs.push("[LLM] Fallback confirmed all questions were asked.");
+} // Add this closing brace here
+
+} catch (error) {
+  logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
+  return {
+    messages: [...history, { role: "assistant", content: "An error occurred while processing your request." }],
+    logs,
+  };
 }
 
 
