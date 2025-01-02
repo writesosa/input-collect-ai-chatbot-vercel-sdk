@@ -189,7 +189,8 @@ export async function continueConversation(history: Message[]) {
             "Priority Image Type": "AI Generated",
             ...cleanFields(extractedFields),
           });
-if (createResponse?.recordId) {
+
+          if (createResponse?.recordId) {
   currentRecordId = createResponse.recordId;
 
   // Ensure currentRecordId is valid before using it as an index
@@ -216,8 +217,6 @@ if (createResponse?.recordId) {
     logs,
   };
 }
-
-      }
 
       // Ensure questions are asked in sequence
       if (currentRecordId) {
