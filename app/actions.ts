@@ -286,7 +286,7 @@ if (!questionAsked) {
     logs.push("[LLM] currentRecordId is null. Unable to check unanswered questions.");
   }
 }
-
+}
 
 // Avoid filling defaults for optional fields during account creation
 const createAccount = tool({
