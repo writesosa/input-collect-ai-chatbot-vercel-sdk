@@ -208,6 +208,70 @@ const deleteAccount = tool({
   },
 });
 
+// Helper: Fetch all records from Airtable for GPT analysis
+const fetchAllRecords = async (logs) => {
+  logs.push("[TOOL] Fetching all records for GPT analysis...");
+  const records = await airtableBase("Accounts")
+    .select({ view: "Active" })
+    .all();
+  const recordData = records.map((rec) => ({
+    id: rec.id,
+    fields: rec.fields,
+  }));
+  logs.push(`[TOOL] Fetched ${recordData.length} records for GPT.`);
+  return recordData;
+};
+
+// Helper: Identify record using GPT
+const identifyRecordWithGPT = async (userMessage, records, logs) => {
+  const systemPrompt = `
+    You are a Wonderland assistant tasked with identifying a record from a list based on the user's input.
+    Here's a list of records with their fields:
+    ${JSON.stringify(records, null, 2)}
+
+    The user's request is:
+    "${userMessage}"
+
+    Please respond with the 'id' of the matching record, or if no match is found, reply with "no_match".
+  `;
+
+  logs.push("[GPT] Sending record data and user message for analysis...");
+  const gptResponse = await generateText({
+    model: openai("gpt-4o"),
+    system: systemPrompt,
+    messages: [{ role: "user", content: userMessage }],
+    maxToolRoundtrips: 1,
+  });
+
+  const recordId = gptResponse.text.trim();
+  logs.push(`[GPT] GPT identified record ID: ${recordId}`);
+  return recordId === "no_match" ? null : recordId;
+};
+
+// Helper: Use GPT with chat context if necessary
+const analyzeWithChatContext = async (history, records, logs) => {
+  const systemPrompt = `
+    You are a Wonderland assistant. Here's the current conversation transcript:
+    ${JSON.stringify(history, null, 2)}
+
+    And here are the available records:
+    ${JSON.stringify(records, null, 2)}
+
+    Based on the conversation and records, identify the 'id' of the most relevant record. If no match is found, reply with "no_match".
+  `;
+
+  logs.push("[GPT] Analyzing chat transcript and records...");
+  const gptResponse = await generateText({
+    model: openai("gpt-4o"),
+    system: systemPrompt,
+    messages: [{ role: "user", content: "Identify the relevant record." }],
+    maxToolRoundtrips: 1,
+  });
+
+  const recordId = gptResponse.text.trim();
+  logs.push(`[GPT] GPT identified record ID using chat context: ${recordId}`);
+  return recordId === "no_match" ? null : recordId;
+};
 
 
 export async function continueConversation(history: Message[]) {
@@ -357,7 +421,6 @@ if (currentRecordId) {
     }
   }
 }
-
 if (userIntent === "switch_record") {
   logs.push("[LLM] Switch record detected. Processing...");
   const userMessage = history[history.length - 1]?.content.trim() || "";
@@ -380,25 +443,26 @@ if (userIntent === "switch_record") {
   }
 
   try {
-    // Determine the lookup field and value
-    const lookupField = extractedFields.Name ? "Name" : "Client Company Name";
-    const lookupValue = extractedFields.Name || extractedFields["Client Company Name"];
+    const allRecords = await fetchAllRecords(logs);
+    const recordId = await identifyRecordWithGPT(userMessage, allRecords, logs);
 
-    const switchResponse = await switchRecord.execute({ lookupField, lookupValue });
-
-    logs.push(...(switchResponse.logs || []));
-
-    if (switchResponse.recordId) {
-      currentRecordId = switchResponse.recordId; // Update global record ID
-      logs.push(`[LLM] Switched to new record ID: ${currentRecordId}`);
+    if (recordId) {
+      currentRecordId = recordId;
+      logs.push(`[LLM] Successfully switched to record ID: ${currentRecordId}`);
+      return {
+        messages: [...history, { role: "assistant", content: `Switched to the account with Record ID: ${currentRecordId}.` }],
+        logs,
+      };
     } else {
-      logs.push("[LLM] No recordId returned. Assuming no switch occurred.");
+      logs.push("[LLM] No matching record found using GPT.");
+      return {
+        messages: [
+          ...history,
+          { role: "assistant", content: "I couldn't find a matching record. Could you clarify or provide more details?" },
+        ],
+        logs,
+      };
     }
-
-    return {
-      messages: [...history, { role: "assistant", content: switchResponse.message }],
-      logs,
-    };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     logs.push(`[LLM] Error during switch record: ${errorMessage}`);
@@ -408,7 +472,6 @@ if (userIntent === "switch_record") {
     };
   }
 }
-
 if (userIntent === "update_record") {
   logs.push("[LLM] Update record detected. Processing...");
   const userMessage = history[history.length - 1]?.content.trim() || "";
@@ -416,50 +479,30 @@ if (userIntent === "update_record") {
   // Extract the field and value to update
   const extractedFields = await extractAndRefineFields(userMessage, logs);
 
-  if (!currentRecordId && (!extractedFields.Name && !extractedFields["Client Company Name"])) {
-    logs.push("[LLM] Missing lookup details for updating record. Prompting user...");
-    return {
-      messages: [
-        ...history,
-        {
-          role: "assistant",
-          content: "Please specify the name or company of the record you'd like to update.",
-        },
-      ],
-      logs,
-    };
+  if (!currentRecordId) {
+    logs.push("[LLM] No current record ID. Searching for target record...");
+    const allRecords = await fetchAllRecords(logs);
+    const recordId = await identifyRecordWithGPT(userMessage, allRecords, logs);
+
+    if (recordId) {
+      currentRecordId = recordId;
+      logs.push(`[LLM] Successfully identified record ID for update: ${currentRecordId}`);
+    } else {
+      logs.push("[LLM] Unable to identify the record to update.");
+      return {
+        messages: [
+          ...history,
+          { role: "assistant", content: "I couldn't identify the record to update. Could you clarify or provide more details?" },
+        ],
+        logs,
+      };
+    }
   }
 
   try {
-    let targetRecordId = currentRecordId;
-
-    // If the user specifies a record by name or company, find the matching record
-    if (!targetRecordId) {
-      logs.push("[LLM] No current record ID. Searching for target record...");
-      const lookupField = extractedFields.Name ? "Name" : "Client Company Name";
-      const lookupValue = extractedFields.Name || extractedFields["Client Company Name"];
-
-      const switchResponse = await switchRecord.execute({ lookupField, lookupValue });
-      logs.push(...(switchResponse.logs || []));
-
-      if (!switchResponse.recordId) {
-        logs.push("[LLM] No matching record found for update. Prompting user...");
-        return {
-          messages: [
-            ...history,
-            { role: "assistant", content: "No matching record found. Please try again with a valid record name or company." },
-          ],
-          logs,
-        };
-      }
-
-      targetRecordId = switchResponse.recordId;
-    }
-
-    // Update the target record with the extracted fields
-    if (targetRecordId) {
-      logs.push(`[LLM] Updating record ID: ${targetRecordId} with fields: ${JSON.stringify(extractedFields)}`);
-      await updateRecordFields(targetRecordId, cleanFields(extractedFields), logs);
+    if (currentRecordId) {
+      logs.push(`[LLM] Updating record ID: ${currentRecordId} with fields: ${JSON.stringify(extractedFields)}`);
+      await updateRecordFields(currentRecordId, cleanFields(extractedFields), logs);
       return {
         messages: [
           ...history,
