@@ -81,16 +81,17 @@ const extractAndRefineFields = async (
   }
 
   if (lastExtractedFields) {
-    logs.push("[LLM] Merging with previous extractions...");
     for (const [key, value] of Object.entries(lastExtractedFields)) {
       if (!extractedFields[key] || extractedFields[key].trim() === "") {
         extractedFields[key] = value;
-        logs.push(`[LLM] Retained previous value for ${key}: ${value}`);
+        if (value && value.trim() !== "") {
+          logs.push(`[LLM] Retained previous value for ${key}: ${value}`);
+        }
       }
     }
   }
 
-  lastExtractedFields = { ...lastExtractedFields, ...extractedFields };
+lastExtractedFields = { ...(lastExtractedFields || {}), ...(extractedFields || {}) };
   logs.push(`[LLM] Final merged fields: ${JSON.stringify(lastExtractedFields)}`);
   return extractedFields;
 };
@@ -319,19 +320,20 @@ if (userIntent === "unknown") {
       const extractedFields = await extractAndRefineFields(userMessage, logs);
 
       // Validate the presence of the Name field
-      if (!currentRecordId && (!extractedFields.Name || extractedFields.Name.trim() === "")) {
-        logs.push("[LLM] Missing Name or Client Company Name field. Prompting user...");
-        return {
-          messages: [
-            ...history,
-            {
-              role: "assistant",
-              content: "A name or company name is required to create an account. Please provide it.",
-            },
-          ],
-          logs,
-        };
-      }
+if (!currentRecordId && (!extractedFields.Name || extractedFields.Name.trim() === "") && (!extractedFields["Client Company Name"] || extractedFields["Client Company Name"].trim() === "")) {
+  logs.push("[LLM] Missing Name or Client Company Name field. Prompting user...");
+  return {
+    messages: [
+      ...history,
+      {
+        role: "assistant",
+        content: "A name or company name is required to create an account. Please provide it.",
+      },
+    ],
+    logs,
+  };
+}
+
 if (!currentRecordId && extractedFields.Name) {
   logs.push("[LLM] Creating new record because currentRecordId is null or invalid.");
   try {
