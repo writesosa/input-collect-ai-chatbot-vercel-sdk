@@ -209,7 +209,7 @@ const deleteAccount = tool({
 });
 
 // Helper: Fetch all records from Airtable for GPT analysis
-const fetchAllRecords = async (logs) => {
+const fetchAllRecords = async (logs: string[]): Promise<{ id: string; fields: Record<string, any> }[]> => {
   logs.push("[TOOL] Fetching all records for GPT analysis...");
   const records = await airtableBase("Accounts")
     .select({ view: "Active" })
