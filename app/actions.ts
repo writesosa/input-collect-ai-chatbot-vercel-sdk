@@ -44,69 +44,72 @@ const extractAndRefineFields = async (
 
   const combinedMessage = previousMessage ? `${previousMessage} ${message}` : message;
 
+  const extractionResponse = await generateText({
+    model: openai("gpt-4o"),
+    system: `You are a Wonderland assistant extracting account details.
+      Extract the following fields from the user's message if available:
+
+      {
+        "Name": "Anything that sounds like an account name, company name, name for a record or something the user designates as a name.",
+        "Client Company Name": "The name of the company, account or record.",
+        "Website": "A website URL, if mentioned.",
+        "Instagram": "An Instagram handle or link, if mentioned.",
+        "Facebook": "A Facebook handle or link, if mentioned.",
+        "Blog": "A blog URL, if mentioned.",
+        "Description": "Anything that sounds like a description for the record being created.",
+        "About the Client": "Any information supplied about the client or company.",
+        "Industry": "Any mention of industry, domain, or sector.",
+        "Talking Points": "Any objectives or talking points, if mentioned.",
+        "Primary Objective": "Any main purpose or goal of creating this account."
+      }
+      Always extract all fields mentioned in the message. Do not return empty fields.
+      Rewrite the extracted fields for clarity and completeness.
+      Respond with a JSON object strictly following this schema.`,
+    messages: [{ role: "user", content: combinedMessage }],
+    maxToolRoundtrips: 1,
+  });
+
   let extractedFields: Record<string, string> = {};
-  let extractionResponse: { text: string } | null = null;
 
   try {
-    extractionResponse = await generateText({
-      model: openai("gpt-4o"),
-      system: `You are a Wonderland assistant extracting account details.
-        Extract the following fields from the user's message if available:
-
-        {
-          "Name": "Account or company name.",
-          "Client Company Name": "The associated company.",
-          "Website": "A website URL.",
-          "Instagram": "An Instagram handle or link.",
-          "Facebook": "A Facebook handle or link.",
-          "Blog": "A blog URL.",
-          "Description": "Description for the account.",
-          "Industry": "Mention of industry.",
-          "Talking Points": "Objectives or talking points.",
-          "Primary Objective": "Main purpose or goal."
-        }
-        Always respond with a JSON object strictly following this schema.`,
-      messages: [{ role: "user", content: combinedMessage }],
-      maxToolRoundtrips: 1,
-    });
-
     logs.push(`[LLM] Full AI Response: ${extractionResponse.text}`);
     extractedFields = JSON.parse(extractionResponse.text.trim());
     logs.push(`[LLM] Extracted fields successfully parsed: ${JSON.stringify(extractedFields)}`);
   } catch (error) {
     logs.push("[LLM] Initial parsing failed. Attempting retry...");
 
-    if (extractionResponse?.text) {
-      const jsonStart = extractionResponse.text.indexOf("{");
-      const jsonEnd = extractionResponse.text.lastIndexOf("}") + 1;
-
-      if (jsonStart !== -1 && jsonEnd !== -1) {
-        try {
-          const retryJson = extractionResponse.text.substring(jsonStart, jsonEnd);
-          extractedFields = JSON.parse(retryJson);
-          logs.push(`[LLM] Retry successful. Parsed fields: ${JSON.stringify(extractedFields)}`);
-        } catch (retryError) {
-          logs.push("[LLM] Retry failed. Defaulting to empty.");
-        }
-      } else {
-        logs.push("[LLM] No JSON structure found in response. Defaulting to empty.");
+    // Retry parsing logic
+    const jsonStart = extractionResponse.text.indexOf("{");
+    const jsonEnd = extractionResponse.text.lastIndexOf("}") + 1;
+    if (jsonStart !== -1 && jsonEnd !== -1) {
+      try {
+        const retryJson = extractionResponse.text.substring(jsonStart, jsonEnd);
+        extractedFields = JSON.parse(retryJson);
+        logs.push(`[LLM] Retry successful. Parsed fields: ${JSON.stringify(extractedFields)}`);
+      } catch (retryError) {
+        logs.push("[LLM] Retry failed. Defaulting to empty.");
       }
+    } else {
+      logs.push("[LLM] No JSON structure found in response. Defaulting to empty.");
     }
   }
 
-  // Ensure safe merging with null checks
-  lastExtractedFields = { ...lastExtractedFields || {}, ...extractedFields || {} };
+  lastExtractedFields = { ...lastExtractedFields, ...extractedFields }; // Merge with previously extracted fields
   return extractedFields;
 };
+
+
 
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
   let questionToAsk: string | null = null;
+  let questionAsked = false; // Flag to track if a question was asked
 
   try {
     logs.push("[LLM] Starting continueConversation...");
 
+    // Intent classification
     const intentResponse = await generateText({
       model: openai("gpt-4o"),
       system: `You are a Wonderland assistant.
@@ -121,30 +124,35 @@ export async function continueConversation(history: Message[]) {
     const userIntent = intentResponse.text.trim();
     logs.push(`[LLM] Detected intent: ${userIntent}`);
 
-    // General query handling (Unmodified)
+    // Handle general queries
     if (userIntent === "general_query") {
       logs.push("[LLM] General query detected. Passing to standard processing.");
       const { text } = await generateText({
         model: openai("gpt-4o"),
-        system: `You are a Wonderland assistant!`,
+        system: `You are a Wonderland assistant!
+          Reply with nicely formatted markdown. 
+          Keep your replies short and concise. 
+          If this is the first reply, send a nice welcome message.
+          If the selected Account is different, mention the account or company name once.
+
+          Perform the following actions:
+          - Create a new account in Wonderland when the user requests it.
+          - Modify an existing account in Wonderland when the user requests it.
+          - Delete an existing account in Wonderland when the user requests it.
+          - Switch to a different account by looking up records based on a specific field and value.
+          - Answer questions you know about Wonderland.
+          - When the request is unknown, prompt the user for more information to establish intent.
+
+          When creating, modifying, or switching accounts:
+          - Confirm the action with the user before finalizing.
+          - Provide clear feedback on the current record being worked on, including its Record ID.`,
         messages: history,
         maxToolRoundtrips: 5,
       });
 
+      logs.push("[LLM] General query processed successfully.");
       return { messages: [...history, { role: "assistant", content: text }], logs };
     }
-
-    // Account creation logic (Retained and unmodified)
-    // Handles intent "account_creation" with extracted fields and step-by-step question flow
-
-  } catch (error) {
-    logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
-    return {
-      messages: [...history, { role: "assistant", content: "An error occurred while processing your request." }],
-      logs,
-    };
-  }
-}
 
     // Handle account creation logic
     if (userIntent === "account_creation") {
