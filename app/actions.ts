@@ -256,12 +256,11 @@ const switchRecord = tool({
     }
   },
 });
-
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
   let questionToAsk: string | null = null;
-  let questionAsked = false; // Flag to track if a question was asked
+  let questionAsked = false; // Track if a question was asked
 
   try {
     logs.push("[LLM] Starting continueConversation...");
@@ -282,56 +281,57 @@ export async function continueConversation(history: Message[]) {
     const userIntent = intentResponse.text.trim();
     logs.push(`[LLM] Detected intent: ${userIntent}`);
 
-    // Handle general queries
-    if (userIntent === "general_query") {
-      logs.push("[LLM] General query detected. Passing to standard processing.");
-      const { text } = await generateText({
+    // Handle "unknown" intent
+    if (userIntent === "unknown") {
+      logs.push("[LLM] Unknown intent detected. Reinterpreting input...");
+
+      const retryResponse = await generateText({
         model: openai("gpt-4o"),
-        system: `You are a Wonderland assistant!
-          Reply with nicely formatted markdown. 
-          Keep your replies short and concise. 
-          If this is the first reply, send a nice welcome message.
-          If the selected Account is different, mention the account or company name once.
-
-          Perform the following actions:
-          - Create a new account in Wonderland when the user requests it.
-          - Modify an existing account in Wonderland when the user requests it.
-          - Delete an existing account in Wonderland when the user requests it.
-          - Switch to a different account by looking up records based on a specific field and value.
-          - Answer questions you know about Wonderland.
-          - When the request is unknown, prompt the user for more information to establish intent.
-
-          When creating, modifying, or switching accounts:
-          - Confirm the action with the user before finalizing.
-          - Provide clear feedback on the current record being worked on, including its Record ID.`,
+        system: `You are a Wonderland assistant.
+          Retry understanding the user message within the current workflow context.
+          If still unclear, prompt the user for more information.`,
         messages: history,
-        maxToolRoundtrips: 5,
       });
 
-      logs.push("[LLM] General query processed successfully.");
-      return { messages: [...history, { role: "assistant", content: text }], logs };
+      const reinterpretedIntent = retryResponse.text.trim();
+      logs.push(`[LLM] Reinterpreted intent: ${reinterpretedIntent}`);
+
+      if (reinterpretedIntent === "unknown") {
+        logs.push("[LLM] Reinterpretation failed. Prompting user for clarification...");
+        return {
+          messages: [...history, { role: "assistant", content: "I didn't quite understand that. Could you clarify your request?" }],
+          logs,
+        };
+      }
+
+      // Retry processing the reinterpreted intent
+      logs.push("[LLM] Successfully reinterpreted intent. Routing to appropriate workflow...");
+      history.push({ role: "system", content: `Reinterpreted intent: ${reinterpretedIntent}` });
+      return await continueConversation(history);
     }
 
-    // Handle account creation logic
-logs.push("[LLM] Account creation detected. Processing...");
+    // Handle "account_creation" intent
+    if (userIntent === "account_creation") {
+      logs.push("[LLM] Account creation detected. Processing...");
 
-  const userMessage = history[history.length - 1]?.content.trim() || "";
-  const extractedFields = await extractAndRefineFields(userMessage, logs);
+      const userMessage = history[history.length - 1]?.content.trim() || "";
+      const extractedFields = await extractAndRefineFields(userMessage, logs);
 
-  // Validate the presence of the Name field
-  if (!currentRecordId && (!extractedFields.Name || extractedFields.Name.trim() === "")) {
-    logs.push("[LLM] Missing Name or Client Company Name field. Prompting user...");
-    return {
-      messages: [
-        ...history,
-        {
-          role: "assistant",
-          content: "A name or company name is required to create an account. Please provide it.",
-        },
-      ],
-      logs,
-    };
-  }
+      // Validate the presence of the Name field
+      if (!currentRecordId && (!extractedFields.Name || extractedFields.Name.trim() === "")) {
+        logs.push("[LLM] Missing Name or Client Company Name field. Prompting user...");
+        return {
+          messages: [
+            ...history,
+            {
+              role: "assistant",
+              content: "A name or company name is required to create an account. Please provide it.",
+            },
+          ],
+          logs,
+        };
+      }
+
       if (currentRecordId && extractedFields) {
         logs.push(`[LLM] Immediately updating Airtable for record ID: ${currentRecordId} with extracted fields.`);
         try {
@@ -368,33 +368,34 @@ logs.push("[LLM] Account creation detected. Processing...");
           };
         }
       }
-if (currentRecordId) {
-  logs.push("[LLM] Preparing to invoke getNextQuestion...");
-  questionToAsk = getNextQuestion(currentRecordId, logs);
 
-  if (!questionToAsk) {
-    logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
-    try {
-      await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
-    } catch (syncError) {
-      logs.push(`[LLM] Failed to sync fields: ${syncError instanceof Error ? syncError.message : syncError}`);
-    }
+      if (currentRecordId) {
+        logs.push("[LLM] Preparing to invoke getNextQuestion...");
+        questionToAsk = getNextQuestion(currentRecordId, logs);
 
-    logs.push("[LLM] No more questions to ask. All fields have been captured.");
-    return {
-      messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
-      logs,
-    };
-  }
+        if (!questionToAsk) {
+          logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
+          try {
+            await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
+          } catch (syncError) {
+            logs.push(`[LLM] Failed to sync fields: ${syncError instanceof Error ? syncError.message : syncError}`);
+          }
 
-  logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
-  return {
-    messages: [...history, { role: "assistant", content: questionToAsk }],
-    logs,
-  };
-}
+          logs.push("[LLM] No more questions to ask. All fields have been captured.");
+          return {
+            messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+            logs,
+          };
+        }
 
+        logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
+        return {
+          messages: [...history, { role: "assistant", content: questionToAsk }],
+          logs,
+        };
+      }
 
+      // Re-check for unanswered questions
       if (!questionAsked && currentRecordId) {
         logs.push("[LLM] Re-checking for unanswered questions...");
 
@@ -416,32 +417,44 @@ if (currentRecordId) {
       };
     }
 
-    // Handle unknown intents
-    if (userIntent === "unknown") {
-      logs.push("[LLM] Unknown intent detected. Reinterpreting input...");
-
-      const retryResponse = await generateText({
+    // Handle "general_query" intent
+    if (userIntent === "general_query") {
+      logs.push("[LLM] General query detected. Processing...");
+      const { text } = await generateText({
         model: openai("gpt-4o"),
-        system: `You are a Wonderland assistant.
-          Retry understanding the user message within the current workflow context.
-          If still unclear, prompt the user for more information.`,
+        system: `You are a Wonderland assistant!
+          Reply with nicely formatted markdown.
+          Keep your replies short and concise.
+          If this is the first reply, send a nice welcome message.
+          If the selected Account is different, mention the account or company name once.
+
+          Perform the following actions:
+          - Create a new account in Wonderland when the user requests it.
+          - Modify an existing account in Wonderland when the user requests it.
+          - Delete an existing account in Wonderland when the user requests it.
+          - Switch to a different account by looking up records based on a specific field and value.
+          - Answer questions you know about Wonderland.
+          - When the request is unknown, prompt the user for more information to establish intent.
+
+          When creating, modifying, or switching accounts:
+          - Confirm the action with the user before finalizing.
+          - Provide clear feedback on the current record being worked on, including its Record ID.`,
         messages: history,
+        maxToolRoundtrips: 5,
       });
 
-      if (retryResponse.text.trim().toLowerCase() === "unknown") {
-        logs.push("[LLM] Reinterpretation failed. Prompting user for clarification...");
-        return {
-          messages: [...history, { role: "assistant", content: "I didn't quite understand that. Could you clarify your request?" }],
-          logs,
-        };
-      }
-
-      logs.push("[LLM] Reinterpretation successful. Resuming workflow...");
-      return {
-        messages: [...history, { role: "assistant", content: retryResponse.text }],
-        logs,
-      };
+      logs.push("[LLM] General query processed successfully.");
+      return { messages: [...history, { role: "assistant", content: text }], logs };
     }
+
+    logs.push("[LLM] No further actions detected. Returning clarification request.");
+    return {
+      messages: [
+        ...history,
+        { role: "assistant", content: "I'm sorry, I couldn't understand your request. Could you clarify or provide more details?" },
+      ],
+      logs,
+    };
   } catch (error) {
     logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
     return {
