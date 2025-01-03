@@ -233,25 +233,22 @@ if (!currentRecordId && extractedFields.Name) {
     };
   }
 }
-// Ensure updates to Airtable and recordFields are non-destructive
-if (currentRecordId) {
-  logs.push(`[LLM] Updating Airtable record ID: ${currentRecordId} with extracted fields.`);
 
-  try {
-    // Filter and merge new valid fields into recordFields
-    const sanitizedFields = Object.fromEntries(
-      Object.entries(extractedFields).filter(([key, value]) => value !== null && value !== "")
-    );
-if (currentRecordId && typeof currentRecordId === "string" && recordFields[currentRecordId]) {
-  const record = recordFields[currentRecordId]; // Safely access the record
-  Object.keys(sanitizedFields).forEach((key) => {
-    if (!record[key] || record[key] !== sanitizedFields[key]) {
-      recordFields[currentRecordId] = {
-        ...record,
-        [key]: sanitizedFields[key], // Add or update with new value
-      };
-    }
-  });
+if (currentRecordId) {
+  const safeRecordId = typeof currentRecordId === "string" ? currentRecordId : null;
+
+  if (safeRecordId && recordFields[safeRecordId]) {
+    const record = recordFields[safeRecordId]; // Safely access the record
+
+    Object.keys(sanitizedFields).forEach((key) => {
+      if (!record[key] || record[key] !== sanitizedFields[key]) {
+        recordFields[safeRecordId] = {
+          ...record,
+          [key]: sanitizedFields[key], // Add or update with new value
+        };
+      }
+    });
+  }
 }
 
 
