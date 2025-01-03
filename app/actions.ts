@@ -90,8 +90,6 @@ const extractAndRefineFields = async (
 
   return sanitizeFields({ ...lastExtractedFields, ...extractedFields });
 };
-
-
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
