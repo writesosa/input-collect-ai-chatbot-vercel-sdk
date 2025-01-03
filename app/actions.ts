@@ -348,17 +348,24 @@ const createAccount = tool({
         })
         .firstPage();
 
-      if (existingDraft.length > 0) {
-        recordId = existingDraft[0].id;
-        logs.push(`[TOOL] Reusing existing draft account with Record ID: ${recordId}`);
-      } else {
-        const record = await airtableBase("Accounts").create({
-          Name: fields.Name,
-          Status: fields.Status || "Draft",
-        });
-        recordId = record.id;
-        logs.push(`[TOOL] New draft account created with Record ID: ${recordId}`);
-      }
+if (existingDraft.length > 0) {
+  recordId = existingDraft[0].id;
+  logs.push(`[TOOL] Reusing existing draft account with Record ID: ${recordId}`);
+} else {
+  // Filter out "questionsAsked" and create the record
+  const sanitizedFields = Object.fromEntries(
+    Object.entries(fields).filter(([key, value]) => key !== "questionsAsked" && value !== null && value !== "")
+  );
+
+  const record = await airtableBase("Accounts").create({
+    Name: sanitizedFields.Name,
+    Status: sanitizedFields.Status || "Draft",
+    ...sanitizedFields, // Add remaining sanitized fields
+  });
+
+  recordId = record.id;
+  logs.push(`[TOOL] New draft account created with Record ID: ${recordId}`);
+}
 
       return {
         message: `Account successfully created or reused for "${fields.Name}".`,
@@ -430,7 +437,6 @@ const getNextQuestion = (recordId: string, logs: string[]): string | null => {
 
 // Helper: Update record fields and prevent redundant updates
 const recordFields: Record<string, Record<string, any>> = {};
-
 const updateRecordFields = async (
   recordId: string,
   newFields: Record<string, any>,
@@ -440,10 +446,16 @@ const updateRecordFields = async (
     recordFields[recordId] = {};
   }
 
-  Object.entries(newFields).forEach(([key, value]) => {
+  // Filter out `questionsAsked` and sanitize fields
+  const sanitizedFields = Object.fromEntries(
+    Object.entries(newFields).filter(([key, value]) => key !== "questionsAsked" && value !== null && value !== "")
+  );
+
+  // Update `recordFields` with sanitized fields
+  Object.entries(sanitizedFields).forEach(([key, value]) => {
     if (
-      value && // Only update if the new value is non-empty
-      (!recordFields[recordId][key] || recordFields[recordId][key] !== value) // Avoid overwriting existing value with the same or empty value
+      !recordFields[recordId][key] || 
+      recordFields[recordId][key] !== value
     ) {
       recordFields[recordId][key] = value;
       logs.push(`[LLM] Field updated for record ID ${recordId}: ${key} = ${value}`);
@@ -456,13 +468,10 @@ const updateRecordFields = async (
     }
   });
 
+  // Perform the Airtable update
   try {
-    if (recordId === currentRecordId) {
-      await airtableBase("Accounts").update(recordId, recordFields[recordId]);
-      logs.push(`[LLM] Airtable updated successfully for record ID: ${recordId}`);
-    } else {
-      logs.push(`[LLM] Skipping Airtable update for non-current record ID: ${recordId}`);
-    }
+    await airtableBase("Accounts").update(recordId, sanitizedFields);
+    logs.push(`[LLM] Airtable updated successfully for record ID: ${recordId}`);
   } catch (error) {
     logs.push(
       `[LLM] Failed to update Airtable for record ID ${recordId}: ${
@@ -471,6 +480,7 @@ const updateRecordFields = async (
     );
   }
 };
+
 
 
 
