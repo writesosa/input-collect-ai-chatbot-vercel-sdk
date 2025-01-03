@@ -370,69 +370,63 @@ if (!currentRecordId && extractedFields.Name) {
 }
 
 
-if (currentRecordId) {
-  logs.push(`[LLM] Updating record fields for current record ID: ${currentRecordId}`);
 
-  // Ensure `recordFields[currentRecordId]` exists
-  if (!recordFields[currentRecordId]) {
-    logs.push(`[LLM] Initializing record fields for existing record ID: ${currentRecordId}`);
-    recordFields[currentRecordId] = {
-      questionsAsked: [],
-      ...lastExtractedFields, // Include any previously extracted fields
-    };
-  }
+      if (currentRecordId) {
+        logs.push(`[LLM] Preparing to invoke getNextQuestion for record ID: ${currentRecordId}`);
+        questionToAsk = getNextQuestion(currentRecordId, logs);
 
-  // Merge new fields intelligently
-  const updatedFields = { ...recordFields[currentRecordId] };
-  Object.entries(cleanFields(extractedFields)).forEach(([key, value]) => {
-    if (!updatedFields[key] || updatedFields[key].trim() === "") {
-      // Add new value if the field is currently empty
-      updatedFields[key] = value;
-      logs.push(`[LLM] Field "${key}" added/updated with value: "${value}"`);
-    } else if (value && value.trim() !== "" && updatedFields[key] !== value) {
-      // Overwrite only if the new value is non-empty and differs
-      updatedFields[key] = value;
-      logs.push(`[LLM] Field "${key}" overwritten with new value: "${value}"`);
-    } else {
-      logs.push(`[LLM] Field "${key}" retained with existing value: "${updatedFields[key]}"`);
+        if (!questionToAsk) {
+          logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
+          try {
+            await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
+          } catch (syncError) {
+            logs.push(`[LLM] Failed to sync fields: ${
+              syncError instanceof Error ? syncError.message : syncError
+            }`);
+          }
+
+          logs.push("[LLM] No more questions to ask. Account creation is complete.");
+          return {
+            messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+            logs,
+          };
+        }
+
+        logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
+        return {
+          messages: [...history, { role: "assistant", content: questionToAsk }],
+          logs,
+        };
+      }
     }
-  });
 
-  recordFields[currentRecordId] = updatedFields;
-  logs.push(`[LLM] Final merged record fields: ${JSON.stringify(recordFields[currentRecordId])}`);
-
-  // Avoid re-prompting for a name
-  if (!recordFields[currentRecordId].Name || recordFields[currentRecordId].Name.trim() === "") {
-    logs.push("[LLM] Missing Name field. Prompting user...");
-    return {
-      messages: [
-        ...history,
-        {
-          role: "assistant",
-          content: "A name or company name is required to create an account. Please provide it.",
-        },
-      ],
-      logs,
-    };
-  }
-
-  // Continue with the next question
+    if (currentRecordId) {
+  logs.push("[LLM] Preparing to invoke getNextQuestion...");
   questionToAsk = getNextQuestion(currentRecordId, logs);
-  if (questionToAsk) {
-    logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
+
+  if (!questionToAsk) {
+    logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
+    try {
+      await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
+    } catch (syncError) {
+      logs.push(`[LLM] Failed to sync fields: ${
+        syncError instanceof Error ? syncError.message : syncError
+      }`);
+    }
+
+    logs.push("[LLM] No more questions to ask. All fields have been captured.");
     return {
-      messages: [...history, { role: "assistant", content: questionToAsk }],
+      messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
       logs,
     };
   }
 
-  logs.push("[LLM] All fields have been captured. Account creation complete.");
+  logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
   return {
-    messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+    messages: [...history, { role: "assistant", content: questionToAsk }],
     logs,
   };
 }
-
 
 
     // Step 4: Handle "General Query" Intent
