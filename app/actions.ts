@@ -244,15 +244,17 @@ if (currentRecordId) {
     );
 
 if (currentRecordId && recordFields[currentRecordId]) {
+  const record = recordFields[currentRecordId]; // Access once and reuse safely
   Object.keys(sanitizedFields).forEach((key) => {
-    if (!recordFields[currentRecordId][key] || recordFields[currentRecordId][key] !== sanitizedFields[key]) {
+    if (!record[key] || record[key] !== sanitizedFields[key]) {
       recordFields[currentRecordId] = {
-        ...recordFields[currentRecordId],
+        ...record,
         [key]: sanitizedFields[key], // Add or update with new value
       };
     }
   });
 }
+
 
 
 
