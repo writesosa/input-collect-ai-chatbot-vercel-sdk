@@ -409,6 +409,74 @@ if (userIntent === "switch_record") {
   }
 }
 
+if (userIntent === "update_record") {
+  logs.push("[LLM] Update record detected. Processing...");
+  const userMessage = history[history.length - 1]?.content.trim() || "";
+
+  // Extract the field and value to update
+  const extractedFields = await extractAndRefineFields(userMessage, logs);
+
+  if (!currentRecordId && (!extractedFields.Name && !extractedFields["Client Company Name"])) {
+    logs.push("[LLM] Missing lookup details for updating record. Prompting user...");
+    return {
+      messages: [
+        ...history,
+        {
+          role: "assistant",
+          content: "Please specify the name or company of the record you'd like to update.",
+        },
+      ],
+      logs,
+    };
+  }
+
+  try {
+    let targetRecordId = currentRecordId;
+
+    // If the user specifies a record by name or company, find the matching record
+    if (!targetRecordId) {
+      logs.push("[LLM] No current record ID. Searching for target record...");
+      const lookupField = extractedFields.Name ? "Name" : "Client Company Name";
+      const lookupValue = extractedFields.Name || extractedFields["Client Company Name"];
+
+      const switchResponse = await switchRecord.execute({ lookupField, lookupValue });
+      logs.push(...(switchResponse.logs || []));
+
+      if (!switchResponse.recordId) {
+        logs.push("[LLM] No matching record found for update. Prompting user...");
+        return {
+          messages: [
+            ...history,
+            { role: "assistant", content: "No matching record found. Please try again with a valid record name or company." },
+          ],
+          logs,
+        };
+      }
+
+      targetRecordId = switchResponse.recordId;
+    }
+
+    // Update the target record with the extracted fields
+    if (targetRecordId) {
+      logs.push(`[LLM] Updating record ID: ${targetRecordId} with fields: ${JSON.stringify(extractedFields)}`);
+      await updateRecordFields(targetRecordId, cleanFields(extractedFields), logs);
+      return {
+        messages: [
+          ...history,
+          { role: "assistant", content: `The record has been successfully updated with the new details.` },
+        ],
+        logs,
+      };
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    logs.push(`[LLM] Error during record update: ${errorMessage}`);
+    return {
+      messages: [...history, { role: "assistant", content: "An error occurred while updating the record. Please try again." }],
+      logs,
+    };
+  }
+}
 
 
 
