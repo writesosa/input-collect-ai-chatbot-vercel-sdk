@@ -271,13 +271,14 @@ export async function continueConversation(history: Message[]) {
     // Step 1: Classify User Intent
     const intentResponse = await generateText({
       model: openai("gpt-4o"),
-        system: `You are a Wonderland assistant.
-          Classify the user's latest message into one of the following intents:
-          - "account_creation": If the user is asking to create, update, or manage an account.
-          - "general_query": If the user is asking a general question about Wonderland or unrelated topics.
-          - "switch_record": If the user is asking to switch to a different record by specifying a name, company, or URL.
-          - "unknown": If the intent is not clear.
-          Respond only with the classification.`,
+      system: `You are a Wonderland assistant.
+        Classify the user's latest message into one of the following intents:
+        - "account_creation": If the user is asking to create, update, or manage an account.
+        - "general_query": If the user is asking a general question about Wonderland or unrelated topics.
+        - "switch_record": If the user is asking to switch to a different record by specifying a name, company, or URL.
+        - "update_record": If the user is asking to update the details of an existing record, either the current one or another record specified by name, company, or description.
+        - "unknown": If the intent is not clear.
+        Respond only with the classification.`,
       messages: history,
       maxToolRoundtrips: 1,
     });
