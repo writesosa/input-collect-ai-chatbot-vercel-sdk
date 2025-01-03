@@ -404,34 +404,21 @@ if (userIntent === "switch_record") {
     };
   }
 }
-
-
-if (userIntent === "update_record") {
-  logs.push("[LLM] Update record detected. Processing...");
+if (userIntent === "switch_record") {
+  logs.push("[LLM] Switch record detected. Processing...");
   const userMessage = history[history.length - 1]?.content.trim() || "";
 
-  // Extract fields from user input
+  // Extract the lookup field and value
   const extractedFields = await extractAndRefineFields(userMessage, logs);
-  const lookupField = extractedFields.Name
-    ? "Name"
-    : extractedFields["Client Company Name"]
-    ? "Client Company Name"
-    : extractedFields.Description
-    ? "Description"
-    : extractedFields["About the Client"]
-    ? "About the Client"
-    : null;
 
-  const lookupValue = lookupField ? extractedFields[lookupField] : null;
-
-  if (!lookupValue) {
-    logs.push("[LLM] Missing details for lookup or update. Prompting user...");
+  if (!extractedFields.Name && !extractedFields["Client Company Name"]) {
+    logs.push("[LLM] Missing lookup details for switch record. Prompting user...");
     return {
       messages: [
         ...history,
         {
           role: "assistant",
-          content: "Please specify the name, description, or client company of the record you'd like to update.",
+          content: "Please specify the name or company of the record you'd like to switch to.",
         },
       ],
       logs,
@@ -439,35 +426,28 @@ if (userIntent === "update_record") {
   }
 
   try {
-    // If no current record or the user explicitly mentions a different record, switch records
-    if (!currentRecordId || lookupValue !== recordFields[currentRecordId]?.[lookupField]) {
-      logs.push("[LLM] Switching to a new record before updating...");
-      const { recordId, logs: switchLogs } = await switchRecord.execute({
-        lookupField,
-        lookupValue,
-      });
-      logs.push(...switchLogs);
+    const switchResponse = await switchRecord.execute({
+      lookupField: extractedFields.Name ? "Name" : "Client Company Name",
+      lookupValue: extractedFields.Name || extractedFields["Client Company Name"],
+    });
 
-      currentRecordId = recordId;
+    logs.push(...(switchResponse.logs || []));
+
+    if (switchResponse.recordId) {
+      currentRecordId = switchResponse.recordId; // Update global record ID
+      logs.push(`[LLM] Switched to new record ID: ${currentRecordId}`);
+    } else {
+      logs.push("[LLM] No recordId returned. Assuming no switch occurred.");
     }
 
-    // Perform the update
-    const updates = cleanFields(extractedFields); // Only include fields with valid values
-    logs.push("[LLM] Updating the current record...");
-    const { message, logs: updateLogs } = await updateRecord.execute({
-      recordId: currentRecordId,
-      updates,
-    });
-    logs.push(...updateLogs);
-
     return {
-      messages: [...history, { role: "assistant", content: message }],
+      messages: [...history, { role: "assistant", content: switchResponse.message }],
       logs,
     };
   } catch (error) {
-    logs.push(`[LLM] Error during update record: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
+    logs.push(`[LLM] Error during switch record: ${error.message || "Unknown error"}`);
     return {
-      messages: [...history, { role: "assistant", content: "An error occurred while updating the record. Please try again." }],
+      messages: [...history, { role: "assistant", content: "An error occurred while switching records." }],
       logs,
     };
   }
