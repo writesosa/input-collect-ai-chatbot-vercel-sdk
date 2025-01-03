@@ -444,14 +444,15 @@ if (userIntent === "switch_record") {
       messages: [...history, { role: "assistant", content: switchResponse.message }],
       logs,
     };
-  } catch (error) {
-    logs.push(`[LLM] Error during switch record: ${error.message || "Unknown error"}`);
-    return {
-      messages: [...history, { role: "assistant", content: "An error occurred while switching records." }],
-      logs,
-    };
-  }
+ } catch (error) {
+  const errorMessage = error instanceof Error ? error.message : "Unknown error";
+  logs.push(`[LLM] Error during switch record: ${errorMessage}`);
+  return {
+    messages: [...history, { role: "assistant", content: "An error occurred while switching records." }],
+    logs,
+  };
 }
+
 
 
 
