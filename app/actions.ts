@@ -245,10 +245,9 @@ if (currentRecordId) {
 
 if (currentRecordId && recordFields[currentRecordId]) {
   Object.keys(sanitizedFields).forEach((key) => {
-    const record = recordFields[currentRecordId]; // Temporary variable for safe access
-    if (record && (!record[key] || record[key] !== sanitizedFields[key])) {
+    if (!recordFields[currentRecordId][key] || recordFields[currentRecordId][key] !== sanitizedFields[key]) {
       recordFields[currentRecordId] = {
-        ...record,
+        ...recordFields[currentRecordId],
         [key]: sanitizedFields[key], // Add or update with new value
       };
     }
