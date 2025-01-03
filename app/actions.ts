@@ -110,59 +110,23 @@ const updateRecordFields = async (
   Object.entries(sanitizedFields).forEach(([key, value]) => {
     if (!recordFields[recordId][key] || recordFields[recordId][key] !== value) {
       recordFields[recordId][key] = value;
-      logs.push(`[LLM] Updated field: ${key} = ${value}`);
-    } else {
-      logs.push(`[LLM] Skipped field: ${key}, value unchanged.`);
-    }
-  });
-
-  try {
-    await airtableBase("Accounts").update(recordId, sanitizedFields);
-    logs.push(`[LLM] Airtable updated successfully for record ID: ${recordId}`);
-  } catch (error) {
-    logs.push(`[LLM] Airtable update failed: ${error instanceof Error ? error.message : "Unknown error."}`);
-  }
-};
-
-
-// Helper: Update record fields and prevent redundant updates
-const recordFields = {};
-const updateRecordFields = async (
-  recordId,
-  newFields,
-  logs
-) => {
-  if (!recordFields[recordId]) {
-    recordFields[recordId] = {};
-  }
-
-  // Filter out `questionsAsked` and sanitize fields
-  const sanitizedFields = Object.fromEntries(
-    Object.entries(newFields).filter(
-      ([key, value]) => key !== "questionsAsked" && value !== null && value !== ""
-    )
-  );
-
-  // Update `recordFields` with sanitized fields
-  Object.entries(sanitizedFields).forEach(([key, value]) => {
-    if (!recordFields[recordId][key] || recordFields[recordId][key] !== value) {
-      recordFields[recordId][key] = value;
       logs.push(`[LLM] Field updated for record ID ${recordId}: ${key} = ${value}`);
     } else {
       logs.push(
-        `[LLM] Skipping update for field ${key} on record ID ${recordId}. Current value: ${recordFields[recordId][key]}, New value: ${value}`
+        `[LLM] Skipping update for field ${key} on record ID ${recordId}. Current value: ${
+          recordFields[recordId][key]
+        }, New value: ${value}`
       );
     }
   });
 
-  // Perform the Airtable update
   try {
     await airtableBase("Accounts").update(recordId, sanitizedFields);
     logs.push(`[LLM] Airtable updated successfully for record ID: ${recordId}`);
   } catch (error) {
     logs.push(
       `[LLM] Failed to update Airtable for record ID ${recordId}: ${
-        error instanceof Error ? error.message : error
+        error instanceof Error ? error.message : "Unknown error."
       }`
     );
   }
