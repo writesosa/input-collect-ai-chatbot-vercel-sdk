@@ -255,27 +255,32 @@ const identifyRecordWithGPT = async (
 
 
 // Helper: Use GPT with chat context if necessary
-const analyzeWithChatContext = async (history, records, logs) => {
+// Helper: Use GPT with chat context if necessary
+const analyzeWithChatContext = async (
+  history: Message[], // Define history as an array of Message objects
+  records: { id: string; fields: Record<string, any> }[], // Array of records
+  logs: string[] // Logs array
+): Promise<string | null> => {
   const systemPrompt = `
     You are a Wonderland assistant. Here's the current conversation transcript:
     ${JSON.stringify(history, null, 2)}
 
-    And here are the available records:
+    Here's a list of records with their fields:
     ${JSON.stringify(records, null, 2)}
 
-    Based on the conversation and records, identify the 'id' of the most relevant record. If no match is found, reply with "no_match".
+    Based on the conversation and the records, identify the most relevant record ID. If no record matches, respond with "no_match".
   `;
 
-  logs.push("[GPT] Analyzing chat transcript and records...");
+  logs.push("[GPT] Analyzing chat context and records to identify record ID...");
   const gptResponse = await generateText({
     model: openai("gpt-4o"),
     system: systemPrompt,
-    messages: [{ role: "user", content: "Identify the relevant record." }],
+    messages: history,
     maxToolRoundtrips: 1,
   });
 
   const recordId = gptResponse.text.trim();
-  logs.push(`[GPT] GPT identified record ID using chat context: ${recordId}`);
+  logs.push(`[GPT] GPT identified record ID: ${recordId}`);
   return recordId === "no_match" ? null : recordId;
 };
 
