@@ -406,45 +406,7 @@ if (currentRecordId) {
       };
     }
   }
-if (userIntent === "switch_record") {
-  logs.push("[LLM] Switch record detected. Processing...");
-  const userMessage = history[history.length - 1]?.content.trim() || "";
 
-  // Extract the lookup field and value
-  const extractedFields = await extractAndRefineFields(userMessage, logs);
-
-  if (!extractedFields.Name && !extractedFields["Client Company Name"]) {
-    logs.push("[LLM] Missing lookup details for switch record. Prompting user...");
-    return {
-      messages: [
-        ...history,
-        {
-          role: "assistant",
-          content: "Please specify the name or company of the record you'd like to switch to.",
-        },
-      ],
-      logs,
-    };
-  }
-
-  try {
-    const { message, recordId, logs: toolLogs } = await switchRecord.execute({
-      lookupField: extractedFields.Name ? "Name" : "Client Company Name",
-      lookupValue: extractedFields.Name || extractedFields["Client Company Name"],
-    });
-    logs.push(...toolLogs);
-    return {
-      messages: [...history, { role: "assistant", content: message }],
-      logs,
-    };
-  } catch (error) {
-    logs.push(`[LLM] Error during switch record: ${error.message}`);
-    return {
-      messages: [...history, { role: "assistant", content: "An error occurred while switching records." }],
-      logs,
-    };
-  }
-}
 
 
     // Handle General Queries
