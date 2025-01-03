@@ -233,39 +233,27 @@ if (!currentRecordId && extractedFields.Name) {
     };
   }
 }
-
+// Ensure updates to Airtable and recordFields are non-destructive
 if (currentRecordId) {
   logs.push(`[LLM] Updating Airtable record ID: ${currentRecordId} with extracted fields.`);
 
-  // Define sanitizedFields outside of the try-catch block
-  let sanitizedFields: Record<string, any> = {};
-
   try {
-    // Sanitize extracted fields: skip questionsAsked if invalid and filter out null/empty values
-    sanitizedFields = Object.fromEntries(
-      Object.entries(extractedFields).filter(([key, value]) => {
-        if (key === "questionsAsked") {
-          if (!Array.isArray(value)) {
-            logs.push(`[LLM] Skipping update for questionsAsked. Invalid format: ${typeof value}`);
-            return false; // Exclude invalid questionsAsked
-          }
-          return true; // Allow valid arrays
-        }
-        return value !== null && value !== ""; // Exclude null/empty values
-      })
+    // Filter and merge new valid fields into recordFields
+    const sanitizedFields = Object.fromEntries(
+      Object.entries(extractedFields).filter(([key, value]) => value !== null && value !== "")
     );
 
-    // Merge existing fields with new sanitized fields
-    const updatedFields = {
-      ...recordFields[currentRecordId], // Retain existing fields
-      ...sanitizedFields, // Apply sanitized fields
-    };
+    Object.keys(sanitizedFields).forEach((key) => {
+      if (!recordFields[currentRecordId]?.[key] || recordFields[currentRecordId][key] !== sanitizedFields[key]) {
+        recordFields[currentRecordId] = {
+          ...recordFields[currentRecordId],
+          [key]: sanitizedFields[key], // Add or update with new value
+        };
+      }
+    });
 
-    // Perform the update
-    await updateRecordFields(currentRecordId, updatedFields, logs);
-
-    // Save updated fields locally for tracking
-    recordFields[currentRecordId] = updatedFields;
+    // Perform the Airtable update
+    await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
 
     logs.push(`[LLM] Fields updated successfully for record ID: ${currentRecordId}`);
   } catch (updateError) {
@@ -273,16 +261,17 @@ if (currentRecordId) {
       updateError instanceof Error ? updateError.message : "Unknown error"
     }`);
 
-    // Retry logic for failed updates
+    // Retry Logic
     try {
       logs.push("[LLM] Retrying field update...");
-      const fallbackFields = {
-        ...recordFields[currentRecordId], // Use last known valid data for retry
+      const retryFields = {
+        ...recordFields[currentRecordId], // Use last known valid state
         ...Object.fromEntries(
-          Object.entries(sanitizedFields).filter(([key, value]) => value !== null && value !== "")
+          Object.entries(extractedFields).filter(([key, value]) => value !== null && value !== "")
         ),
       };
-      await updateRecordFields(currentRecordId, fallbackFields, logs);
+
+      await updateRecordFields(currentRecordId, retryFields, logs);
       logs.push(`[LLM] Retry successful for record ID: ${currentRecordId}`);
     } catch (retryError) {
       logs.push(`[LLM] Retry failed for record ID ${currentRecordId}: ${
@@ -291,16 +280,29 @@ if (currentRecordId) {
       return {
         messages: [
           ...history,
-          {
-            role: "assistant",
-            content: "An error occurred while syncing the account fields. Please try again later.",
-          },
+          { role: "assistant", content: "An error occurred while syncing the account fields. Please try again later." },
         ],
         logs,
       };
     }
   }
 }
+
+// Ensure extractedFields is updated without overwriting with null or empty values
+const sanitizedFields = Object.fromEntries(
+  Object.entries(extractedFields).filter(([key, value]) => value !== null && value !== "")
+);
+
+Object.keys(sanitizedFields).forEach((key) => {
+  // Only add new fields or update existing ones if the value is non-null and non-empty
+  if (!recordFields[currentRecordId]?.[key] || recordFields[currentRecordId][key] !== sanitizedFields[key]) {
+    recordFields[currentRecordId] = {
+      ...recordFields[currentRecordId],
+      [key]: sanitizedFields[key],
+    };
+  }
+});
+
 
 
 
