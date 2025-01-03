@@ -313,12 +313,25 @@ export async function continueConversation(history: Message[]) {
     }
 
     // Handle account creation logic
-    if (userIntent === "account_creation") {
-      logs.push("[LLM] Account creation detected. Processing...");
+logs.push("[LLM] Account creation detected. Processing...");
 
-      const userMessage = history[history.length - 1]?.content.trim() || "";
-      const extractedFields = await extractAndRefineFields(userMessage, logs);
+  const userMessage = history[history.length - 1]?.content.trim() || "";
+  const extractedFields = await extractAndRefineFields(userMessage, logs);
 
+  // Validate the presence of the Name field
+  if (!currentRecordId && (!extractedFields.Name || extractedFields.Name.trim() === "")) {
+    logs.push("[LLM] Missing Name or Client Company Name field. Prompting user...");
+    return {
+      messages: [
+        ...history,
+        {
+          role: "assistant",
+          content: "A name or company name is required to create an account. Please provide it.",
+        },
+      ],
+      logs,
+    };
+  }
       if (currentRecordId && extractedFields) {
         logs.push(`[LLM] Immediately updating Airtable for record ID: ${currentRecordId} with extracted fields.`);
         try {
@@ -355,34 +368,32 @@ export async function continueConversation(history: Message[]) {
           };
         }
       }
+if (currentRecordId) {
+  logs.push("[LLM] Preparing to invoke getNextQuestion...");
+  questionToAsk = getNextQuestion(currentRecordId, logs);
 
-      if (currentRecordId) {
-        logs.push("[LLM] Preparing to invoke getNextQuestion...");
-        questionToAsk = getNextQuestion(currentRecordId, logs);
+  if (!questionToAsk) {
+    logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
+    try {
+      await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
+    } catch (syncError) {
+      logs.push(`[LLM] Failed to sync fields: ${syncError instanceof Error ? syncError.message : syncError}`);
+    }
 
-        if (!questionToAsk) {
-          logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
-          try {
-            await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
-          } catch (syncError) {
-            logs.push(`[LLM] Failed to sync fields: ${
-              syncError instanceof Error ? syncError.message : syncError
-            }`);
-          }
+    logs.push("[LLM] No more questions to ask. All fields have been captured.");
+    return {
+      messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+      logs,
+    };
+  }
 
-          logs.push("[LLM] No more questions to ask. All fields have been captured.");
-          return {
-            messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
-            logs,
-          };
-        }
+  logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
+  return {
+    messages: [...history, { role: "assistant", content: questionToAsk }],
+    logs,
+  };
+}
 
-        logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
-        return {
-          messages: [...history, { role: "assistant", content: questionToAsk }],
-          logs,
-        };
-      }
 
       if (!questionAsked && currentRecordId) {
         logs.push("[LLM] Re-checking for unanswered questions...");
@@ -441,18 +452,17 @@ export async function continueConversation(history: Message[]) {
 }
 
 
-// Avoid filling defaults for optional fields during account creation
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
-    Name: z.string().describe("The name of the account holder. This field is required."),
+    Name: z.string().nonempty("The 'Name' field is required.").describe("The name of the account holder."),
     Status: z.string().optional().default("Draft").describe("The status of the account."),
     Description: z.string().optional(),
     Website: z.string().optional(),
     Instagram: z.string().optional(),
     Facebook: z.string().optional(),
     Blog: z.string().optional(),
-        "Client Company Name": z.string().optional(),
+    "Client Company Name": z.string().optional(),
     "Primary Objective": z.string().optional(),
     "Talking Points": z.string().optional(),
   }),
@@ -476,43 +486,30 @@ const createAccount = tool({
         })
         .firstPage();
 
-if (existingDraft.length > 0) {
-  recordId = existingDraft[0].id;
-  logs.push(`[TOOL] Reusing existing draft account with Record ID: ${recordId}`);
-} else {
-  // Filter out "questionsAsked" and create the record
-  const sanitizedFields = Object.fromEntries(
-    Object.entries(fields).filter(([key, value]) => key !== "questionsAsked" && value !== null && value !== "")
-  );
+      if (existingDraft.length > 0) {
+        recordId = existingDraft[0].id;
+        logs.push(`[TOOL] Reusing existing draft account with Record ID: ${recordId}`);
+      } else {
+        const sanitizedFields = Object.fromEntries(
+          Object.entries(fields).filter(([_, value]) => value !== null && value !== "")
+        );
+        const record = await airtableBase("Accounts").create({
+          ...sanitizedFields,
+        });
+        recordId = record.id;
+        logs.push(`[TOOL] New draft account created with Record ID: ${recordId}`);
+      }
 
-  const record = await airtableBase("Accounts").create({
-    Name: sanitizedFields.Name,
-    Status: sanitizedFields.Status || "Draft",
-    ...sanitizedFields, // Add remaining sanitized fields
-  });
-
-  recordId = record.id;
-  logs.push(`[TOOL] New draft account created with Record ID: ${recordId}`);
-}
-
-      return {
-        message: `Account successfully created or reused for "${fields.Name}".`,
-        recordId,
-        logs,
-      };
+      return { message: `Account successfully created for "${fields.Name}".`, recordId, logs };
     } catch (error) {
       logs.push(
         "[TOOL] Error during account creation:",
-        error instanceof Error ? error.message : JSON.stringify(error)
+        error instanceof Error ? error.message : "Unknown error."
       );
-      return {
-        message: "An error occurred while creating the account.",
-        logs,
-      };
+      throw { message: "An error occurred while creating the account.", logs };
     }
   },
 });
-
 const getNextQuestion = (recordId: string, logs: string[]): string | null => {
   const questions = [
     {
@@ -533,13 +530,11 @@ const getNextQuestion = (recordId: string, logs: string[]): string | null => {
   ];
 
   for (const question of questions) {
-    // Skip if already asked
     if (recordFields[recordId]?.questionsAsked?.includes(question.prompt)) {
       logs.push(`[LLM] Question already asked: "${question.prompt}"`);
       continue;
     }
 
-    // Check if any associated fields are missing
     const anyFieldMissing = question.fields.some(
       (field) => !recordFields[recordId]?.[field] || recordFields[recordId][field].trim() === ""
     );
@@ -547,9 +542,9 @@ const getNextQuestion = (recordId: string, logs: string[]): string | null => {
     if (anyFieldMissing) {
       logs.push(`[LLM] Missing fields detected for progress ${question.progress}. Asking: "${question.prompt}"`);
       recordFields[recordId].questionsAsked = [
-        ...(recordFields[recordId].questionsAsked || []),
+        ...(recordFields[recordId]?.questionsAsked || []),
         question.prompt,
-      ]; // Persist question tracking
+      ];
       return question.prompt;
     }
 
