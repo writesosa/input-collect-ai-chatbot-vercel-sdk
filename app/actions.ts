@@ -27,6 +27,8 @@ const toTitleCase = (str: string): string =>
 // Helper: Clean Undefined Fields
 const cleanFields = (fields: Record<string, any>) =>
   Object.fromEntries(Object.entries(fields).filter(([_, value]) => value !== undefined));
+
+
 const extractAndRefineFields = async (
   message: string,
   logs: string[],
@@ -46,7 +48,7 @@ const extractAndRefineFields = async (
     system: `You are a Wonderland assistant extracting any available account details from user input.
       Touch up the messages before extracting to ensure correct punctuation, capitalization.
       Read the previous messages to see what the user is responding to. For example, a link could be both a website or company name.
-      If the extracted value is a url or link make sure its completed and in valid format.
+      If the extracted value is a URL or link, make sure it's complete and in valid format.
       Respond with a JSON object formatted as follows and **nothing else**:
       {
         "Name": "Anything that sounds like an account name, company name, name for a record or something the user designates as a name.",
@@ -88,7 +90,22 @@ const extractAndRefineFields = async (
     }
   }
 
-  lastExtractedFields = { ...lastExtractedFields, ...extractedFields }; // Merge with previously extracted fields
+  // Merge with previously extracted fields
+  if (lastExtractedFields) {
+    logs.push("[LLM] Merging with previously extracted fields...");
+    for (const [key, value] of Object.entries(lastExtractedFields)) {
+      // Retain non-empty values from previous extraction
+      if (!extractedFields[key] || extractedFields[key].trim() === "") {
+        extractedFields[key] = value;
+        logs.push(`[LLM] Preserved previous value for ${key}: ${value}`);
+      }
+    }
+  }
+
+  // Update the global lastExtractedFields
+  lastExtractedFields = { ...lastExtractedFields, ...extractedFields };
+
+  logs.push(`[LLM] Final merged fields: ${JSON.stringify(lastExtractedFields)}`);
   return extractedFields;
 };
 
