@@ -233,17 +233,28 @@ if (!currentRecordId && extractedFields.Name) {
     };
   }
 }
+
 if (currentRecordId) {
   logs.push(`[LLM] Updating Airtable record ID: ${currentRecordId} with extracted fields.`);
   try {
-    // Merge existing fields with new ones, ignoring null/empty values
+    // Sanitize extracted fields: skip questionsAsked if invalid and filter out null/empty values
+    const sanitizedFields = Object.fromEntries(
+      Object.entries(extractedFields).filter(([key, value]) => {
+        if (key === "questionsAsked") {
+          if (!Array.isArray(value)) {
+            logs.push(`[LLM] Skipping update for questionsAsked. Invalid format: ${typeof value}`);
+            return false; // Exclude invalid questionsAsked
+          }
+          return true; // Allow valid arrays
+        }
+        return value !== null && value !== ""; // Exclude null/empty values
+      })
+    );
+
+    // Merge existing fields with new sanitized fields
     const updatedFields = {
       ...recordFields[currentRecordId], // Retain existing fields
-      ...Object.fromEntries(
-        Object.entries(extractedFields).filter(
-          ([key, value]) => value !== null && value !== "" // Add only non-empty values
-        )
-      ),
+      ...sanitizedFields, // Apply sanitized fields
     };
 
     // Perform the update
@@ -261,7 +272,13 @@ if (currentRecordId) {
     // Retry logic for failed updates
     try {
       logs.push("[LLM] Retrying field update...");
-      await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
+      const fallbackFields = {
+        ...recordFields[currentRecordId], // Use last known valid data for retry
+        ...Object.fromEntries(
+          Object.entries(sanitizedFields).filter(([key, value]) => value !== null && value !== "")
+        ),
+      };
+      await updateRecordFields(currentRecordId, fallbackFields, logs);
       logs.push(`[LLM] Retry successful for record ID: ${currentRecordId}`);
     } catch (retryError) {
       logs.push(`[LLM] Retry failed for record ID ${currentRecordId}: ${
@@ -280,7 +297,6 @@ if (currentRecordId) {
     }
   }
 }
-
 
 
 
