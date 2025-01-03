@@ -280,38 +280,35 @@ export async function continueConversation(history: Message[]) {
 
     const userIntent = intentResponse.text.trim();
     logs.push(`[LLM] Detected intent: ${userIntent}`);
-if (userIntent === "unknown") {
-  logs.push("[LLM] Unknown intent detected. Reinterpreting input...");
-  const retryResponse = await generateText({
-    model: openai("gpt-4o"),
-    system: `You are a Wonderland assistant.
-      Retry understanding the user message within the current workflow context.
-      If still unclear, prompt the user for more information.`,
-    messages: history,
-  });
 
-  const reinterpretedIntent = retryResponse.text.trim();
-  logs.push(`[LLM] Reinterpreted intent: ${reinterpretedIntent}`);
+    if (userIntent === "unknown") {
+      logs.push("[LLM] Unknown intent detected. Reinterpreting input...");
+      const retryResponse = await generateText({
+        model: openai("gpt-4o"),
+        system: `You are a Wonderland assistant.
+          Retry understanding the user message within the current workflow context.
+          If still unclear, prompt the user for more information.`,
+        messages: history,
+      });
 
-  if (reinterpretedIntent === "unknown") {
-    logs.push("[LLM] Reinterpretation failed. Prompting user for clarification...");
-    return {
-      messages: [
-        ...history,
-        {
-          role: "assistant",
-          content: "I didn't quite understand that. Could you clarify your request?",
-        },
-      ],
-      logs,
-    };
-  }
+      const reinterpretedIntent = retryResponse.text.trim();
+      logs.push(`[LLM] Reinterpreted intent: ${reinterpretedIntent}`);
 
-  logs.push("[LLM] Successfully reinterpreted intent. Routing to appropriate workflow...");
-  history.push({ role: "assistant", content: `Reinterpreted intent: ${reinterpretedIntent}` });
-  return await continueConversation(history);
-}
+      if (reinterpretedIntent === "unknown") {
+        logs.push("[LLM] Reinterpretation failed. Prompting user for clarification...");
+        return {
+          messages: [
+            ...history,
+            { role: "assistant", content: "I didn't quite understand that. Could you clarify your request?" },
+          ],
+          logs,
+        };
+      }
 
+      logs.push("[LLM] Successfully reinterpreted intent. Routing to appropriate workflow...");
+      history.push({ role: "assistant", content: `Reinterpreted intent: ${reinterpretedIntent}` });
+      return await continueConversation(history);
+    }
 
     // Step 3: Handle "Account Creation" Intent
     if (userIntent === "account_creation") {
@@ -319,48 +316,63 @@ if (userIntent === "unknown") {
       const userMessage = history[history.length - 1]?.content.trim() || "";
       const extractedFields = await extractAndRefineFields(userMessage, logs);
 
-      // Validate the presence of the Name field
-if (!currentRecordId && (!extractedFields.Name || extractedFields.Name.trim() === "") && (!extractedFields["Client Company Name"] || extractedFields["Client Company Name"].trim() === "")) {
-  logs.push("[LLM] Missing Name or Client Company Name field. Prompting user...");
-  return {
-    messages: [
-      ...history,
-      {
-        role: "assistant",
-        content: "A name or company name is required to create an account. Please provide it.",
-      },
-    ],
-    logs,
-  };
-}
+      // Validate the presence of the Name or Client Company Name field
+      if (
+        !currentRecordId &&
+        (!extractedFields.Name || extractedFields.Name.trim() === "") &&
+        (!extractedFields["Client Company Name"] || extractedFields["Client Company Name"].trim() === "")
+      ) {
+        logs.push("[LLM] Missing Name or Client Company Name field. Prompting user...");
+        return {
+          messages: [
+            ...history,
+            { role: "assistant", content: "A name or company name is required to create an account. Please provide it." },
+          ],
+          logs,
+        };
+      }
 
-if (!currentRecordId && extractedFields.Name) {
-  logs.push("[LLM] Creating new record because currentRecordId is null or invalid.");
-  try {
-    const createResponse = await createAccount.execute({
-      ...cleanFields(extractedFields),
-      Name: extractedFields.Name,
-      Status: "Draft",
-    });
+      // Create a new account if currentRecordId is invalid
+      if (!currentRecordId && extractedFields.Name) {
+        logs.push("[LLM] Creating new record because currentRecordId is null or invalid.");
+        try {
+          const createResponse = await createAccount.execute({
+            ...cleanFields(extractedFields),
+            Name: extractedFields.Name,
+            Status: "Draft",
+          });
 
-    if (createResponse?.recordId) {
-      currentRecordId = createResponse.recordId;
-      logs.push(`[LLM] New account created successfully with ID: ${currentRecordId}`);
-    } else {
-      throw new Error("Failed to retrieve a valid record ID after account creation.");
-    }
-  } catch (error) {
-    logs.push(`[LLM] Account creation error: ${
-      error instanceof Error ? error.message : "Unknown error"
-    }`);
-    return {
-      messages: [...history, { role: "assistant", content: "An error occurred while creating the account. Please try again or contact support." }],
-      logs,
-    };
-  }
-}
+          if (createResponse?.recordId) {
+            currentRecordId = createResponse.recordId;
+            logs.push(`[LLM] New account created successfully with ID: ${currentRecordId}`);
 
+            // Initialize record fields for the new account
+            if (!recordFields[currentRecordId]) {
+              logs.push(`[LLM] Initializing record fields for new record ID: ${currentRecordId}`);
+              recordFields[currentRecordId] = {
+                questionsAsked: [],
+                ...lastExtractedFields,
+              };
+            }
+          } else {
+            throw new Error("Failed to retrieve a valid record ID after account creation.");
+          }
+        } catch (error) {
+          logs.push(`[LLM] Account creation error: ${error instanceof Error ? error.message : "Unknown error"}`);
+          return {
+            messages: [
+              ...history,
+              {
+                role: "assistant",
+                content: "An error occurred while creating the account. Please try again or contact support.",
+              },
+            ],
+            logs,
+          };
+        }
+      }
 
+      // Handle the next question or completion
       if (currentRecordId) {
         logs.push(`[LLM] Preparing to invoke getNextQuestion for record ID: ${currentRecordId}`);
         questionToAsk = getNextQuestion(currentRecordId, logs);
@@ -370,9 +382,7 @@ if (!currentRecordId && extractedFields.Name) {
           try {
             await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
           } catch (syncError) {
-            logs.push(`[LLM] Failed to sync fields: ${
-              syncError instanceof Error ? syncError.message : syncError
-            }`);
+            logs.push(`[LLM] Failed to sync fields: ${syncError instanceof Error ? syncError.message : syncError}`);
           }
 
           logs.push("[LLM] No more questions to ask. Account creation is complete.");
@@ -390,36 +400,7 @@ if (!currentRecordId && extractedFields.Name) {
       }
     }
 
-    if (currentRecordId) {
-  logs.push("[LLM] Preparing to invoke getNextQuestion...");
-  questionToAsk = getNextQuestion(currentRecordId, logs);
-
-  if (!questionToAsk) {
-    logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
-    try {
-      await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
-    } catch (syncError) {
-      logs.push(`[LLM] Failed to sync fields: ${
-        syncError instanceof Error ? syncError.message : syncError
-      }`);
-    }
-
-    logs.push("[LLM] No more questions to ask. All fields have been captured.");
-    return {
-      messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
-      logs,
-    };
-  }
-
-  logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
-  return {
-    messages: [...history, { role: "assistant", content: questionToAsk }],
-    logs,
-  };
-}
-
-
-    // Step 4: Handle "General Query" Intent
+    // Handle General Queries
     if (userIntent === "general_query") {
       logs.push("[LLM] General query detected. Processing...");
       const { text } = await generateText({
@@ -449,6 +430,7 @@ if (!currentRecordId && extractedFields.Name) {
       return { messages: [...history, { role: "assistant", content: text }], logs };
     }
 
+    // Default fallback for unclear scenarios
     logs.push("[LLM] No further actions detected. Returning clarification request.");
     return {
       messages: [
