@@ -406,6 +406,122 @@ if (currentRecordId) {
       };
     }
   }
+}
+if (userIntent === "switch_record" || userIntent === "update_record") {
+  logs.push(`[LLM] ${userIntent === "switch_record" ? "Switch record" : "Update record"} detected. Processing...`);
+  const userMessage = history[history.length - 1]?.content.trim() || "";
+
+  // Extract lookup details or update fields
+  const extractedFields = await extractAndRefineFields(userMessage, logs);
+  const lookupField = extractedFields.Name ? "Name" : extractedFields["Client Company Name"] ? "Client Company Name" : extractedFields.Description ? "Description" : "About the Client";
+  const lookupValue = extractedFields[lookupField];
+
+  if (!lookupValue) {
+    logs.push("[LLM] Missing details for lookup. Prompting user...");
+    return {
+      messages: [
+        ...history,
+        {
+          role: "assistant",
+          content: "Please specify the name, description, or client company of the record you'd like to switch to or update.",
+        },
+      ],
+      logs,
+    };
+  }
+
+  try {
+    const tool = userIntent === "switch_record" ? switchRecord : updateRecord;
+    const toolArgs = userIntent === "switch_record"
+      ? { lookupField, lookupValue }
+      : { lookupField, lookupValue, updates: extractedFields };
+
+    const { message, recordId, logs: toolLogs } = await tool.execute(toolArgs);
+    logs.push(...toolLogs);
+
+    if (userIntent === "switch_record") {
+      currentRecordId = recordId;
+    }
+
+    return {
+      messages: [...history, { role: "assistant", content: message }],
+      logs,
+    };
+  } catch (error) {
+    logs.push(`[LLM] Error during ${userIntent === "switch_record" ? "switch record" : "update record"}: ${error.message}`);
+    return {
+      messages: [...history, { role: "assistant", content: `An error occurred while ${userIntent === "switch_record" ? "switching records" : "updating the record"}.` }],
+      logs,
+    };
+  }
+}
+
+if (userIntent === "update_record") {
+  logs.push("[LLM] Update record detected. Processing...");
+  const userMessage = history[history.length - 1]?.content.trim() || "";
+
+  // Extract fields from user input
+  const extractedFields = await extractAndRefineFields(userMessage, logs);
+  const lookupField = extractedFields.Name
+    ? "Name"
+    : extractedFields["Client Company Name"]
+    ? "Client Company Name"
+    : extractedFields.Description
+    ? "Description"
+    : extractedFields["About the Client"]
+    ? "About the Client"
+    : null;
+
+  const lookupValue = lookupField ? extractedFields[lookupField] : null;
+
+  if (!lookupValue) {
+    logs.push("[LLM] Missing details for lookup or update. Prompting user...");
+    return {
+      messages: [
+        ...history,
+        {
+          role: "assistant",
+          content: "Please specify the name, description, or client company of the record you'd like to update.",
+        },
+      ],
+      logs,
+    };
+  }
+
+  try {
+    // If no current record or the user explicitly mentions a different record, switch records
+    if (!currentRecordId || lookupValue !== recordFields[currentRecordId]?.[lookupField]) {
+      logs.push("[LLM] Switching to a new record before updating...");
+      const { recordId, logs: switchLogs } = await switchRecord.execute({
+        lookupField,
+        lookupValue,
+      });
+      logs.push(...switchLogs);
+
+      currentRecordId = recordId;
+    }
+
+    // Perform the update
+    const updates = cleanFields(extractedFields); // Only include fields with valid values
+    logs.push("[LLM] Updating the current record...");
+    const { message, logs: updateLogs } = await updateRecord.execute({
+      recordId: currentRecordId,
+      updates,
+    });
+    logs.push(...updateLogs);
+
+    return {
+      messages: [...history, { role: "assistant", content: message }],
+      logs,
+    };
+  } catch (error) {
+    logs.push(`[LLM] Error during update record: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
+    return {
+      messages: [...history, { role: "assistant", content: "An error occurred while updating the record. Please try again." }],
+      logs,
+    };
+  }
+}
 
 
 
@@ -516,6 +632,113 @@ const createAccount = tool({
     }
   },
 });
+
+
+
+const updateRecord = tool({
+  description: "Update fields for an existing account in Wonderland, including switching to a different record if specified.",
+  parameters: z.object({
+    recordId: z.string().optional().describe("The record ID of the account to update. If omitted, the assistant will search for it."),
+    lookupField: z.string().optional().describe("Field to search for a record if switching, such as 'Name', 'Description', or 'Client Company Name'."),
+    lookupValue: z.string().optional().describe("Value to search in the specified field."),
+    updates: z.record(z.string(), z.any()).describe("Key-value pairs of fields to update."),
+  }),
+  execute: async ({ recordId, lookupField, lookupValue, updates }) => {
+    const logs: string[] = [];
+    try {
+      logs.push("[TOOL] Starting updateRecord...");
+      if (!recordId && (!lookupField || !lookupValue)) {
+        throw new Error("Either recordId or lookupField and lookupValue must be provided.");
+      }
+
+      // If no recordId is provided, perform a record search
+      if (!recordId) {
+        logs.push(`[TOOL] Searching for record by ${lookupField}: ${lookupValue}`);
+        const matchingRecords = await airtableBase("Accounts")
+          .select({
+            filterByFormula: `{${lookupField}} = "${lookupValue}"`,
+            maxRecords: 1,
+          })
+          .firstPage();
+
+        if (matchingRecords.length === 0) {
+          throw new Error(`No record found with ${lookupField}: "${lookupValue}".`);
+        }
+
+        recordId = matchingRecords[0].id;
+        logs.push(`[TOOL] Found record with ID: ${recordId}`);
+      }
+
+      logs.push(`[TOOL] Updating record ID: ${recordId}`);
+      logs.push(`[TOOL] Updates: ${JSON.stringify(updates)}`);
+
+      const sanitizedUpdates = Object.fromEntries(
+        Object.entries(updates).filter(([_, value]) => value !== null && value !== "")
+      );
+
+      const updatedRecord = await airtableBase("Accounts").update(recordId, sanitizedUpdates);
+
+      logs.push(`[TOOL] Record updated successfully: ${JSON.stringify(updatedRecord.fields)}`);
+      return {
+        message: `Account with record ID ${recordId} successfully updated.`,
+        logs,
+      };
+    } catch (error) {
+      logs.push(`[TOOL] Error updating record: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
+      throw { message: "Failed to update the record. Check logs for details.", logs };
+    }
+  },
+});
+
+
+const switchRecord = tool({
+  description: "Switch the current record being worked on in Wonderland by searching for a record by field and value.",
+  parameters: z.object({
+    lookupField: z.string().describe("The field to search by, such as 'Name', 'Description', 'About the Client', or 'Client Company Name'."),
+    lookupValue: z.string().describe("The value to search for in the specified field."),
+  }),
+  execute: async ({ lookupField, lookupValue }) => {
+    const logs: string[] = [];
+    try {
+      logs.push("[TOOL] Starting switchRecord...");
+      logs.push(`Looking up record by ${lookupField}: ${lookupValue}`);
+
+      // Validate lookupField
+      const validFields = ["Name", "Description", "About the Client", "Client Company Name"];
+      if (!validFields.includes(lookupField)) {
+        throw new Error(
+          `Invalid lookupField: ${lookupField}. Valid fields are ${validFields.join(", ")}.`
+        );
+      }
+
+      // Query Airtable for the matching record
+      const matchingRecords = await airtableBase("Accounts")
+        .select({
+          filterByFormula: `{${lookupField}} = "${lookupValue}"`,
+          maxRecords: 1,
+        })
+        .firstPage();
+
+      if (matchingRecords.length === 0) {
+        throw new Error(`No record found with ${lookupField}: "${lookupValue}".`);
+      }
+
+      const matchedRecord = matchingRecords[0];
+      currentRecordId = matchedRecord.id;
+
+      logs.push(`[TOOL] Successfully switched to record ID: ${currentRecordId} (${lookupField}: ${lookupValue}).`);
+      return {
+        message: `Successfully switched to the account for "${lookupValue}" (Record ID: ${currentRecordId}).`,
+        recordId: currentRecordId,
+        logs,
+      };
+    } catch (error) {
+      logs.push(`[TOOL] Error during switchRecord: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
+      throw { message: "Failed to switch records. Check logs for details.", logs };
+    }
+  },
+});
+
 const getNextQuestion = (recordId: string, logs: string[]): string | null => {
   const questions = [
     {
