@@ -361,35 +361,33 @@ if (!currentRecordId && extractedFields.Name) {
 }
 
 
-      if (currentRecordId) {
-        logs.push(`[LLM] Preparing to invoke getNextQuestion for record ID: ${currentRecordId}`);
-        questionToAsk = getNextQuestion(currentRecordId, logs);
+    if (currentRecordId) {
+  logs.push("[LLM] Preparing to invoke getNextQuestion...");
+  questionToAsk = getNextQuestion(currentRecordId, logs);
 
-        if (!questionToAsk) {
-          logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
-          try {
-            await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
-          } catch (syncError) {
-            logs.push(`[LLM] Failed to sync fields: ${
-              syncError instanceof Error ? syncError.message : syncError
-            }`);
-          }
-
-          logs.push("[LLM] No more questions to ask. Account creation is complete.");
-          return {
-            messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
-            logs,
-          };
-        }
-
-        logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
-        return {
-          messages: [...history, { role: "assistant", content: questionToAsk }],
-          logs,
-        };
-      }
+  if (!questionToAsk) {
+    logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
+    try {
+      await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
+    } catch (syncError) {
+      logs.push(`[LLM] Failed to sync fields: ${
+        syncError instanceof Error ? syncError.message : syncError
+      }`);
     }
 
+    logs.push("[LLM] No more questions to ask. All fields have been captured.");
+    return {
+      messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+      logs,
+    };
+  }
+
+  logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
+  return {
+    messages: [...history, { role: "assistant", content: questionToAsk }],
+    logs,
+  };
+}
 
 
     // Step 4: Handle "General Query" Intent
