@@ -640,12 +640,10 @@ const updateRecord = tool({
     }
   },
 });
-
-
 const switchRecord = tool({
-  description: "Switch the current record being worked on in Wonderland by searching for a record by field and value.",
+  description: "Switch the current record being worked on in Wonderland by looking up an account by its name, company, website, or other fields.",
   parameters: z.object({
-    lookupField: z.string().describe("The field to search by, such as 'Name', 'Description', 'About the Client', or 'Client Company Name'."),
+    lookupField: z.string().describe("The field to search by, such as 'Name', 'Client Company Name', or 'Client URL'."),
     lookupValue: z.string().describe("The value to search for in the specified field."),
   }),
   execute: async ({ lookupField, lookupValue }) => {
@@ -654,8 +652,8 @@ const switchRecord = tool({
       logs.push("[TOOL] Starting switchRecord...");
       logs.push(`Looking up record by ${lookupField}: ${lookupValue}`);
 
-      // Validate lookupField
-      const validFields = ["Name", "Description", "About the Client", "Client Company Name"];
+      // Ensure lookupField is valid
+      const validFields = ["Name", "Client Company Name", "Client URL", "Description", "Industry", "Primary Contact Person"];
       if (!validFields.includes(lookupField)) {
         throw new Error(
           `Invalid lookupField: ${lookupField}. Valid fields are ${validFields.join(", ")}.`
@@ -665,19 +663,39 @@ const switchRecord = tool({
       // Query Airtable for the matching record
       const matchingRecords = await airtableBase("Accounts")
         .select({
-          filterByFormula: `{${lookupField}} = "${lookupValue}"`,
-          maxRecords: 1,
+          filterByFormula: `LOWER({${lookupField}}) = "${lookupValue.toLowerCase()}"`,
         })
         .firstPage();
 
       if (matchingRecords.length === 0) {
-        throw new Error(`No record found with ${lookupField}: "${lookupValue}".`);
+        logs.push(`[TOOL] No matching record found for ${lookupField}: "${lookupValue}"`);
+        return {
+          message: `No record found with ${lookupField}: "${lookupValue}". Please refine your query.`,
+          logs,
+        };
+      }
+
+      if (matchingRecords.length > 1) {
+        const recordOptions = matchingRecords.map((rec) => ({
+          id: rec.id,
+          fields: rec.fields[lookupField],
+        }));
+        logs.push("[TOOL] Multiple matching records found. Prompting user to choose...");
+        return {
+          message: `Multiple records found matching "${lookupValue}". Please specify:\n${recordOptions
+            .map((opt, idx) => `${idx + 1}. ${opt.fields} (Record ID: ${opt.id})`)
+            .join("\n")}`,
+          logs,
+        };
       }
 
       const matchedRecord = matchingRecords[0];
       currentRecordId = matchedRecord.id;
 
-      logs.push(`[TOOL] Successfully switched to record ID: ${currentRecordId} (${lookupField}: ${lookupValue}).`);
+      logs.push(
+        `[TOOL] Successfully switched to record ID: ${currentRecordId} (${lookupField}: ${lookupValue}).`
+      );
+
       return {
         message: `Successfully switched to the account for "${lookupValue}" (Record ID: ${currentRecordId}).`,
         recordId: currentRecordId,
@@ -689,6 +707,7 @@ const switchRecord = tool({
     }
   },
 });
+
 
 const getNextQuestion = (recordId: string, logs: string[]): string | null => {
   const questions = [
