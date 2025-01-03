@@ -359,7 +359,6 @@ if (currentRecordId) {
   }
 }
 
-
 if (userIntent === "switch_record") {
   logs.push("[LLM] Switch record detected. Processing...");
   const userMessage = history[history.length - 1]?.content.trim() || "";
@@ -382,54 +381,11 @@ if (userIntent === "switch_record") {
   }
 
   try {
-    const switchResponse = await switchRecord.execute({
-      lookupField: extractedFields.Name ? "Name" : "Client Company Name",
-      lookupValue: extractedFields.Name || extractedFields["Client Company Name"],
-    });
+    // Determine the lookup field and value
+    const lookupField = extractedFields.Name ? "Name" : "Client Company Name";
+    const lookupValue = extractedFields.Name || extractedFields["Client Company Name"];
 
-    logs.push(...(switchResponse.logs || []));
-    if (switchResponse.recordId) {
-      currentRecordId = switchResponse.recordId; // Update global ID
-    }
-
-    return {
-      messages: [...history, { role: "assistant", content: switchResponse.message }],
-      logs,
-    };
-  } catch (error) {
-    logs.push(`[LLM] Error during switch record: ${error.message}`);
-    return {
-      messages: [...history, { role: "assistant", content: "An error occurred while switching records." }],
-      logs,
-    };
-  }
-}
-if (userIntent === "switch_record") {
-  logs.push("[LLM] Switch record detected. Processing...");
-  const userMessage = history[history.length - 1]?.content.trim() || "";
-
-  // Extract the lookup field and value
-  const extractedFields = await extractAndRefineFields(userMessage, logs);
-
-  if (!extractedFields.Name && !extractedFields["Client Company Name"]) {
-    logs.push("[LLM] Missing lookup details for switch record. Prompting user...");
-    return {
-      messages: [
-        ...history,
-        {
-          role: "assistant",
-          content: "Please specify the name or company of the record you'd like to switch to.",
-        },
-      ],
-      logs,
-    };
-  }
-
-  try {
-    const switchResponse = await switchRecord.execute({
-      lookupField: extractedFields.Name ? "Name" : "Client Company Name",
-      lookupValue: extractedFields.Name || extractedFields["Client Company Name"],
-    });
+    const switchResponse = await switchRecord.execute({ lookupField, lookupValue });
 
     logs.push(...(switchResponse.logs || []));
 
@@ -444,13 +400,14 @@ if (userIntent === "switch_record") {
       messages: [...history, { role: "assistant", content: switchResponse.message }],
       logs,
     };
- } catch (error) {
-  const errorMessage = error instanceof Error ? error.message : "Unknown error";
-  logs.push(`[LLM] Error during switch record: ${errorMessage}`);
-  return {
-    messages: [...history, { role: "assistant", content: "An error occurred while switching records." }],
-    logs,
-  };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    logs.push(`[LLM] Error during switch record: ${errorMessage}`);
+    return {
+      messages: [...history, { role: "assistant", content: "An error occurred while switching records." }],
+      logs,
+    };
+  }
 }
 
 
