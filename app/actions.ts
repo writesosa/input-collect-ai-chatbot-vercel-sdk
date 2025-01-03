@@ -47,18 +47,21 @@ const extractAndRefineFields = async (
     system: `You are a Wonderland assistant extracting any available account details from user input.
       Respond with a JSON object formatted as follows:
       {
-        "Name": "Account name or similar",
-        "Client Company Name": "Company or client name",
-        "Website": "Any website or url mentioned or provided thats not facebook or instagram",
-        "Instagram": "Instagram handle or link",
-        "Facebook": "Facebook handle or link",
-        "Blog": "Blog URL if mentioned",
-        "Description": "Description or details",
-        "About the Client": "Details about the client",
-        "Industry": "Mention of industry",
-        "Talking Points": "Objectives or talking points",
-        "Primary Objective": "Main purpose or goal"
-      }`,
+        "Name": "Anything that resembles an account, account name, company name, name for a record or something the user designates as a name for the session.",
+        "Client Company Name": "The name of the company, account or record.",
+        "Website": "Any website URL, if mentioned that isn't Facebook or Instagram.",
+        "Instagram": "An Instagram handle or link, if mentioned.",
+        "Facebook": "A Facebook handle or link, if mentioned.",
+        "Blog": "A blog URL, if mentioned.",
+        "Description": "Anything that sounds like a description for the record being created.",
+        "About the Client": "Any information supplied about the client or company.",
+        "Industry": "Any mention of industry, domain, or sector.",
+        "Talking Points": "Any objectives or talking points, if mentioned.",
+        "Primary Objective": "Any main purpose or goal of creating this account."
+      }
+      Only return valid links for Website, Instagram, Facebook and Blog and format them if they are invalid.
+      The Name, Company Name or Website may be the same, check the previous user message if unsure to see what they are responding to.
+      Guess the industry from information available if possible.`,
     messages: [{ role: "user", content: combinedMessage }],
     maxToolRoundtrips: 1,
   });
@@ -99,9 +102,9 @@ lastExtractedFields = { ...(lastExtractedFields || {}), ...(extractedFields || {
 
 const getUnansweredQuestions = (recordId: string, logs: string[]): string[] => {
   const allQuestions = [
-    "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?",
-    "Can you tell me more about the company, including its industry, purpose, or mission?",
-    "What are the major objectives or talking points you'd like to achieve with Wonderland?",
+    "Can you share a Website, Instagram, Facebook, or Blog for the new account?",
+    "Can you tell me a little more about the company, including its purpose, or mission?",
+    "What are the major talking points or overal objectives you'd like to achieve with Wonderland?",
   ];
 
   if (!recordFields[recordId]) {
@@ -268,12 +271,13 @@ export async function continueConversation(history: Message[]) {
     // Step 1: Classify User Intent
     const intentResponse = await generateText({
       model: openai("gpt-4o"),
-      system: `You are a Wonderland assistant.
-        Classify the user's latest message into one of the following intents:
-        - "account_creation": If the user is asking to create, update, or manage an account.
-        - "general_query": If the user is asking a general question about Wonderland or unrelated topics.
-        - "unknown": If the intent is not clear.
-        Respond only with the classification.`,
+        system: `You are a Wonderland assistant.
+          Classify the user's latest message into one of the following intents:
+          - "account_creation": If the user is asking to create, update, or manage an account.
+          - "general_query": If the user is asking a general question about Wonderland or unrelated topics.
+          - "switch_record": If the user is asking to switch to a different record by specifying a name, company, or URL.
+          - "unknown": If the intent is not clear.
+          Respond only with the classification.`,
       messages: history,
       maxToolRoundtrips: 1,
     });
@@ -401,6 +405,44 @@ if (currentRecordId) {
         logs,
       };
     }
+  }
+if (userIntent === "switch_record") {
+  logs.push("[LLM] Switch record detected. Processing...");
+  const userMessage = history[history.length - 1]?.content.trim() || "";
+
+  // Extract the lookup field and value
+  const extractedFields = await extractAndRefineFields(userMessage, logs);
+
+  if (!extractedFields.Name && !extractedFields["Client Company Name"]) {
+    logs.push("[LLM] Missing lookup details for switch record. Prompting user...");
+    return {
+      messages: [
+        ...history,
+        {
+          role: "assistant",
+          content: "Please specify the name or company of the record you'd like to switch to.",
+        },
+      ],
+      logs,
+    };
+  }
+
+  try {
+    const { message, recordId, logs: toolLogs } = await switchRecord.execute({
+      lookupField: extractedFields.Name ? "Name" : "Client Company Name",
+      lookupValue: extractedFields.Name || extractedFields["Client Company Name"],
+    });
+    logs.push(...toolLogs);
+    return {
+      messages: [...history, { role: "assistant", content: message }],
+      logs,
+    };
+  } catch (error) {
+    logs.push(`[LLM] Error during switch record: ${error.message}`);
+    return {
+      messages: [...history, { role: "assistant", content: "An error occurred while switching records." }],
+      logs,
+    };
   }
 }
 
