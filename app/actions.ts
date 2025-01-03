@@ -26,7 +26,6 @@ const sanitizeFields = (fields: Record<string, any>): Record<string, any> => {
     Object.entries(fields).filter(([_, value]) => value != null && value !== "")
   );
 };
-
 const extractAndRefineFields = async (
   message: string,
   logs: string[],
@@ -41,9 +40,10 @@ const extractAndRefineFields = async (
 
   const combinedMessage = previousMessage ? `${previousMessage} ${message}` : message;
   let extractedFields: Record<string, any> = {};
+  let extractionResponse: { text: string } | null = null;
 
   try {
-    const extractionResponse = await generateText({
+    extractionResponse = await generateText({
       model: openai("gpt-4o"),
       system: `You are a Wonderland assistant extracting account details.
         Extract the following fields from the user's message if available:
@@ -70,19 +70,21 @@ const extractAndRefineFields = async (
   } catch (error) {
     logs.push("[LLM] Initial parsing failed. Attempting retry...");
 
-    const jsonStart = extractionResponse?.text?.indexOf("{");
-    const jsonEnd = extractionResponse?.text?.lastIndexOf("}") + 1;
+    if (extractionResponse && extractionResponse.text) {
+      const jsonStart = extractionResponse.text.indexOf("{");
+      const jsonEnd = extractionResponse.text.lastIndexOf("}") + 1;
 
-    if (jsonStart !== -1 && jsonEnd !== -1) {
-      try {
-        const retryJson = extractionResponse.text.substring(jsonStart, jsonEnd);
-        extractedFields = JSON.parse(retryJson);
-        logs.push(`[LLM] Retry successful. Parsed fields: ${JSON.stringify(extractedFields)}`);
-      } catch (retryError) {
-        logs.push("[LLM] Retry failed. Defaulting to empty.");
+      if (jsonStart !== -1 && jsonEnd !== -1) {
+        try {
+          const retryJson = extractionResponse.text.substring(jsonStart, jsonEnd);
+          extractedFields = JSON.parse(retryJson);
+          logs.push(`[LLM] Retry successful. Parsed fields: ${JSON.stringify(extractedFields)}`);
+        } catch (retryError) {
+          logs.push("[LLM] Retry failed. Defaulting to empty.");
+        }
+      } else {
+        logs.push("[LLM] No JSON structure found in response. Defaulting to empty.");
       }
-    } else {
-      logs.push("[LLM] No JSON structure found in response. Defaulting to empty.");
     }
   }
 
