@@ -223,7 +223,12 @@ const fetchAllRecords = async (logs: string[]): Promise<{ id: string; fields: Re
 };
 
 // Helper: Identify record using GPT
-const identifyRecordWithGPT = async (userMessage, records, logs) => {
+
+const identifyRecordWithGPT = async (
+  userMessage: string,
+  records: { id: string; fields: Record<string, any> }[],
+  logs: string[]
+): Promise<string | null> => {
   const systemPrompt = `
     You are a Wonderland assistant tasked with identifying a record from a list based on the user's input.
     Here's a list of records with their fields:
@@ -247,6 +252,7 @@ const identifyRecordWithGPT = async (userMessage, records, logs) => {
   logs.push(`[GPT] GPT identified record ID: ${recordId}`);
   return recordId === "no_match" ? null : recordId;
 };
+
 
 // Helper: Use GPT with chat context if necessary
 const analyzeWithChatContext = async (history, records, logs) => {
