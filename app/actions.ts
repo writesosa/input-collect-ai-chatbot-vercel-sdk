@@ -279,11 +279,8 @@ export async function continueConversation(history: Message[]) {
 
     const userIntent = intentResponse.text.trim();
     logs.push(`[LLM] Detected intent: ${userIntent}`);
-
-    // Step 2: Handle "Unknown" Intent
-    if (userIntent === "unknown") {
+if (userIntent === "unknown") {
   logs.push("[LLM] Unknown intent detected. Reinterpreting input...");
-
   const retryResponse = await generateText({
     model: openai("gpt-4o"),
     system: `You are a Wonderland assistant.
@@ -310,9 +307,10 @@ export async function continueConversation(history: Message[]) {
   }
 
   logs.push("[LLM] Successfully reinterpreted intent. Routing to appropriate workflow...");
-  history.push({ role: "assistant", content: `Reinterpreted intent: ${reinterpretedIntent}` }); // Changed "system" to "assistant"
+  history.push({ role: "assistant", content: `Reinterpreted intent: ${reinterpretedIntent}` });
   return await continueConversation(history);
 }
+
 
     // Step 3: Handle "Account Creation" Intent
     if (userIntent === "account_creation") {
@@ -334,6 +332,32 @@ export async function continueConversation(history: Message[]) {
           logs,
         };
       }
+if (!currentRecordId && extractedFields.Name) {
+  logs.push("[LLM] Creating new record because currentRecordId is null or invalid.");
+  try {
+    const createResponse = await createAccount.execute({
+      ...cleanFields(extractedFields),
+      Name: extractedFields.Name,
+      Status: "Draft",
+    });
+
+    if (createResponse?.recordId) {
+      currentRecordId = createResponse.recordId;
+      logs.push(`[LLM] New account created successfully with ID: ${currentRecordId}`);
+    } else {
+      throw new Error("Failed to retrieve a valid record ID after account creation.");
+    }
+  } catch (error) {
+    logs.push(`[LLM] Account creation error: ${
+      error instanceof Error ? error.message : "Unknown error"
+    }`);
+    return {
+      messages: [...history, { role: "assistant", content: "An error occurred while creating the account. Please try again or contact support." }],
+      logs,
+    };
+  }
+}
+
 
       if (currentRecordId) {
         logs.push(`[LLM] Preparing to invoke getNextQuestion for record ID: ${currentRecordId}`);
@@ -363,6 +387,35 @@ export async function continueConversation(history: Message[]) {
         };
       }
     }
+
+    if (currentRecordId) {
+  logs.push("[LLM] Preparing to invoke getNextQuestion...");
+  questionToAsk = getNextQuestion(currentRecordId, logs);
+
+  if (!questionToAsk) {
+    logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
+    try {
+      await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
+    } catch (syncError) {
+      logs.push(`[LLM] Failed to sync fields: ${
+        syncError instanceof Error ? syncError.message : syncError
+      }`);
+    }
+
+    logs.push("[LLM] No more questions to ask. All fields have been captured.");
+    return {
+      messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+      logs,
+    };
+  }
+
+  logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
+  return {
+    messages: [...history, { role: "assistant", content: questionToAsk }],
+    logs,
+  };
+}
+
 
     // Step 4: Handle "General Query" Intent
     if (userIntent === "general_query") {
