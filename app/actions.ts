@@ -236,9 +236,13 @@ if (!currentRecordId && extractedFields.Name) {
 
 if (currentRecordId) {
   logs.push(`[LLM] Updating Airtable record ID: ${currentRecordId} with extracted fields.`);
+
+  // Define sanitizedFields outside of the try-catch block
+  let sanitizedFields: Record<string, any> = {};
+
   try {
     // Sanitize extracted fields: skip questionsAsked if invalid and filter out null/empty values
-    const sanitizedFields = Object.fromEntries(
+    sanitizedFields = Object.fromEntries(
       Object.entries(extractedFields).filter(([key, value]) => {
         if (key === "questionsAsked") {
           if (!Array.isArray(value)) {
