@@ -1,4 +1,4 @@
-// Existing script with updates applied
+// Enhanced script with updates applied systematically
 
 "use server";
 
@@ -19,6 +19,7 @@ export interface Message {
 let currentRecordId: string | null = null;
 let creationProgress: number | null = null; // Track user progress in account creation
 let lastExtractedFields: Record<string, any> | null = null; // Remember the last extracted fields
+const recordFields: Record<string, Record<string, any>> = {}; // Track fields for records
 
 // Helper: Convert string to Title Case
 const toTitleCase = (str: string): string =>
@@ -28,7 +29,7 @@ const toTitleCase = (str: string): string =>
 const cleanFields = (fields: Record<string, any>) =>
   Object.fromEntries(Object.entries(fields).filter(([_, value]) => value !== undefined));
 
-
+// Function: Extract and Refine Fields
 const extractAndRefineFields = async (
   message: string,
   logs: string[],
@@ -83,18 +84,13 @@ const extractAndRefineFields = async (
       throw new Error("No valid JSON structure found in AI response.");
     }
   } catch (error) {
-    if (error instanceof Error) {
-      logs.push(`[LLM] Parsing failed: ${error.message}. Defaulting to empty.`);
-    } else {
-      logs.push("[LLM] Parsing failed: An unknown error occurred. Defaulting to empty.");
-    }
+    logs.push(`[LLM] Parsing failed: ${error instanceof Error ? error.message : "Unknown error."}`);
   }
 
   // Merge with previously extracted fields
   if (lastExtractedFields) {
     logs.push("[LLM] Merging with previously extracted fields...");
     for (const [key, value] of Object.entries(lastExtractedFields)) {
-      // Retain non-empty values from previous extraction
       if (!extractedFields[key] || extractedFields[key].trim() === "") {
         extractedFields[key] = value;
         logs.push(`[LLM] Preserved previous value for ${key}: ${value}`);
@@ -102,15 +98,205 @@ const extractAndRefineFields = async (
     }
   }
 
-  // Update the global lastExtractedFields
   lastExtractedFields = { ...lastExtractedFields, ...extractedFields };
 
   logs.push(`[LLM] Final merged fields: ${JSON.stringify(lastExtractedFields)}`);
   return extractedFields;
 };
 
+// Function: Update Airtable Record Fields
+const updateRecordFields = async (
+  recordId: string,
+  newFields: Record<string, any>,
+  logs: string[]
+) => {
+  if (!recordFields[recordId]) {
+    recordFields[recordId] = {};
+  }
 
+  const sanitizedFields = Object.fromEntries(
+    Object.entries(newFields).filter(([key, value]) => key !== "questionsAsked" && value !== null && value !== "")
+  );
 
+  Object.entries(sanitizedFields).forEach(([key, value]) => {
+    if (!recordFields[recordId][key] || recordFields[recordId][key] !== value) {
+      recordFields[recordId][key] = value;
+      logs.push(`[LLM] Field updated for record ID ${recordId}: ${key} = ${value}`);
+    } else {
+      logs.push(
+        `[LLM] Skipping update for field ${key} on record ID ${recordId}. Current value: ${
+          recordFields[recordId][key]
+        }, New value: ${value}`
+      );
+    }
+  });
+
+  try {
+    await airtableBase("Accounts").update(recordId, sanitizedFields);
+    logs.push(`[LLM] Airtable updated successfully for record ID: ${recordId}`);
+  } catch (error) {
+    logs.push(
+      `[LLM] Failed to update Airtable for record ID ${recordId}: ${
+        error instanceof Error ? error.message : "Unknown error."
+      }`
+    );
+  }
+};
+
+// Helper: Update record fields and prevent redundant updates
+const recordFields = {};
+const updateRecordFields = async (
+  recordId,
+  newFields,
+  logs
+) => {
+  if (!recordFields[recordId]) {
+    recordFields[recordId] = {};
+  }
+
+  // Filter out `questionsAsked` and sanitize fields
+  const sanitizedFields = Object.fromEntries(
+    Object.entries(newFields).filter(
+      ([key, value]) => key !== "questionsAsked" && value !== null && value !== ""
+    )
+  );
+
+  // Update `recordFields` with sanitized fields
+  Object.entries(sanitizedFields).forEach(([key, value]) => {
+    if (!recordFields[recordId][key] || recordFields[recordId][key] !== value) {
+      recordFields[recordId][key] = value;
+      logs.push(`[LLM] Field updated for record ID ${recordId}: ${key} = ${value}`);
+    } else {
+      logs.push(
+        `[LLM] Skipping update for field ${key} on record ID ${recordId}. Current value: ${recordFields[recordId][key]}, New value: ${value}`
+      );
+    }
+  });
+
+  // Perform the Airtable update
+  try {
+    await airtableBase("Accounts").update(recordId, sanitizedFields);
+    logs.push(`[LLM] Airtable updated successfully for record ID: ${recordId}`);
+  } catch (error) {
+    logs.push(
+      `[LLM] Failed to update Airtable for record ID ${recordId}: ${
+        error instanceof Error ? error.message : error
+      }`
+    );
+  }
+};
+// Tool: Delete Account
+const deleteAccount = tool({
+  description: "Delete an existing account in Wonderland by changing its status to 'Deleted'.",
+  parameters: z.object({
+    recordId: z.string().describe("The record ID of the account to delete."),
+  }),
+  execute: async ({ recordId }) => {
+    const logs: string[] = [];
+    try {
+      logs.push("[TOOL] Starting deleteAccount...");
+      logs.push(`Record ID: ${recordId}`);
+
+      // Ensure the record ID matches the currentRecordId
+      if (recordId !== currentRecordId) {
+        throw new Error(
+          `Attempting to delete the wrong record. Expected: ${currentRecordId}, Provided: ${recordId}`
+        );
+      }
+
+      if (!recordId) {
+        throw new Error("recordId is required to identify the account.");
+      }
+
+      const accountRecord = await airtableBase("Accounts").find(recordId);
+
+      if (!accountRecord) {
+        throw new Error(`No account found with the record ID: ${recordId}`);
+      }
+
+      logs.push("[TOOL] Account found:", JSON.stringify(accountRecord, null, 2));
+
+      logs.push("[TOOL] Changing account status to 'Deleted'...");
+      const updatedRecord = await airtableBase("Accounts").update(accountRecord.id, { Status: "Deleted" });
+
+      logs.push("[TOOL] Account status updated successfully:", JSON.stringify(updatedRecord, null, 2));
+
+      // Clear currentRecordId since the record has been deleted
+      currentRecordId = null;
+
+      return {
+        message: `Account with record ID ${recordId} has been successfully marked as 'Deleted'.`,
+        recordId: updatedRecord.id,
+        logs,
+      };
+    } catch (error) {
+      logs.push("[TOOL] Error deleting account in Airtable:", error instanceof Error ? error.message : JSON.stringify(error));
+      throw { message: "Failed to delete account. Check logs for details.", logs };
+    }
+  },
+});
+
+// Tool: Switch Record
+const switchRecord = tool({
+  description: "Switch the current record being worked on in Wonderland by looking up an account by its name, company, website, or other fields.",
+  parameters: z.object({
+    lookupField: z.string().describe("The field to search by, such as 'Name', 'Client Company Name', or 'Client URL'."),
+    lookupValue: z.string().describe("The value to search for in the specified field."),
+  }),
+  execute: async ({ lookupField, lookupValue }) => {
+    const logs: string[] = [];
+    try {
+      logs.push("[TOOL] Starting switchRecord...");
+      logs.push(`Looking up record by ${lookupField}: ${lookupValue}`);
+
+      // Ensure lookupField is a valid field in the Airtable schema
+      const validFields = [
+        "Name",
+        "Client Company Name",
+        "Client URL",
+        "Description",
+        "Industry",
+        "Primary Contact Person",
+      ];
+      if (!validFields.includes(lookupField)) {
+        throw new Error(
+          `Invalid lookupField: ${lookupField}. Valid fields are ${validFields.join(", ")}.`
+        );
+      }
+
+      // Query Airtable to find the record
+      const matchingRecords = await airtableBase("Accounts")
+        .select({
+          filterByFormula: `{${lookupField}} = "${lookupValue}"`,
+          maxRecords: 1,
+        })
+        .firstPage();
+
+      if (matchingRecords.length === 0) {
+        throw new Error(`No record found with ${lookupField}: "${lookupValue}".`);
+      }
+
+      const matchedRecord = matchingRecords[0];
+      currentRecordId = matchedRecord.id;
+
+      logs.push(
+        `[TOOL] Successfully switched to record ID: ${currentRecordId} (${lookupField}: ${lookupValue}).`
+      );
+
+      return {
+        message: `Successfully switched to the account for "${lookupValue}" (Record ID: ${currentRecordId}).`,
+        recordId: currentRecordId,
+        logs,
+      };
+    } catch (error) {
+      logs.push(
+        "[TOOL] Error during switchRecord:",
+        error instanceof Error ? error.message : JSON.stringify(error)
+      );
+      throw { message: "Failed to switch records. Check logs for details.", logs };
+    }
+  },
+});
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
@@ -127,6 +313,7 @@ export async function continueConversation(history: Message[]) {
         Classify the user's latest message into one of the following intents:
         - "account_creation": If the user is asking to create, update, or manage an account.
         - "general_query": If the user is asking a general question about Wonderland or unrelated topics.
+        - "unknown": If the intent is not clear.
         Respond only with the classification.`,
       messages: history,
       maxToolRoundtrips: 1,
@@ -171,93 +358,56 @@ export async function continueConversation(history: Message[]) {
 
       const userMessage = history[history.length - 1]?.content.trim() || "";
       const extractedFields = await extractAndRefineFields(userMessage, logs);
-        // Update immediately upon receiving user input
-        if (currentRecordId && extractedFields) {
-          logs.push(`[LLM] Immediately updating Airtable for record ID: ${currentRecordId} with extracted fields.`);
-          try {
-            // Exclude questionsAsked from the update payload
-            const fieldsToUpdate = Object.fromEntries(
-              Object.entries(extractedFields).filter(([key]) => key !== "questionsAsked")
-            );
-            await updateRecordFields(currentRecordId, fieldsToUpdate, logs);
-            logs.push(`[LLM] Field updated for record ID ${currentRecordId}: ${JSON.stringify(fieldsToUpdate)}`);
-          } catch (error) {
-            logs.push(`[LLM] Failed to update Airtable for record ID ${currentRecordId}: ${
-              error instanceof Error ? error.message : "Unknown error."
-            }`);
-          }
+
+      if (currentRecordId && extractedFields) {
+        logs.push(`[LLM] Immediately updating Airtable for record ID: ${currentRecordId} with extracted fields.`);
+        try {
+          await updateRecordFields(currentRecordId, extractedFields, logs);
+        } catch (error) {
+          logs.push(`[LLM] Failed to update Airtable for record ID ${currentRecordId}: ${
+            error instanceof Error ? error.message : "Unknown error."
+          }`);
         }
-
-        // Ensure questions are tracked internally and not synced with Airtable
-        if (currentRecordId && !recordFields[currentRecordId]?.questionsAsked) {
-          recordFields[currentRecordId] = {
-            ...recordFields[currentRecordId],
-            questionsAsked: [],
-          };
-        }
-
-
-
-      // If Name or equivalent is missing, prompt the user for it
-      if (!currentRecordId && !extractedFields.Name) {
-        logs.push("[LLM] Missing Name field. Prompting user...");
-        return {
-          messages: [
-            ...history,
-            {
-              role: "assistant",
-              content: "A name or company name is required to create an account. Please provide it.",
-            },
-          ],
-          logs,
-        };
       }
 
       if (!currentRecordId && extractedFields.Name) {
         logs.push("[LLM] Creating new record because currentRecordId is null or invalid.");
         try {
-              const createResponse = await createAccount.execute({
-                ...Object.fromEntries(
-                  Object.entries(cleanFields(extractedFields)).filter(([key]) => key !== "questionsAsked")
-                ), // Exclude questionsAsked field
-                Name: extractedFields.Name,
-                Status: "Draft",
-              });
+          const createResponse = await createAccount.execute({
+            ...cleanFields(extractedFields),
+            Name: extractedFields.Name,
+            Status: "Draft",
+          });
 
           if (createResponse?.recordId) {
             currentRecordId = createResponse.recordId;
-            recordFields[currentRecordId] = { ...extractedFields };
             logs.push(`[LLM] New account created successfully with ID: ${currentRecordId}`);
           } else {
             throw new Error("Failed to retrieve a valid record ID after account creation.");
           }
         } catch (error) {
-          logs.push(`[LLM] Account creation error: ${error instanceof Error ? error.message : "Unknown error"}`);
+          logs.push(`[LLM] Account creation error: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`);
           return {
-            messages: [
-              ...history,
-              {
-                role: "assistant",
-                content: "An error occurred while creating the account. Please try again or contact support.",
-              },
-            ],
+            messages: [...history, { role: "assistant", content: "An error occurred while creating the account. Please try again or contact support." }],
             logs,
           };
         }
       }
 
-      // Ensure questions are asked in sequence
       if (currentRecordId) {
         logs.push("[LLM] Preparing to invoke getNextQuestion...");
         questionToAsk = getNextQuestion(currentRecordId, logs);
-        questionAsked = !!questionToAsk;
 
         if (!questionToAsk) {
           logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
           try {
             await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
           } catch (syncError) {
-            logs.push(`[LLM] Failed to sync fields: ${syncError instanceof Error ? syncError.message : syncError}`);
+            logs.push(`[LLM] Failed to sync fields: ${
+              syncError instanceof Error ? syncError.message : syncError
+            }`);
           }
 
           logs.push("[LLM] No more questions to ask. All fields have been captured.");
@@ -277,40 +427,47 @@ export async function continueConversation(history: Message[]) {
       if (!questionAsked && currentRecordId) {
         logs.push("[LLM] Re-checking for unanswered questions...");
 
-        const allQuestions = [
-          "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?",
-          "Can you tell me more about the company, including its industry, purpose, or mission?",
-          "What are the major objectives or talking points you'd like to achieve with Wonderland?",
-        ];
-
-        let unaskedQuestions: string[] = [];
-        if (currentRecordId !== null && recordFields[currentRecordId]) {
-          const record = recordFields[currentRecordId];
-          unaskedQuestions = allQuestions.filter(
-            (q) => !record.questionsAsked?.includes(q)
-          );
-        } else {
-          logs.push("[LLM] currentRecordId is null or recordFields[currentRecordId] is undefined.");
-        }
-
+        const unaskedQuestions = getUnansweredQuestions(currentRecordId, logs);
         if (unaskedQuestions.length > 0) {
           const nextUnaskedQuestion = unaskedQuestions[0];
           logs.push(`[LLM] Re-asking missing question: "${nextUnaskedQuestion}"`);
-          recordFields[currentRecordId].questionsAsked = [
-            ...(recordFields[currentRecordId]?.questionsAsked || []),
-            nextUnaskedQuestion,
-          ];
           return {
             messages: [...history, { role: "assistant", content: nextUnaskedQuestion }],
             logs,
           };
         }
-        logs.push("[LLM] Fallback confirmed all questions were asked.");
       }
 
       logs.push("[LLM] No more questions to ask. Account creation complete.");
       return {
         messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+        logs,
+      };
+    }
+
+    // Handle unknown intents
+    if (userIntent === "unknown") {
+      logs.push("[LLM] Unknown intent detected. Reinterpreting input...");
+
+      const retryResponse = await generateText({
+        model: openai("gpt-4o"),
+        system: `You are a Wonderland assistant.
+          Retry understanding the user message within the current workflow context.
+          If still unclear, prompt the user for more information.`,
+        messages: history,
+      });
+
+      if (retryResponse.text.trim().toLowerCase() === "unknown") {
+        logs.push("[LLM] Reinterpretation failed. Prompting user for clarification...");
+        return {
+          messages: [...history, { role: "assistant", content: "I didn't quite understand that. Could you clarify your request?" }],
+          logs,
+        };
+      }
+
+      logs.push("[LLM] Reinterpretation successful. Resuming workflow...");
+      return {
+        messages: [...history, { role: "assistant", content: retryResponse.text }],
         logs,
       };
     }
@@ -322,8 +479,6 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
-
-
 
 
 // Avoid filling defaults for optional fields during account creation
@@ -444,254 +599,3 @@ const getNextQuestion = (recordId: string, logs: string[]): string | null => {
   logs.push("[LLM] All questions asked or fields filled. No further questions.");
   return null;
 };
-
-
-
-
-// Helper: Update record fields and prevent redundant updates
-const recordFields: Record<string, Record<string, any>> = {};
-const updateRecordFields = async (
-  recordId: string,
-  newFields: Record<string, any>,
-  logs: string[]
-) => {
-  if (!recordFields[recordId]) {
-    recordFields[recordId] = {};
-  }
-
-  // Filter out `questionsAsked` and sanitize fields
-  const sanitizedFields = Object.fromEntries(
-    Object.entries(newFields).filter(([key, value]) => key !== "questionsAsked" && value !== null && value !== "")
-  );
-
-  // Update `recordFields` with sanitized fields
-  Object.entries(sanitizedFields).forEach(([key, value]) => {
-    if (
-      !recordFields[recordId][key] || 
-      recordFields[recordId][key] !== value
-    ) {
-      recordFields[recordId][key] = value;
-      logs.push(`[LLM] Field updated for record ID ${recordId}: ${key} = ${value}`);
-    } else {
-      logs.push(
-        `[LLM] Skipping update for field ${key} on record ID ${recordId}. Current value: ${
-          recordFields[recordId][key]
-        }, New value: ${value}`
-      );
-    }
-  });
-
-  // Perform the Airtable update
-  try {
-    await airtableBase("Accounts").update(recordId, sanitizedFields);
-    logs.push(`[LLM] Airtable updated successfully for record ID: ${recordId}`);
-  } catch (error) {
-    logs.push(
-      `[LLM] Failed to update Airtable for record ID ${recordId}: ${
-        error instanceof Error ? error.message : error
-      }`
-    );
-  }
-};
-
-
-
-
-const modifyAccount = tool({
-  description: "Modify any field of an existing account in Wonderland.",
-  parameters: z.object({
-    recordId: z.string().describe("The record ID of the account to modify."),
-    fields: z.object({
-      Name: z.string().optional(),
-      Description: z.string().optional(),
-      "Client Company Name": z.string().optional(),
-      "Client URL": z.string().optional(),
-      Status: z.string().optional(),
-      Industry: z.string().optional(),
-      "Primary Contact Person": z.string().optional(),
-      "About the Client": z.string().optional(),
-      "Primary Objective": z.string().optional(),
-      "Talking Points": z.string().optional(),
-      "Contact Information": z.string().optional(),
-    })
-      .partial()
-      .refine((obj) => Object.keys(obj).length > 0, {
-        message: "At least one field must be provided to update.",
-      }),
-  }),
-  execute: async ({ recordId, fields }) => {
-    const logs: string[] = [];
-    try {
-      logs.push("[TOOL] Starting modifyAccount...");
-      logs.push(`Record ID: ${recordId}, Fields: ${JSON.stringify(fields)}`);
-
-      // Ensure the record ID matches the currentRecordId
-      if (recordId !== currentRecordId) {
-        throw new Error(
-          `Attempting to modify the wrong record. Expected: ${currentRecordId}, Provided: ${recordId}`
-        );
-      }
-
-      if (!recordId) {
-        throw new Error("recordId is required to identify the account.");
-      }
-
-      const accountRecord = await airtableBase("Accounts").find(recordId);
-
-      if (!accountRecord) {
-        throw new Error(`No account found with the record ID: ${recordId}`);
-      }
-
-      logs.push("[TOOL] Account found:", JSON.stringify(accountRecord, null, 2));
-
-      // Match Status and Industry to closest allowed values dynamically
-      const allowedStatuses = ["Active", "Disabled", "New"];
-      if (fields.Status) {
-        fields.Status = allowedStatuses.reduce((closest, current) =>
-          fields.Status!.toLowerCase().includes(current.toLowerCase()) ? current : closest,
-          allowedStatuses[0]
-        );
-      }
-
-      const allowedIndustries = await airtableBase("Accounts").select({ fields: ["Industry"] }).all();
-      const industryOptions = allowedIndustries
-        .map((record) => record.get("Industry"))
-        .filter((value): value is string => typeof value === "string");
-      if (fields.Industry && industryOptions.length > 0) {
-        fields.Industry = industryOptions.reduce((closest, current) =>
-          fields.Industry!.toLowerCase().includes(current.toLowerCase()) ? current : closest,
-          industryOptions[0]
-        );
-      }
-
-      logs.push("[TOOL] Updating account with fields:", JSON.stringify(fields, null, 2));
-
-      const updatedRecord = await airtableBase("Accounts").update(accountRecord.id, fields);
-
-      logs.push("[TOOL] Account updated successfully:", JSON.stringify(updatedRecord, null, 2));
-
-      // Update currentRecordId to reflect the updated record
-      currentRecordId = updatedRecord.id;
-
-      return {
-        message: `Account successfully updated. Updated fields: ${JSON.stringify(fields)}.`,
-        recordId: updatedRecord.id,
-        logs,
-      };
-    } catch (error) {
-      logs.push("[TOOL] Error modifying account in Airtable:", error instanceof Error ? error.message : JSON.stringify(error));
-      throw { message: "Failed to modify account. Check logs for details.", logs };
-    }
-  },
-});
-
-const deleteAccount = tool({
-  description: "Delete an existing account in Wonderland by changing its status to 'Deleted'.",
-  parameters: z.object({
-    recordId: z.string().describe("The record ID of the account to delete."),
-  }),
-  execute: async ({ recordId }) => {
-    const logs: string[] = [];
-    try {
-      logs.push("[TOOL] Starting deleteAccount...");
-      logs.push(`Record ID: ${recordId}`);
-
-      // Ensure the record ID matches the currentRecordId
-      if (recordId !== currentRecordId) {
-        throw new Error(
-          `Attempting to delete the wrong record. Expected: ${currentRecordId}, Provided: ${recordId}`
-        );
-      }
-
-      if (!recordId) {
-        throw new Error("recordId is required to identify the account.");
-      }
-
-      const accountRecord = await airtableBase("Accounts").find(recordId);
-
-      if (!accountRecord) {
-        throw new Error(`No account found with the record ID: ${recordId}`);
-      }
-
-      logs.push("[TOOL] Account found:", JSON.stringify(accountRecord, null, 2));
-
-      logs.push("[TOOL] Changing account status to 'Deleted'...");
-      const updatedRecord = await airtableBase("Accounts").update(accountRecord.id, { Status: "Deleted" });
-
-      logs.push("[TOOL] Account status updated successfully:", JSON.stringify(updatedRecord, null, 2));
-
-      // Clear currentRecordId since the record has been deleted
-      currentRecordId = null;
-
-      return {
-        message: `Account with record ID ${recordId} has been successfully marked as 'Deleted'.`,
-        recordId: updatedRecord.id,
-        logs,
-      };
-    } catch (error) {
-      logs.push("[TOOL] Error deleting account in Airtable:", error instanceof Error ? error.message : JSON.stringify(error));
-      throw { message: "Failed to delete account. Check logs for details.", logs };
-    }
-  },
-});
-
-const switchRecord = tool({
-  description: "Switch the current record being worked on in Wonderland by looking up an account by its name, company, website, or other fields.",
-  parameters: z.object({
-    lookupField: z.string().describe("The field to search by, such as 'Name', 'Client Company Name', or 'Client URL'."),
-    lookupValue: z.string().describe("The value to search for in the specified field."),
-  }),
-  execute: async ({ lookupField, lookupValue }) => {
-    const logs: string[] = [];
-    try {
-      logs.push("[TOOL] Starting switchRecord...");
-      logs.push(`Looking up record by ${lookupField}: ${lookupValue}`);
-
-      // Ensure lookupField is a valid field in the Airtable schema
-      const validFields = [
-        "Name",
-        "Client Company Name",
-        "Client URL",
-        "Description",
-        "Industry",
-        "Primary Contact Person",
-      ];
-      if (!validFields.includes(lookupField)) {
-        throw new Error(
-          `Invalid lookupField: ${lookupField}. Valid fields are ${validFields.join(", ")}.`
-        );
-      }
-
-      // Query Airtable to find the record
-      const matchingRecords = await airtableBase("Accounts")
-        .select({
-          filterByFormula: `{${lookupField}} = "${lookupValue}"`,
-          maxRecords: 1,
-        })
-        .firstPage();
-
-      if (matchingRecords.length === 0) {
-        throw new Error(`No record found with ${lookupField}: "${lookupValue}".`);
-      }
-
-      const matchedRecord = matchingRecords[0];
-      currentRecordId = matchedRecord.id;
-
-      logs.push(
-        `[TOOL] Successfully switched to record ID: ${currentRecordId} (${lookupField}: ${lookupValue}).`
-      );
-
-      return {
-        message: `Successfully switched to the account for "${lookupValue}" (Record ID: ${currentRecordId}).`,
-        recordId: currentRecordId,
-        logs,
-      };
-    } catch (error) {
-      logs.push(
-        "[TOOL] Error during switchRecord:",
-        error instanceof Error ? error.message : JSON.stringify(error)
-      );
-      throw { message: "Failed to switch records. Check logs for details.", logs };
-    }
-  },
-});
