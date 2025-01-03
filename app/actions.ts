@@ -28,8 +28,6 @@ const toTitleCase = (str: string): string =>
 // Helper: Clean Undefined Fields
 const cleanFields = (fields: Record<string, any>) =>
   Object.fromEntries(Object.entries(fields).filter(([_, value]) => value !== undefined));
-
-// Function: Extract and Refine Fields
 const extractAndRefineFields = async (
   message: string,
   logs: string[],
@@ -47,24 +45,20 @@ const extractAndRefineFields = async (
   const extractionResponse = await generateText({
     model: openai("gpt-4o"),
     system: `You are a Wonderland assistant extracting any available account details from user input.
-      Touch up the messages before extracting to ensure correct punctuation, capitalization.
-      Read the previous messages to see what the user is responding to. For example, a link could be both a website or company name.
-      If the extracted value is a URL or link, make sure it's complete and in valid format.
-      Respond with a JSON object formatted as follows and **nothing else**:
+      Respond with a JSON object formatted as follows:
       {
-        "Name": "Anything that sounds like an account name, company name, name for a record or something the user designates as a name.",
-        "Client Company Name": "The name of the company, account or record.",
-        "Website": "A website URL, if mentioned.",
-        "Instagram": "An Instagram handle or link, if mentioned.",
-        "Facebook": "A Facebook handle or link, if mentioned.",
-        "Blog": "A blog URL, if mentioned.",
-        "Description": "Anything that sounds like a description for the record being created.",
-        "About the Client": "Any information supplied about the client or company.",
-        "Industry": "Any mention of industry, domain, or sector.",
-        "Talking Points": "Any objectives or talking points, if mentioned.",
-        "Primary Objective": "Any main purpose or goal of creating this account."
-      }
-      Ensure the JSON is properly formatted, contains no extraneous text, and adheres to the schema exactly.`,
+        "Name": "Account name or similar",
+        "Client Company Name": "Company or client name",
+        "Website": "URL if mentioned",
+        "Instagram": "Instagram handle or link",
+        "Facebook": "Facebook handle or link",
+        "Blog": "Blog URL if mentioned",
+        "Description": "Description or details",
+        "About the Client": "Details about the client",
+        "Industry": "Mention of industry",
+        "Talking Points": "Objectives or talking points",
+        "Primary Objective": "Main purpose or goal"
+      }`,
     messages: [{ role: "user", content: combinedMessage }],
     maxToolRoundtrips: 1,
   });
@@ -75,36 +69,31 @@ const extractAndRefineFields = async (
   try {
     logs.push(`[LLM] Full AI Response: ${responseText}`);
 
-    // Use regex to extract the JSON object
     const jsonMatch = responseText.match(/\{.*?\}/s);
     if (jsonMatch) {
       extractedFields = JSON.parse(jsonMatch[0]);
-      logs.push(`[LLM] Extracted fields successfully parsed: ${JSON.stringify(extractedFields)}`);
+      logs.push(`[LLM] Extracted fields parsed: ${JSON.stringify(extractedFields)}`);
     } else {
       throw new Error("No valid JSON structure found in AI response.");
     }
   } catch (error) {
-    logs.push(`[LLM] Parsing failed: ${error instanceof Error ? error.message : "Unknown error."}`);
+    logs.push(`[LLM] Parsing error: ${error instanceof Error ? error.message : "Unknown error."}`);
   }
 
-  // Merge with previously extracted fields
   if (lastExtractedFields) {
-    logs.push("[LLM] Merging with previously extracted fields...");
+    logs.push("[LLM] Merging with previous extractions...");
     for (const [key, value] of Object.entries(lastExtractedFields)) {
       if (!extractedFields[key] || extractedFields[key].trim() === "") {
         extractedFields[key] = value;
-        logs.push(`[LLM] Preserved previous value for ${key}: ${value}`);
+        logs.push(`[LLM] Retained previous value for ${key}: ${value}`);
       }
     }
   }
 
   lastExtractedFields = { ...lastExtractedFields, ...extractedFields };
-
   logs.push(`[LLM] Final merged fields: ${JSON.stringify(lastExtractedFields)}`);
   return extractedFields;
 };
-
-// Function: Update Airtable Record Fields
 const updateRecordFields = async (
   recordId: string,
   newFields: Record<string, any>,
@@ -121,13 +110,9 @@ const updateRecordFields = async (
   Object.entries(sanitizedFields).forEach(([key, value]) => {
     if (!recordFields[recordId][key] || recordFields[recordId][key] !== value) {
       recordFields[recordId][key] = value;
-      logs.push(`[LLM] Field updated for record ID ${recordId}: ${key} = ${value}`);
+      logs.push(`[LLM] Updated field: ${key} = ${value}`);
     } else {
-      logs.push(
-        `[LLM] Skipping update for field ${key} on record ID ${recordId}. Current value: ${
-          recordFields[recordId][key]
-        }, New value: ${value}`
-      );
+      logs.push(`[LLM] Skipped field: ${key}, value unchanged.`);
     }
   });
 
@@ -135,13 +120,10 @@ const updateRecordFields = async (
     await airtableBase("Accounts").update(recordId, sanitizedFields);
     logs.push(`[LLM] Airtable updated successfully for record ID: ${recordId}`);
   } catch (error) {
-    logs.push(
-      `[LLM] Failed to update Airtable for record ID ${recordId}: ${
-        error instanceof Error ? error.message : "Unknown error."
-      }`
-    );
+    logs.push(`[LLM] Airtable update failed: ${error instanceof Error ? error.message : "Unknown error."}`);
   }
 };
+
 
 // Helper: Update record fields and prevent redundant updates
 const recordFields = {};
@@ -185,7 +167,7 @@ const updateRecordFields = async (
     );
   }
 };
-// Tool: Delete Account
+
 const deleteAccount = tool({
   description: "Delete an existing account in Wonderland by changing its status to 'Deleted'.",
   parameters: z.object({
@@ -197,31 +179,31 @@ const deleteAccount = tool({
       logs.push("[TOOL] Starting deleteAccount...");
       logs.push(`Record ID: ${recordId}`);
 
-      // Ensure the record ID matches the currentRecordId
+      // Validate the record ID
+      if (!recordId) {
+        throw new Error("recordId is required to identify the account.");
+      }
       if (recordId !== currentRecordId) {
         throw new Error(
           `Attempting to delete the wrong record. Expected: ${currentRecordId}, Provided: ${recordId}`
         );
       }
 
-      if (!recordId) {
-        throw new Error("recordId is required to identify the account.");
-      }
-
+      // Fetch the account record
       const accountRecord = await airtableBase("Accounts").find(recordId);
-
       if (!accountRecord) {
         throw new Error(`No account found with the record ID: ${recordId}`);
       }
 
       logs.push("[TOOL] Account found:", JSON.stringify(accountRecord, null, 2));
 
+      // Update the account status to "Deleted"
       logs.push("[TOOL] Changing account status to 'Deleted'...");
       const updatedRecord = await airtableBase("Accounts").update(accountRecord.id, { Status: "Deleted" });
 
       logs.push("[TOOL] Account status updated successfully:", JSON.stringify(updatedRecord, null, 2));
 
-      // Clear currentRecordId since the record has been deleted
+      // Clear the currentRecordId
       currentRecordId = null;
 
       return {
@@ -230,13 +212,13 @@ const deleteAccount = tool({
         logs,
       };
     } catch (error) {
-      logs.push("[TOOL] Error deleting account in Airtable:", error instanceof Error ? error.message : JSON.stringify(error));
+      logs.push(`[TOOL] Error deleting account in Airtable: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
       throw { message: "Failed to delete account. Check logs for details.", logs };
     }
   },
 });
 
-// Tool: Switch Record
+
 const switchRecord = tool({
   description: "Switch the current record being worked on in Wonderland by looking up an account by its name, company, website, or other fields.",
   parameters: z.object({
@@ -249,22 +231,15 @@ const switchRecord = tool({
       logs.push("[TOOL] Starting switchRecord...");
       logs.push(`Looking up record by ${lookupField}: ${lookupValue}`);
 
-      // Ensure lookupField is a valid field in the Airtable schema
-      const validFields = [
-        "Name",
-        "Client Company Name",
-        "Client URL",
-        "Description",
-        "Industry",
-        "Primary Contact Person",
-      ];
+      // Ensure lookupField is valid
+      const validFields = ["Name", "Client Company Name", "Client URL", "Description", "Industry", "Primary Contact Person"];
       if (!validFields.includes(lookupField)) {
         throw new Error(
           `Invalid lookupField: ${lookupField}. Valid fields are ${validFields.join(", ")}.`
         );
       }
 
-      // Query Airtable to find the record
+      // Query Airtable for the matching record
       const matchingRecords = await airtableBase("Accounts")
         .select({
           filterByFormula: `{${lookupField}} = "${lookupValue}"`,
@@ -289,14 +264,12 @@ const switchRecord = tool({
         logs,
       };
     } catch (error) {
-      logs.push(
-        "[TOOL] Error during switchRecord:",
-        error instanceof Error ? error.message : JSON.stringify(error)
-      );
+      logs.push(`[TOOL] Error during switchRecord: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
       throw { message: "Failed to switch records. Check logs for details.", logs };
     }
   },
 });
+
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
