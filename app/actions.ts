@@ -333,8 +333,6 @@ if (!currentRecordId && (!extractedFields.Name || extractedFields.Name.trim() ==
     logs,
   };
 }
-
-
 if (!currentRecordId && extractedFields.Name) {
   logs.push("[LLM] Creating new record because currentRecordId is null or invalid.");
   try {
@@ -362,7 +360,7 @@ if (!currentRecordId && extractedFields.Name) {
   } catch (error) {
     logs.push(`[LLM] Account creation error: ${
       error instanceof Error ? error.message : "Unknown error"
-    };`);
+    }`);
     return {
       messages: [...history, { role: "assistant", content: "An error occurred while creating the account. Please try again or contact support." }],
       logs,
@@ -371,17 +369,17 @@ if (!currentRecordId && extractedFields.Name) {
 }
 
 if (currentRecordId) {
-  logs.push(`[LLM] Preparing to invoke getNextQuestion for record ID: ${currentRecordId};`);
+  logs.push(`[LLM] Preparing to invoke getNextQuestion for record ID: ${currentRecordId}`);
   const questionToAsk = getNextQuestion(currentRecordId, logs);
 
   if (!questionToAsk) {
-    logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId};`);
+    logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
     try {
       await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
     } catch (syncError) {
       logs.push(`[LLM] Failed to sync fields: ${
         syncError instanceof Error ? syncError.message : syncError
-      };`);
+      }`);
     }
 
     logs.push("[LLM] No more questions to ask. Account creation is complete.");
@@ -391,7 +389,7 @@ if (currentRecordId) {
     };
   }
 
-  logs.push(`[LLM] Generated next question: "${questionToAsk}";`);
+  logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
   return {
     messages: [...history, { role: "assistant", content: questionToAsk }],
     logs,
