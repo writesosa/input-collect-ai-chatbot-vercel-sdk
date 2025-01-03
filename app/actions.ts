@@ -358,23 +358,23 @@ if (currentRecordId) {
     }
   }
 }
-if (userIntent === "switch_record" || userIntent === "update_record") {
-  logs.push(`[LLM] ${userIntent === "switch_record" ? "Switch record" : "Update record"} detected. Processing...`);
+
+
+if (userIntent === "switch_record") {
+  logs.push("[LLM] Switch record detected. Processing...");
   const userMessage = history[history.length - 1]?.content.trim() || "";
 
-  // Extract lookup details or update fields
+  // Extract the lookup field and value
   const extractedFields = await extractAndRefineFields(userMessage, logs);
-  const lookupField = extractedFields.Name ? "Name" : extractedFields["Client Company Name"] ? "Client Company Name" : extractedFields.Description ? "Description" : "About the Client";
-  const lookupValue = extractedFields[lookupField];
 
-  if (!lookupValue) {
-    logs.push("[LLM] Missing details for lookup. Prompting user...");
+  if (!extractedFields.Name && !extractedFields["Client Company Name"]) {
+    logs.push("[LLM] Missing lookup details for switch record. Prompting user...");
     return {
       messages: [
         ...history,
         {
           role: "assistant",
-          content: "Please specify the name, description, or client company of the record you'd like to switch to or update.",
+          content: "Please specify the name or company of the record you'd like to switch to.",
         },
       ],
       logs,
@@ -382,30 +382,29 @@ if (userIntent === "switch_record" || userIntent === "update_record") {
   }
 
   try {
-    const tool = userIntent === "switch_record" ? switchRecord : updateRecord;
-    const toolArgs = userIntent === "switch_record"
-      ? { lookupField, lookupValue }
-      : { lookupField, lookupValue, updates: extractedFields };
+    const switchResponse = await switchRecord.execute({
+      lookupField: extractedFields.Name ? "Name" : "Client Company Name",
+      lookupValue: extractedFields.Name || extractedFields["Client Company Name"],
+    });
 
-    const { message, recordId, logs: toolLogs } = await tool.execute(toolArgs);
-    logs.push(...toolLogs);
-
-    if (userIntent === "switch_record") {
-      currentRecordId = recordId;
+    logs.push(...(switchResponse.logs || []));
+    if (switchResponse.recordId) {
+      currentRecordId = switchResponse.recordId; // Update global ID
     }
 
     return {
-      messages: [...history, { role: "assistant", content: message }],
+      messages: [...history, { role: "assistant", content: switchResponse.message }],
       logs,
     };
   } catch (error) {
-    logs.push(`[LLM] Error during ${userIntent === "switch_record" ? "switch record" : "update record"}: ${error.message}`);
+    logs.push(`[LLM] Error during switch record: ${error.message}`);
     return {
-      messages: [...history, { role: "assistant", content: `An error occurred while ${userIntent === "switch_record" ? "switching records" : "updating the record"}.` }],
+      messages: [...history, { role: "assistant", content: "An error occurred while switching records." }],
       logs,
     };
   }
 }
+
 
 if (userIntent === "update_record") {
   logs.push("[LLM] Update record detected. Processing...");
@@ -640,6 +639,8 @@ const updateRecord = tool({
     }
   },
 });
+
+
 const switchRecord = tool({
   description: "Switch the current record being worked on in Wonderland by looking up an account by its name, company, website, or other fields.",
   parameters: z.object({
