@@ -333,7 +333,6 @@ if (!currentRecordId && (!extractedFields.Name || extractedFields.Name.trim() ==
     logs,
   };
 }
-
 if (!currentRecordId && extractedFields.Name) {
   logs.push("[LLM] Creating new record because currentRecordId is null or invalid.");
   try {
@@ -346,6 +345,16 @@ if (!currentRecordId && extractedFields.Name) {
     if (createResponse?.recordId) {
       currentRecordId = createResponse.recordId;
       logs.push(`[LLM] New account created successfully with ID: ${currentRecordId}`);
+
+      // Initialize record fields for the new account
+      if (!recordFields[currentRecordId]) {
+        logs.push(`[LLM] Initializing record fields for new record ID: ${currentRecordId}`);
+        recordFields[currentRecordId] = {
+          questionsAsked: [],
+          ...lastExtractedFields,
+        };
+      }
+
     } else {
       throw new Error("Failed to retrieve a valid record ID after account creation.");
     }
@@ -359,6 +368,7 @@ if (!currentRecordId && extractedFields.Name) {
     };
   }
 }
+
 
 
       if (currentRecordId) {
@@ -525,7 +535,13 @@ const createAccount = tool({
     }
   },
 });
+
 const getNextQuestion = (recordId: string, logs: string[]): string | null => {
+  if (!recordFields[recordId]) {
+    logs.push(`[LLM] Record fields for ID ${recordId} not initialized. Initializing...`);
+    recordFields[recordId] = { questionsAsked: [] };
+  }
+
   const questions = [
     {
       progress: 0,
@@ -555,17 +571,13 @@ const getNextQuestion = (recordId: string, logs: string[]): string | null => {
     );
 
     if (anyFieldMissing) {
-      logs.push(`[LLM] Missing fields detected for progress ${question.progress}. Asking: "${question.prompt}"`);
-      recordFields[recordId].questionsAsked = [
-        ...(recordFields[recordId]?.questionsAsked || []),
-        question.prompt,
-      ];
+      logs.push(`[LLM] Missing fields detected. Asking: "${question.prompt}"`);
+      recordFields[recordId].questionsAsked.push(question.prompt);
       return question.prompt;
     }
-
-    logs.push(`[LLM] All fields complete for progress ${question.progress}. Skipping question.`);
   }
 
   logs.push("[LLM] All questions asked or fields filled. No further questions.");
   return null;
 };
+
