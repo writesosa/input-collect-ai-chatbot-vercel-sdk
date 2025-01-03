@@ -117,7 +117,6 @@ const getUnansweredQuestions = (recordId: string, logs: string[]): string[] => {
 };
 
 
-
 const updateRecordFields = async (
   recordId: string,
   newFields: Record<string, any>,
@@ -131,6 +130,7 @@ const updateRecordFields = async (
     Object.entries(newFields).filter(([key, value]) => key !== "questionsAsked" && value !== null && value !== "")
   );
 
+  // Ensure all fields are logged and included
   Object.entries(sanitizedFields).forEach(([key, value]) => {
     if (!recordFields[recordId][key] || recordFields[recordId][key] !== value) {
       recordFields[recordId][key] = value;
@@ -145,7 +145,8 @@ const updateRecordFields = async (
   });
 
   try {
-    await airtableBase("Accounts").update(recordId, sanitizedFields);
+    // Update Airtable with all fields in `recordFields`
+    await airtableBase("Accounts").update(recordId, recordFields[recordId]);
     logs.push(`[LLM] Airtable updated successfully for record ID: ${recordId}`);
   } catch (error) {
     logs.push(
@@ -155,6 +156,7 @@ const updateRecordFields = async (
     );
   }
 };
+
 
 const deleteAccount = tool({
   description: "Delete an existing account in Wonderland by changing its status to 'Deleted'.",
