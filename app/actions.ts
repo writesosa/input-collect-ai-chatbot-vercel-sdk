@@ -295,7 +295,7 @@ const sanitizedFields = Object.fromEntries(
 
 Object.keys(sanitizedFields).forEach((key) => {
   // Only add new fields or update existing ones if the value is non-null and non-empty
-  if (!recordFields[currentRecordId]?.[key] || recordFields[currentRecordId][key] !== sanitizedFields[key]) {
+if (currentRecordId && (!recordFields[currentRecordId]?.[key] || recordFields[currentRecordId][key] !== sanitizedFields[key])) {
     recordFields[currentRecordId] = {
       ...recordFields[currentRecordId],
       [key]: sanitizedFields[key],
