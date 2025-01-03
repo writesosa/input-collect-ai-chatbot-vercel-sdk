@@ -49,7 +49,7 @@ const extractAndRefineFields = async (
       {
         "Name": "Account name or similar",
         "Client Company Name": "Company or client name",
-        "Website": "URL if mentioned",
+        "Website": "Any website or url mentioned or provided thats not facebook or instagram",
         "Instagram": "Instagram handle or link",
         "Facebook": "Facebook handle or link",
         "Blog": "Blog URL if mentioned",
@@ -312,93 +312,89 @@ export async function continueConversation(history: Message[]) {
 
     // Step 3: Handle "Account Creation" Intent
     if (userIntent === "account_creation") {
-      logs.push("[LLM] Account creation detected. Processing...");
-      const userMessage = history[history.length - 1]?.content.trim() || "";
-      const extractedFields = await extractAndRefineFields(userMessage, logs);
+  logs.push("[LLM] Account creation detected. Processing...");
+  const userMessage = history[history.length - 1]?.content.trim() || "";
+  const extractedFields = await extractAndRefineFields(userMessage, logs);
 
-      // Validate the presence of the Name or Client Company Name field
-      if (
-        !currentRecordId &&
-        (!extractedFields.Name || extractedFields.Name.trim() === "") &&
-        (!extractedFields["Client Company Name"] || extractedFields["Client Company Name"].trim() === "")
-      ) {
-        logs.push("[LLM] Missing Name or Client Company Name field. Prompting user...");
-        return {
-          messages: [
-            ...history,
-            { role: "assistant", content: "A name or company name is required to create an account. Please provide it." },
-          ],
-          logs,
+  // Merge new fields into recordFields
+  if (currentRecordId) {
+    recordFields[currentRecordId] = {
+      ...recordFields[currentRecordId],
+      ...cleanFields(extractedFields),
+    };
+    logs.push(`[LLM] Updated fields for record ID ${currentRecordId}: ${JSON.stringify(recordFields[currentRecordId])}`);
+  }
+
+  // Validate the presence of required fields (Name or Client Company Name)
+  if (!currentRecordId && (!extractedFields.Name || !extractedFields["Client Company Name"])) {
+    logs.push("[LLM] Missing Name or Client Company Name field. Prompting user...");
+    return {
+      messages: [
+        ...history,
+        {
+          role: "assistant",
+          content: "A name or company name is required to create an account. Please provide it.",
+        },
+      ],
+      logs,
+    };
+  }
+
+  // Create a new record if necessary
+  if (!currentRecordId && extractedFields.Name) {
+    try {
+      logs.push("[LLM] Creating a new account...");
+      const createResponse = await createAccount.execute({
+        ...cleanFields(extractedFields),
+        Name: extractedFields.Name,
+        Status: "Draft",
+      });
+
+      if (createResponse?.recordId) {
+        currentRecordId = createResponse.recordId;
+        logs.push(`[LLM] Account created successfully with ID: ${currentRecordId}`);
+
+        // Initialize recordFields for the new account
+        recordFields[currentRecordId] = {
+          questionsAsked: [],
+          ...extractedFields,
         };
+      } else {
+        throw new Error("Failed to retrieve a valid record ID.");
       }
-
-      // Create a new account if currentRecordId is invalid
-      if (!currentRecordId && extractedFields.Name) {
-        logs.push("[LLM] Creating new record because currentRecordId is null or invalid.");
-        try {
-          const createResponse = await createAccount.execute({
-            ...cleanFields(extractedFields),
-            Name: extractedFields.Name,
-            Status: "Draft",
-          });
-
-          if (createResponse?.recordId) {
-            currentRecordId = createResponse.recordId;
-            logs.push(`[LLM] New account created successfully with ID: ${currentRecordId}`);
-
-            // Initialize record fields for the new account
-            if (!recordFields[currentRecordId]) {
-              logs.push(`[LLM] Initializing record fields for new record ID: ${currentRecordId}`);
-              recordFields[currentRecordId] = {
-                questionsAsked: [],
-                ...lastExtractedFields,
-              };
-            }
-          } else {
-            throw new Error("Failed to retrieve a valid record ID after account creation.");
-          }
-        } catch (error) {
-          logs.push(`[LLM] Account creation error: ${error instanceof Error ? error.message : "Unknown error"}`);
-          return {
-            messages: [
-              ...history,
-              {
-                role: "assistant",
-                content: "An error occurred while creating the account. Please try again or contact support.",
-              },
-            ],
-            logs,
-          };
-        }
-      }
-
-      // Handle the next question or completion
-      if (currentRecordId) {
-        logs.push(`[LLM] Preparing to invoke getNextQuestion for record ID: ${currentRecordId}`);
-        questionToAsk = getNextQuestion(currentRecordId, logs);
-
-        if (!questionToAsk) {
-          logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
-          try {
-            await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
-          } catch (syncError) {
-            logs.push(`[LLM] Failed to sync fields: ${syncError instanceof Error ? syncError.message : syncError}`);
-          }
-
-          logs.push("[LLM] No more questions to ask. Account creation is complete.");
-          return {
-            messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
-            logs,
-          };
-        }
-
-        logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
-        return {
-          messages: [...history, { role: "assistant", content: questionToAsk }],
-          logs,
-        };
-      }
+    } catch (error) {
+      logs.push(`[LLM] Account creation error: ${error instanceof Error ? error.message : "Unknown error"}`);
+      return {
+        messages: [...history, { role: "assistant", content: "An error occurred while creating the account. Please try again." }],
+        logs,
+      };
     }
+  }
+
+  // Handle next question or complete the process
+  if (currentRecordId) {
+    questionToAsk = getNextQuestion(currentRecordId, logs);
+    if (!questionToAsk) {
+      try {
+        await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
+        logs.push("[LLM] Account creation process completed.");
+        return {
+          messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+          logs,
+        };
+      } catch (syncError) {
+        logs.push(`[LLM] Error updating record fields: ${syncError instanceof Error ? syncError.message : syncError}`);
+      }
+    } else {
+      logs.push(`[LLM] Asking next question: "${questionToAsk}"`);
+      return {
+        messages: [...history, { role: "assistant", content: questionToAsk }],
+        logs,
+      };
+    }
+  }
+}
+
 
     // Handle General Queries
     if (userIntent === "general_query") {
