@@ -94,6 +94,29 @@ const extractAndRefineFields = async (
   logs.push(`[LLM] Final merged fields: ${JSON.stringify(lastExtractedFields)}`);
   return extractedFields;
 };
+
+
+const getUnansweredQuestions = (recordId: string, logs: string[]): string[] => {
+  const allQuestions = [
+    "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?",
+    "Can you tell me more about the company, including its industry, purpose, or mission?",
+    "What are the major objectives or talking points you'd like to achieve with Wonderland?",
+  ];
+
+  if (!recordFields[recordId]) {
+    logs.push("[LLM] No record fields found for current record ID. Returning all questions.");
+    return allQuestions;
+  }
+
+  const answeredQuestions = recordFields[recordId]?.questionsAsked || [];
+  const unansweredQuestions = allQuestions.filter((q) => !answeredQuestions.includes(q));
+
+  logs.push(`[LLM] Retrieved unanswered questions for record ID ${recordId}: ${JSON.stringify(unansweredQuestions)}`);
+  return unansweredQuestions;
+};
+
+
+
 const updateRecordFields = async (
   recordId: string,
   newFields: Record<string, any>,
