@@ -242,9 +242,8 @@ if (currentRecordId) {
     const sanitizedFields = Object.fromEntries(
       Object.entries(extractedFields).filter(([key, value]) => value !== null && value !== "")
     );
-
-if (currentRecordId && recordFields[currentRecordId]) {
-  const record = recordFields[currentRecordId]; // Access once and reuse safely
+if (currentRecordId && typeof currentRecordId === "string" && recordFields[currentRecordId]) {
+  const record = recordFields[currentRecordId]; // Safely access the record
   Object.keys(sanitizedFields).forEach((key) => {
     if (!record[key] || record[key] !== sanitizedFields[key]) {
       recordFields[currentRecordId] = {
