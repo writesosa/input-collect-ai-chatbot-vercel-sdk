@@ -359,58 +359,23 @@ if (!currentRecordId && extractedFields.Name) {
     };
   }
 }
+currentRecordId = createResponse.recordId;
+logs.push(`[LLM] New account created successfully with ID: ${currentRecordId}`);
 
+// Initialize record fields for the new account
+if (!recordFields[currentRecordId]) {
+  logs.push(`[LLM] Initializing record fields for new record ID: ${currentRecordId}`);
+  recordFields[currentRecordId] = {
+    questionsAsked: [],
+    ...lastExtractedFields, // Optionally include previously extracted fields
+  };
+}
 
-      if (currentRecordId) {
-        logs.push(`[LLM] Preparing to invoke getNextQuestion for record ID: ${currentRecordId}`);
-        questionToAsk = getNextQuestion(currentRecordId, logs);
+// Prepare to ask the next question
+logs.push(`[LLM] Preparing to invoke getNextQuestion for record ID: ${currentRecordId}`);
+const questionToAsk = getNextQuestion(currentRecordId, logs);
 
-        if (!questionToAsk) {
-          logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
-          try {
-            await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
-          } catch (syncError) {
-            logs.push(`[LLM] Failed to sync fields: ${
-              syncError instanceof Error ? syncError.message : syncError
-            }`);
-          }
-
-          logs.push("[LLM] No more questions to ask. Account creation is complete.");
-          return {
-            messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
-            logs,
-          };
-        }
-
-        logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
-        return {
-          messages: [...history, { role: "assistant", content: questionToAsk }],
-          logs,
-        };
-      }
-    }
-
-    if (currentRecordId) {
-  logs.push("[LLM] Preparing to invoke getNextQuestion...");
-  questionToAsk = getNextQuestion(currentRecordId, logs);
-
-  if (!questionToAsk) {
-    logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
-    try {
-      await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
-    } catch (syncError) {
-      logs.push(`[LLM] Failed to sync fields: ${
-        syncError instanceof Error ? syncError.message : syncError
-      }`);
-    }
-
-    logs.push("[LLM] No more questions to ask. All fields have been captured.");
-    return {
-      messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
-      logs,
-    };
-  }
-
+if (questionToAsk) {
   logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
   return {
     messages: [...history, { role: "assistant", content: questionToAsk }],
