@@ -333,7 +333,6 @@ if (!currentRecordId && (!extractedFields.Name || extractedFields.Name.trim() ==
     logs,
   };
 }
-
 if (!currentRecordId && extractedFields.Name) {
   logs.push("[LLM] Creating new record because currentRecordId is null or invalid.");
   try {
@@ -346,6 +345,15 @@ if (!currentRecordId && extractedFields.Name) {
     if (createResponse?.recordId) {
       currentRecordId = createResponse.recordId;
       logs.push(`[LLM] New account created successfully with ID: ${currentRecordId}`);
+
+      // Initialize record fields for the new account
+      if (!recordFields[currentRecordId]) {
+        logs.push(`[LLM] Initializing record fields for new record ID: ${currentRecordId}`);
+        recordFields[currentRecordId] = {
+          questionsAsked: [],
+          ...lastExtractedFields, // Optionally include previously extracted fields
+        };
+      }
     } else {
       throw new Error("Failed to retrieve a valid record ID after account creation.");
     }
@@ -359,29 +367,35 @@ if (!currentRecordId && extractedFields.Name) {
     };
   }
 }
-currentRecordId = createResponse.recordId;
-logs.push(`[LLM] New account created successfully with ID: ${currentRecordId}`);
 
-// Initialize record fields for the new account
-if (!recordFields[currentRecordId]) {
-  logs.push(`[LLM] Initializing record fields for new record ID: ${currentRecordId}`);
-  recordFields[currentRecordId] = {
-    questionsAsked: [],
-    ...lastExtractedFields, // Optionally include previously extracted fields
-  };
-}
+if (currentRecordId) {
+  logs.push(`[LLM] Preparing to invoke getNextQuestion for record ID: ${currentRecordId}`);
+  const questionToAsk = getNextQuestion(currentRecordId, logs);
 
-// Prepare to ask the next question
-logs.push(`[LLM] Preparing to invoke getNextQuestion for record ID: ${currentRecordId}`);
-const questionToAsk = getNextQuestion(currentRecordId, logs);
+  if (!questionToAsk) {
+    logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
+    try {
+      await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
+    } catch (syncError) {
+      logs.push(`[LLM] Failed to sync fields: ${
+        syncError instanceof Error ? syncError.message : syncError
+      }`);
+    }
 
-if (questionToAsk) {
+    logs.push("[LLM] No more questions to ask. Account creation is complete.");
+    return {
+      messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+      logs,
+    };
+  }
+
   logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
   return {
     messages: [...history, { role: "assistant", content: questionToAsk }],
     logs,
   };
 }
+
 
 
     // Step 4: Handle "General Query" Intent
