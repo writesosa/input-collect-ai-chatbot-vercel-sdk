@@ -45,6 +45,7 @@ const extractAndRefineFields = async (
     model: openai("gpt-4o"),
     system: `You are a Wonderland assistant extracting any available account details from user input.
       Touch up the messages before extracting to ensure correct punctuation, capitalization.
+      Read the previous messages to see what the user is responding to. For example, a link could be both a website or company name.
       If the extracted value is a url or link make sure its completed and in valid format.
       Respond with a JSON object formatted as follows and **nothing else**:
       {
