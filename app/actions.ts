@@ -20,19 +20,18 @@ let currentRecordId: string | null = null;
 let creationProgress: number | null = null; // Track user progress in account creation
 let lastExtractedFields: Record<string, any> | null = null; // Remember the last extracted fields
 
-// Helper: Convert string to Title Case
-const toTitleCase = (str: string): string =>
-  str.replace(/\w\S*/g, (word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
-
-// Helper: Clean Undefined Fields
-const cleanFields = (fields: Record<string, any>) =>
-  Object.fromEntries(Object.entries(fields).filter(([_, value]) => value !== undefined));
+// Helper: Sanitize null or undefined fields
+const sanitizeFields = (fields: Record<string, any>): Record<string, any> => {
+  return Object.fromEntries(
+    Object.entries(fields).filter(([_, value]) => value != null && value !== "")
+  );
+};
 
 const extractAndRefineFields = async (
-  message,
-  logs,
-  previousMessage
-) => {
+  message: string,
+  logs: string[],
+  previousMessage?: string
+): Promise<Record<string, any>> => {
   logs.push("[LLM] Extracting account fields from user message...");
 
   if (!message || message.trim() === "") {
@@ -41,13 +40,12 @@ const extractAndRefineFields = async (
   }
 
   const combinedMessage = previousMessage ? `${previousMessage} ${message}` : message;
-  let extractedFields = {};
+  let extractedFields: Record<string, any> = {};
 
   try {
     const extractionResponse = await generateText({
       model: openai("gpt-4o"),
       system: `You are a Wonderland assistant extracting account details.
-        Rewrite the extracted fields for clarity and completeness.
         Extract the following fields from the user's message if available:
         {
           "Name": "Account or company name.",
@@ -90,6 +88,7 @@ const extractAndRefineFields = async (
 
   return sanitizeFields({ ...lastExtractedFields, ...extractedFields });
 };
+
 
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
@@ -337,8 +336,7 @@ if (existingDraft.length > 0) {
   },
 });
 
-
-const getNextQuestion = (recordId, logs) => {
+const getNextQuestion = (recordId: string, logs: string[]): string | null => {
   const questions = [
     {
       progress: 0,
@@ -381,7 +379,11 @@ const getNextQuestion = (recordId, logs) => {
   return null;
 };
 
-const updateRecordFields = async (recordId, newFields, logs) => {
+const updateRecordFields = async (
+  recordId: string,
+  newFields: Record<string, any>,
+  logs: string[]
+): Promise<void> => {
   if (!recordFields[recordId]) {
     recordFields[recordId] = {};
   }
@@ -408,7 +410,6 @@ const updateRecordFields = async (recordId, newFields, logs) => {
     );
   }
 };
-
 
 
 
