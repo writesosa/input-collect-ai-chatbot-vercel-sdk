@@ -233,19 +233,23 @@ if (!currentRecordId && extractedFields.Name) {
     };
   }
 }
-
+// Ensure updates to Airtable and recordFields are non-destructive
 if (currentRecordId) {
-  const safeRecordId = typeof currentRecordId === "string" ? currentRecordId : null;
+  logs.push(`[LLM] Updating Airtable record ID: ${currentRecordId} with extracted fields.`);
 
-  if (safeRecordId && recordFields[safeRecordId]) {
-    const record = recordFields[safeRecordId]; // Safely access the record
-
-    Object.keys(sanitizedFields).forEach((key) => {
-      if (!record[key] || record[key] !== sanitizedFields[key]) {
-        recordFields[safeRecordId] = {
-          ...record,
-          [key]: sanitizedFields[key], // Add or update with new value
-              };
+  try {
+    // Filter and merge new valid fields into recordFields
+    const sanitizedFields = Object.fromEntries(
+      Object.entries(extractedFields).filter(([key, value]) => value !== null && value !== "")
+    );
+if (currentRecordId && typeof currentRecordId === "string" && recordFields[currentRecordId]) {
+  const record = recordFields[currentRecordId]; // Safely access the record
+  Object.keys(sanitizedFields).forEach((key) => {
+    if (!record[key] || record[key] !== sanitizedFields[key]) {
+      recordFields[currentRecordId] = {
+        ...record,
+        [key]: sanitizedFields[key], // Add or update with new value
+      };
     }
   });
 }
@@ -253,111 +257,104 @@ if (currentRecordId) {
 
 
 
-
     // Perform the Airtable update
-    await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
-
-    logs.push(`[LLM] Fields updated successfully for record ID: ${currentRecordId}`);
-  } catch (updateError) {
-    logs.push(`[LLM] Initial update failed for record ID ${currentRecordId}: ${
-      updateError instanceof Error ? updateError.message : "Unknown error"
-    }`);
-
-    // Retry Logic
-    try {
-      logs.push("[LLM] Retrying field update...");
-      const retryFields = {
-        ...recordFields[currentRecordId], // Use last known valid state
-        ...Object.fromEntries(
-          Object.entries(extractedFields).filter(([key, value]) => value !== null && value !== "")
-        ),
-      };
-
-      await updateRecordFields(currentRecordId, retryFields, logs);
-      logs.push(`[LLM] Retry successful for record ID: ${currentRecordId}`);
-    } catch (retryError) {
-      logs.push(`[LLM] Retry failed for record ID ${currentRecordId}: ${
-        retryError instanceof Error ? retryError.message : "Unknown error"
+    
+      await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
+      logs.push(`[LLM] Fields updated successfully for record ID: ${currentRecordId}`);
+    } catch (updateError) {
+      logs.push(`[LLM] Initial update failed for record ID ${currentRecordId}: ${
+        updateError instanceof Error ? updateError.message : "Unknown error"
       }`);
-      return {
-        messages: [
-          ...history,
-          { role: "assistant", content: "An error occurred while syncing the account fields. Please try again later." },
-        ],
-        logs,
-      };
-    }
-  }
-}
 
-// Ensure extractedFields is updated without overwriting with null or empty values
-const sanitizedFields = Object.fromEntries(
-  Object.entries(extractedFields).filter(([key, value]) => value !== null && value !== "")
-);
+      // Retry Logic
+      try {
+        logs.push("[LLM] Retrying field update...");
+        const retryFields = {
+          ...recordFields[currentRecordId], // Use last known valid state
+          ...Object.fromEntries(
+            Object.entries(extractedFields).filter(([key, value]) => value !== null && value !== "")
+          ),
+        };
 
-Object.keys(sanitizedFields).forEach((key) => {
-  // Only add new fields or update existing ones if the value is non-null and non-empty
-if (currentRecordId && (!recordFields[currentRecordId]?.[key] || recordFields[currentRecordId][key] !== sanitizedFields[key])) {
-    recordFields[currentRecordId] = {
-      ...recordFields[currentRecordId],
-      [key]: sanitizedFields[key],
-    };
-  }
-});
-
-
-
-
-      if (!questionAsked && currentRecordId) {
-        logs.push("[LLM] Re-checking for unanswered questions...");
-
-        const allQuestions = [
-          "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?",
-          "Can you tell me more about the company, including its industry, purpose, or mission?",
-          "What are the major objectives or talking points you'd like to achieve with Wonderland?",
-        ];
-
-        let unaskedQuestions: string[] = [];
-        if (currentRecordId !== null && recordFields[currentRecordId]) {
-          const record = recordFields[currentRecordId];
-          unaskedQuestions = allQuestions.filter(
-            (q) => !record.questionsAsked?.includes(q)
-          );
-        } else {
-          logs.push("[LLM] currentRecordId is null or recordFields[currentRecordId] is undefined.");
-        }
-
-        if (unaskedQuestions.length > 0) {
-          const nextUnaskedQuestion = unaskedQuestions[0];
-          logs.push(`[LLM] Re-asking missing question: "${nextUnaskedQuestion}"`);
-          recordFields[currentRecordId].questionsAsked = [
-            ...(recordFields[currentRecordId]?.questionsAsked || []),
-            nextUnaskedQuestion,
-          ];
-          return {
-            messages: [...history, { role: "assistant", content: nextUnaskedQuestion }],
-            logs,
-          };
-        }
-        logs.push("[LLM] Fallback confirmed all questions were asked.");
+        await updateRecordFields(currentRecordId, retryFields, logs);
+        logs.push(`[LLM] Retry successful for record ID: ${currentRecordId}`);
+      } catch (retryError) {
+        logs.push(`[LLM] Retry failed for record ID ${currentRecordId}: ${
+          retryError instanceof Error ? retryError.message : "Unknown error"
+        }`);
+        return {
+          messages: [
+            ...history,
+            { role: "assistant", content: "An error occurred while syncing the account fields. Please try again later." },
+          ],
+          logs,
+        };
       }
+    }
+  }
 
-      logs.push("[LLM] No more questions to ask. Account creation complete.");
+  // Ensure extractedFields are updated without overwriting valid data
+  const sanitizedFields = Object.fromEntries(
+    Object.entries(extractedFields).filter(([key, value]) => value !== null && value !== "")
+  );
+
+  Object.keys(sanitizedFields).forEach((key) => {
+    if (currentRecordId && (!recordFields[currentRecordId]?.[key] || recordFields[currentRecordId][key] !== sanitizedFields[key])) {
+      recordFields[currentRecordId] = {
+        ...recordFields[currentRecordId],
+        [key]: sanitizedFields[key],
+      };
+    }
+  });
+
+  if (!questionAsked && currentRecordId) {
+    logs.push("[LLM] Re-checking for unanswered questions...");
+
+    const allQuestions = [
+      "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?",
+      "Can you tell me more about the company, including its industry, purpose, or mission?",
+      "What are the major objectives or talking points you'd like to achieve with Wonderland?",
+    ];
+
+    let unaskedQuestions: string[] = [];
+    if (recordFields[currentRecordId]) {
+      const record = recordFields[currentRecordId];
+      unaskedQuestions = allQuestions.filter(
+        (q) => !record.questionsAsked?.includes(q)
+      );
+    } else {
+      logs.push("[LLM] currentRecordId is null or recordFields[currentRecordId] is undefined.");
+    }
+
+    if (unaskedQuestions.length > 0) {
+      const nextUnaskedQuestion = unaskedQuestions[0];
+      logs.push(`[LLM] Re-asking missing question: "${nextUnaskedQuestion}"`);
+      recordFields[currentRecordId].questionsAsked = [
+        ...(recordFields[currentRecordId]?.questionsAsked || []),
+        nextUnaskedQuestion,
+      ];
       return {
-        messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+        messages: [...history, { role: "assistant", content: nextUnaskedQuestion }],
         logs,
       };
     }
-  } catch (error) {
-    logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
-    return {
-      messages: [...history, { role: "assistant", content: "An error occurred while processing your request." }],
-      logs,
-    };
+    logs.push("[LLM] Fallback confirmed all questions were asked.");
   }
+
+  logs.push("[LLM] No more questions to ask. Account creation complete.");
+  return {
+    messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+    logs,
+  };
+} catch (error) {
+  logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
+  return {
+    messages: [...history, { role: "assistant", content: "An error occurred while processing your request." }],
+    logs,
+  };
 }
 
-
+// Create Account Tool
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -418,53 +415,6 @@ const createAccount = tool({
     }
   },
 });
-
-const getNextQuestion = (recordId: string, logs: string[]): string | null => {
-  const questions = [
-    {
-      progress: 0,
-      prompt: "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?",
-      fields: ["Website", "Instagram", "Facebook", "Blog"],
-    },
-    {
-      progress: 1,
-      prompt: "Can you tell me more about the company, including its industry, purpose, or mission?",
-      fields: ["Description", "About the Client", "Industry"],
-    },
-    {
-      progress: 2,
-      prompt: "What are the major objectives or talking points you'd like to achieve with Wonderland?",
-      fields: ["Talking Points", "Primary Objective"],
-    },
-  ];
-
-  for (const question of questions) {
-    // Skip if already asked
-    if (recordFields[recordId]?.questionsAsked?.includes(question.prompt)) {
-      logs.push(`[LLM] Question already asked: "${question.prompt}"`);
-      continue;
-    }
-
-    // Check if any associated fields are missing
-    const anyFieldMissing = question.fields.some(
-      (field) => !recordFields[recordId]?.[field] || recordFields[recordId][field].trim() === ""
-    );
-
-    if (anyFieldMissing) {
-      logs.push(`[LLM] Missing fields detected for progress ${question.progress}. Asking: "${question.prompt}"`);
-      recordFields[recordId].questionsAsked = [
-        ...(recordFields[recordId].questionsAsked || []),
-        question.prompt,
-      ]; // Persist question tracking
-      return question.prompt;
-    }
-
-    logs.push(`[LLM] All fields complete for progress ${question.progress}. Skipping question.`);
-  }
-
-  logs.push("[LLM] All questions asked or fields filled. No further questions.");
-  return null;
-};
 
 
 
