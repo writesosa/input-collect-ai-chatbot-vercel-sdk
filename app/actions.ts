@@ -245,11 +245,11 @@ if (currentRecordId) {
         recordFields[safeRecordId] = {
           ...record,
           [key]: sanitizedFields[key], // Add or update with new value
-        };
-      }
-    });
-  }
+              };
+    }
+  });
 }
+
 
 
 
