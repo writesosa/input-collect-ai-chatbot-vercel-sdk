@@ -47,7 +47,7 @@ const extractAndRefineFields = async (
     system: `You are a Wonderland assistant extracting any available account details from user input.
       Respond with a JSON object formatted as follows:
       {
-        "Name": "Anything that resembles an account, account name, company name, name for a record or something the user designates as a name for the session.",
+        "Name": "Anything that resembles a name, account name, company name, record name or something (like a website) that the user designates as the name.",
         "Client Company Name": "The name of the company, account or record.",
         "Website": "Any website URL, if mentioned that isn't Facebook or Instagram.",
         "Instagram": "An Instagram handle or link, if mentioned.",
@@ -60,7 +60,6 @@ const extractAndRefineFields = async (
         "Primary Objective": "Any main purpose or goal of creating this account."
       }
       Only return valid links for Website, Instagram, Facebook and Blog and format them if they are invalid.
-      The Name, Company Name or Website may be the same, check the previous user message if unsure to see what they are responding to.
       Guess the industry from information available if possible.`,
     messages: [{ role: "user", content: combinedMessage }],
     maxToolRoundtrips: 1,
