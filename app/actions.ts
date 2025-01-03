@@ -317,13 +317,22 @@ export async function continueConversation(history: Message[]) {
   const extractedFields = await extractAndRefineFields(userMessage, logs);
 
   // Merge new fields into recordFields
-  if (currentRecordId) {
-    recordFields[currentRecordId] = {
-      ...recordFields[currentRecordId],
-      ...cleanFields(extractedFields),
-    };
-    logs.push(`[LLM] Updated fields for record ID ${currentRecordId}: ${JSON.stringify(recordFields[currentRecordId])}`);
+if (currentRecordId) {
+  // Merge new fields into recordFields
+  recordFields[currentRecordId] = {
+    ...recordFields[currentRecordId],
+    ...cleanFields(extractedFields),
+  };
+  logs.push(`[LLM] Updated fields for record ID ${currentRecordId}: ${JSON.stringify(recordFields[currentRecordId])}`);
+
+  // Sync updated fields to Airtable
+  try {
+    await updateRecordFields(currentRecordId, cleanFields(extractedFields), logs);
+    logs.push(`[LLM] Synced new fields to Airtable for record ID ${currentRecordId}`);
+  } catch (syncError) {
+    logs.push(`[LLM] Error syncing new fields to Airtable: ${syncError instanceof Error ? syncError.message : syncError}`);
   }
+}
 
   // Validate the presence of required fields (Name or Client Company Name)
   if (!currentRecordId && (!extractedFields.Name || !extractedFields["Client Company Name"])) {
