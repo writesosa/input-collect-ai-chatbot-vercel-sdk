@@ -370,36 +370,6 @@ if (!currentRecordId && extractedFields.Name) {
 }
 
 
-
-      if (currentRecordId) {
-        logs.push(`[LLM] Preparing to invoke getNextQuestion for record ID: ${currentRecordId}`);
-        questionToAsk = getNextQuestion(currentRecordId, logs);
-
-        if (!questionToAsk) {
-          logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
-          try {
-            await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
-          } catch (syncError) {
-            logs.push(`[LLM] Failed to sync fields: ${
-              syncError instanceof Error ? syncError.message : syncError
-            }`);
-          }
-
-          logs.push("[LLM] No more questions to ask. Account creation is complete.");
-          return {
-            messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
-            logs,
-          };
-        }
-
-        logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
-        return {
-          messages: [...history, { role: "assistant", content: questionToAsk }],
-          logs,
-        };
-      }
-    }
-
     if (currentRecordId) {
   logs.push("[LLM] Preparing to invoke getNextQuestion...");
   questionToAsk = getNextQuestion(currentRecordId, logs);
@@ -535,13 +505,7 @@ const createAccount = tool({
     }
   },
 });
-
 const getNextQuestion = (recordId: string, logs: string[]): string | null => {
-  if (!recordFields[recordId]) {
-    logs.push(`[LLM] Record fields for ID ${recordId} not initialized. Initializing...`);
-    recordFields[recordId] = { questionsAsked: [] };
-  }
-
   const questions = [
     {
       progress: 0,
@@ -571,13 +535,17 @@ const getNextQuestion = (recordId: string, logs: string[]): string | null => {
     );
 
     if (anyFieldMissing) {
-      logs.push(`[LLM] Missing fields detected. Asking: "${question.prompt}"`);
-      recordFields[recordId].questionsAsked.push(question.prompt);
+      logs.push(`[LLM] Missing fields detected for progress ${question.progress}. Asking: "${question.prompt}"`);
+      recordFields[recordId].questionsAsked = [
+        ...(recordFields[recordId]?.questionsAsked || []),
+        question.prompt,
+      ];
       return question.prompt;
     }
+
+    logs.push(`[LLM] All fields complete for progress ${question.progress}. Skipping question.`);
   }
 
   logs.push("[LLM] All questions asked or fields filled. No further questions.");
   return null;
 };
-
