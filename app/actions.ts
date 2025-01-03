@@ -43,20 +43,22 @@ const extractAndRefineFields = async (
 
   const extractionResponse = await generateText({
     model: openai("gpt-4o"),
-    system: `You are a Wonderland assistant extracting account details.
+    system: `You are a Wonderland assistant extracting any available account details from user input.
+      Touch up the messages before extracting to ensure correct punctuation, capitalization.
+      If the extracted value is a url or link make sure its completed and in valid format.
       Respond with a JSON object formatted as follows and **nothing else**:
       {
-        "Name": "...",
-        "Client Company Name": "...",
-        "Website": "...",
-        "Instagram": "...",
-        "Facebook": "...",
-        "Blog": "...",
-        "Description": "...",
-        "About the Client": "...",
-        "Industry": "...",
-        "Talking Points": "...",
-        "Primary Objective": "..."
+        "Name": "Anything that sounds like an account name, company name, name for a record or something the user designates as a name.",
+        "Client Company Name": "The name of the company, account or record.",
+        "Website": "A website URL, if mentioned.",
+        "Instagram": "An Instagram handle or link, if mentioned.",
+        "Facebook": "A Facebook handle or link, if mentioned.",
+        "Blog": "A blog URL, if mentioned.",
+        "Description": "Anything that sounds like a description for the record being created.",
+        "About the Client": "Any information supplied about the client or company.",
+        "Industry": "Any mention of industry, domain, or sector.",
+        "Talking Points": "Any objectives or talking points, if mentioned.",
+        "Primary Objective": "Any main purpose or goal of creating this account."
       }
       Ensure the JSON is properly formatted, contains no extraneous text, and adheres to the schema exactly.`,
     messages: [{ role: "user", content: combinedMessage }],
@@ -78,7 +80,11 @@ const extractAndRefineFields = async (
       throw new Error("No valid JSON structure found in AI response.");
     }
   } catch (error) {
-    logs.push(`[LLM] Parsing failed: ${error.message}. Defaulting to empty.`);
+    if (error instanceof Error) {
+      logs.push(`[LLM] Parsing failed: ${error.message}. Defaulting to empty.`);
+    } else {
+      logs.push("[LLM] Parsing failed: An unknown error occurred. Defaulting to empty.");
+    }
   }
 
   lastExtractedFields = { ...lastExtractedFields, ...extractedFields }; // Merge with previously extracted fields
