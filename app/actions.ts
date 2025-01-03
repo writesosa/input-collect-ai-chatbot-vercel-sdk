@@ -1,5 +1,3 @@
-actions.ts
-
 // Existing script with updates applied
 
 "use server";
