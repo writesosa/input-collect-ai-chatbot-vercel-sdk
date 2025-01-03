@@ -27,7 +27,6 @@ const toTitleCase = (str: string): string =>
 // Helper: Clean Undefined Fields
 const cleanFields = (fields: Record<string, any>) =>
   Object.fromEntries(Object.entries(fields).filter(([_, value]) => value !== undefined));
-
 const extractAndRefineFields = async (
   message: string,
   logs: string[],
@@ -42,30 +41,58 @@ const extractAndRefineFields = async (
 
   const combinedMessage = previousMessage ? `${previousMessage} ${message}` : message;
 
-  const extractionResponse = await generateText({
-    model: openai("gpt-4o"),
-    system: `You are a Wonderland assistant extracting account details.
-      Extract the following fields from the user's message if available:
+  let extractionResponse = null;
+  let retryAttempt = 0;
+  const maxRetries = 3;
 
-      {
-        "Name": "Anything that sounds like an account name, company name, name for a record or something the user designates as a name.",
-        "Client Company Name": "The name of the company, account or record.",
-        "Website": "A website URL, if mentioned.",
-        "Instagram": "An Instagram handle or link, if mentioned.",
-        "Facebook": "A Facebook handle or link, if mentioned.",
-        "Blog": "A blog URL, if mentioned.",
-        "Description": "Anything that sounds like a description for the record being created.",
-        "About the Client": "Any information supplied about the client or company.",
-        "Industry": "Any mention of industry, domain, or sector.",
-        "Talking Points": "Any objectives or talking points, if mentioned.",
-        "Primary Objective": "Any main purpose or goal of creating this account."
+  while (retryAttempt < maxRetries) {
+    try {
+      extractionResponse = await generateText({
+        model: openai("gpt-4o"),
+        system: `You are a Wonderland assistant extracting account details.
+          Extract the following fields from the user's message if available:
+
+          {
+            "Name": "Anything that sounds like an account name, company name, name for a record or something the user designates as a name.",
+            "Client Company Name": "The name of the company, account or record.",
+            "Website": "A website URL, if mentioned.",
+            "Instagram": "An Instagram handle or link, if mentioned.",
+            "Facebook": "A Facebook handle or link, if mentioned.",
+            "Blog": "A blog URL, if mentioned.",
+            "Description": "Anything that sounds like a description for the record being created.",
+            "About the Client": "Any information supplied about the client or company.",
+            "Industry": "Any mention of industry, domain, or sector.",
+            "Talking Points": "Any objectives or talking points, if mentioned.",
+            "Primary Objective": "Any main purpose or goal of creating this account."
+          }
+          Always extract all fields mentioned in the message. Do not return empty fields.
+          Rewrite the extracted fields for clarity and completeness.
+          Respond with a JSON object strictly following this schema.`,
+        messages: [{ role: "user", content: combinedMessage }],
+        maxToolRoundtrips: 1,
+      });
+
+      if (extractionResponse?.text?.trim()) {
+        logs.push(`[LLM] GPT Response: ${extractionResponse.text}`);
+        break; // Exit retry loop if a valid response is received
+      } else {
+        throw new Error("Null or empty response from GPT.");
       }
-      Always extract all fields mentioned in the message. Do not return empty fields.
-      Rewrite the extracted fields for clarity and completeness.
-      Respond with a JSON object strictly following this schema.`,
-    messages: [{ role: "user", content: combinedMessage }],
-    maxToolRoundtrips: 1,
-  });
+    } catch (error) {
+      retryAttempt++;
+      logs.push(`[LLM] Attempt ${retryAttempt} failed. Reason: ${error instanceof Error ? error.message : "Unknown error."}`);
+      if (retryAttempt < maxRetries) {
+        logs.push(`[LLM] Retrying... (${retryAttempt}/${maxRetries})`);
+      } else {
+        logs.push("[LLM] Max retry attempts reached. Unable to extract fields.");
+      }
+    }
+  }
+
+  if (!extractionResponse?.text?.trim()) {
+    logs.push("[LLM] Final failure: Null or empty GPT response. Defaulting to empty fields.");
+    return {};
+  }
 
   let extractedFields: Record<string, string> = {};
 
@@ -74,22 +101,7 @@ const extractAndRefineFields = async (
     extractedFields = JSON.parse(extractionResponse.text.trim());
     logs.push(`[LLM] Extracted fields successfully parsed: ${JSON.stringify(extractedFields)}`);
   } catch (error) {
-    logs.push("[LLM] Initial parsing failed. Attempting retry...");
-
-    // Retry parsing logic
-    const jsonStart = extractionResponse.text.indexOf("{");
-    const jsonEnd = extractionResponse.text.lastIndexOf("}") + 1;
-    if (jsonStart !== -1 && jsonEnd !== -1) {
-      try {
-        const retryJson = extractionResponse.text.substring(jsonStart, jsonEnd);
-        extractedFields = JSON.parse(retryJson);
-        logs.push(`[LLM] Retry successful. Parsed fields: ${JSON.stringify(extractedFields)}`);
-      } catch (retryError) {
-        logs.push("[LLM] Retry failed. Defaulting to empty.");
-      }
-    } else {
-      logs.push("[LLM] No JSON structure found in response. Defaulting to empty.");
-    }
+    logs.push("[LLM] Parsing GPT response failed. Returning empty fields.");
   }
 
   lastExtractedFields = { ...lastExtractedFields, ...extractedFields }; // Merge with previously extracted fields
