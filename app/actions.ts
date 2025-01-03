@@ -255,7 +255,6 @@ if (currentRecordId && recordFields[currentRecordId]) {
   });
 }
 
-}
 
 
     // Perform the Airtable update
