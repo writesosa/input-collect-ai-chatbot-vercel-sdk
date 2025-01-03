@@ -27,7 +27,6 @@ const toTitleCase = (str: string): string =>
 // Helper: Clean Undefined Fields
 const cleanFields = (fields: Record<string, any>) =>
   Object.fromEntries(Object.entries(fields).filter(([_, value]) => value !== undefined));
-
 const extractAndRefineFields = async (
   message: string,
   logs: string[],
@@ -45,51 +44,41 @@ const extractAndRefineFields = async (
   const extractionResponse = await generateText({
     model: openai("gpt-4o"),
     system: `You are a Wonderland assistant extracting account details.
-      Extract the following fields from the user's message if available:
-
+      Respond with a JSON object formatted as follows and **nothing else**:
       {
-        "Name": "Anything that sounds like an account name, company name, name for a record or something the user designates as a name.",
-        "Client Company Name": "The name of the company, account or record.",
-        "Website": "A website URL, if mentioned.",
-        "Instagram": "An Instagram handle or link, if mentioned.",
-        "Facebook": "A Facebook handle or link, if mentioned.",
-        "Blog": "A blog URL, if mentioned.",
-        "Description": "Anything that sounds like a description for the record being created.",
-        "About the Client": "Any information supplied about the client or company.",
-        "Industry": "Any mention of industry, domain, or sector.",
-        "Talking Points": "Any objectives or talking points, if mentioned.",
-        "Primary Objective": "Any main purpose or goal of creating this account."
+        "Name": "...",
+        "Client Company Name": "...",
+        "Website": "...",
+        "Instagram": "...",
+        "Facebook": "...",
+        "Blog": "...",
+        "Description": "...",
+        "About the Client": "...",
+        "Industry": "...",
+        "Talking Points": "...",
+        "Primary Objective": "..."
       }
-      Always extract all fields mentioned in the message. Do not return empty fields.
-      Rewrite the extracted fields for clarity and completeness.
-      Respond with a JSON object strictly following this schema.`,
+      Ensure the JSON is properly formatted, contains no extraneous text, and adheres to the schema exactly.`,
     messages: [{ role: "user", content: combinedMessage }],
     maxToolRoundtrips: 1,
   });
 
   let extractedFields: Record<string, string> = {};
+  const responseText = extractionResponse.text.trim();
 
   try {
-    logs.push(`[LLM] Full AI Response: ${extractionResponse.text}`);
-    extractedFields = JSON.parse(extractionResponse.text.trim());
-    logs.push(`[LLM] Extracted fields successfully parsed: ${JSON.stringify(extractedFields)}`);
-  } catch (error) {
-    logs.push("[LLM] Initial parsing failed. Attempting retry...");
+    logs.push(`[LLM] Full AI Response: ${responseText}`);
 
-    // Retry parsing logic
-    const jsonStart = extractionResponse.text.indexOf("{");
-    const jsonEnd = extractionResponse.text.lastIndexOf("}") + 1;
-    if (jsonStart !== -1 && jsonEnd !== -1) {
-      try {
-        const retryJson = extractionResponse.text.substring(jsonStart, jsonEnd);
-        extractedFields = JSON.parse(retryJson);
-        logs.push(`[LLM] Retry successful. Parsed fields: ${JSON.stringify(extractedFields)}`);
-      } catch (retryError) {
-        logs.push("[LLM] Retry failed. Defaulting to empty.");
-      }
+    // Use regex to extract the JSON object
+    const jsonMatch = responseText.match(/\{.*?\}/s);
+    if (jsonMatch) {
+      extractedFields = JSON.parse(jsonMatch[0]);
+      logs.push(`[LLM] Extracted fields successfully parsed: ${JSON.stringify(extractedFields)}`);
     } else {
-      logs.push("[LLM] No JSON structure found in response. Defaulting to empty.");
+      throw new Error("No valid JSON structure found in AI response.");
     }
+  } catch (error) {
+    logs.push(`[LLM] Parsing failed: ${error.message}. Defaulting to empty.`);
   }
 
   lastExtractedFields = { ...lastExtractedFields, ...extractedFields }; // Merge with previously extracted fields
