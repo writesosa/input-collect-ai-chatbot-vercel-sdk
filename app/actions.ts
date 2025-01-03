@@ -282,36 +282,37 @@ export async function continueConversation(history: Message[]) {
 
     // Step 2: Handle "Unknown" Intent
     if (userIntent === "unknown") {
-      logs.push("[LLM] Unknown intent detected. Reinterpreting input...");
-      const retryResponse = await generateText({
-        model: openai("gpt-4o"),
-        system: `You are a Wonderland assistant.
-          Retry understanding the user message within the current workflow context.
-          If still unclear, prompt the user for more information.`,
-        messages: history,
-      });
+  logs.push("[LLM] Unknown intent detected. Reinterpreting input...");
 
-      const reinterpretedIntent = retryResponse.text.trim();
-      logs.push(`[LLM] Reinterpreted intent: ${reinterpretedIntent}`);
+  const retryResponse = await generateText({
+    model: openai("gpt-4o"),
+    system: `You are a Wonderland assistant.
+      Retry understanding the user message within the current workflow context.
+      If still unclear, prompt the user for more information.`,
+    messages: history,
+  });
 
-      if (reinterpretedIntent === "unknown") {
-        logs.push("[LLM] Reinterpretation failed. Prompting user for clarification...");
-        return {
-          messages: [
-            ...history,
-            {
-              role: "assistant",
-              content: "I didn't quite understand that. Could you clarify your request?",
-            },
-          ],
-          logs,
-        };
-      }
+  const reinterpretedIntent = retryResponse.text.trim();
+  logs.push(`[LLM] Reinterpreted intent: ${reinterpretedIntent}`);
 
-      logs.push("[LLM] Successfully reinterpreted. Resuming workflow...");
-      history.push({ role: "system", content: `Reinterpreted intent: ${reinterpretedIntent}` });
-      return await continueConversation(history);
-    }
+  if (reinterpretedIntent === "unknown") {
+    logs.push("[LLM] Reinterpretation failed. Prompting user for clarification...");
+    return {
+      messages: [
+        ...history,
+        {
+          role: "assistant",
+          content: "I didn't quite understand that. Could you clarify your request?",
+        },
+      ],
+      logs,
+    };
+  }
+
+  logs.push("[LLM] Successfully reinterpreted intent. Routing to appropriate workflow...");
+  history.push({ role: "assistant", content: `Reinterpreted intent: ${reinterpretedIntent}` }); // Changed "system" to "assistant"
+  return await continueConversation(history);
+}
 
     // Step 3: Handle "Account Creation" Intent
     if (userIntent === "account_creation") {
