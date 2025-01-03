@@ -243,14 +243,17 @@ if (currentRecordId) {
       Object.entries(extractedFields).filter(([key, value]) => value !== null && value !== "")
     );
 
-    Object.keys(sanitizedFields).forEach((key) => {
-      if (!recordFields[currentRecordId]?.[key] || recordFields[currentRecordId][key] !== sanitizedFields[key]) {
-        recordFields[currentRecordId] = {
-          ...recordFields[currentRecordId],
-          [key]: sanitizedFields[key], // Add or update with new value
-        };
-      }
-    });
+if (currentRecordId && recordFields[currentRecordId]) {
+  Object.keys(sanitizedFields).forEach((key) => {
+    if (!recordFields[currentRecordId][key] || recordFields[currentRecordId][key] !== sanitizedFields[key]) {
+      recordFields[currentRecordId] = {
+        ...recordFields[currentRecordId],
+        [key]: sanitizedFields[key], // Add or update with new value
+      };
+    }
+  });
+}
+
 
     // Perform the Airtable update
     await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
