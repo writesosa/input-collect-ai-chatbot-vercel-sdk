@@ -1,3 +1,5 @@
+actions.ts
+
 // Existing script with updates applied
 
 "use server";
@@ -20,17 +22,19 @@ let currentRecordId: string | null = null;
 let creationProgress: number | null = null; // Track user progress in account creation
 let lastExtractedFields: Record<string, any> | null = null; // Remember the last extracted fields
 
-// Helper: Sanitize null or undefined fields
-const sanitizeFields = (fields: Record<string, any>): Record<string, any> => {
-  return Object.fromEntries(
-    Object.entries(fields).filter(([_, value]) => value != null && value !== "")
-  );
-};
+// Helper: Convert string to Title Case
+const toTitleCase = (str: string): string =>
+  str.replace(/\w\S*/g, (word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
+
+// Helper: Clean Undefined Fields
+const cleanFields = (fields: Record<string, any>) =>
+  Object.fromEntries(Object.entries(fields).filter(([_, value]) => value !== undefined));
+
 const extractAndRefineFields = async (
   message: string,
   logs: string[],
   previousMessage?: string
-): Promise<Record<string, any>> => {
+): Promise<Record<string, string>> => {
   logs.push("[LLM] Extracting account fields from user message...");
 
   if (!message || message.trim() === "") {
@@ -39,57 +43,63 @@ const extractAndRefineFields = async (
   }
 
   const combinedMessage = previousMessage ? `${previousMessage} ${message}` : message;
-  let extractedFields: Record<string, any> = {};
-  let extractionResponse: { text: string } | null = null;
+
+  const extractionResponse = await generateText({
+    model: openai("gpt-4o"),
+    system: `You are a Wonderland assistant extracting account details.
+      Extract the following fields from the user's message if available:
+
+      {
+        "Name": "Anything that sounds like an account name, company name, name for a record or something the user designates as a name.",
+        "Client Company Name": "The name of the company, account or record.",
+        "Website": "A website URL, if mentioned.",
+        "Instagram": "An Instagram handle or link, if mentioned.",
+        "Facebook": "A Facebook handle or link, if mentioned.",
+        "Blog": "A blog URL, if mentioned.",
+        "Description": "Anything that sounds like a description for the record being created.",
+        "About the Client": "Any information supplied about the client or company.",
+        "Industry": "Any mention of industry, domain, or sector.",
+        "Talking Points": "Any objectives or talking points, if mentioned.",
+        "Primary Objective": "Any main purpose or goal of creating this account."
+      }
+      Always extract all fields mentioned in the message. Do not return empty fields.
+      Rewrite the extracted fields for clarity and completeness.
+      Respond with a JSON object strictly following this schema.`,
+    messages: [{ role: "user", content: combinedMessage }],
+    maxToolRoundtrips: 1,
+  });
+
+  let extractedFields: Record<string, string> = {};
 
   try {
-    extractionResponse = await generateText({
-      model: openai("gpt-4o"),
-      system: `You are a Wonderland assistant extracting account details.
-        Extract the following fields from the user's message if available:
-        {
-          "Name": "Account or company name.",
-          "Client Company Name": "The company associated.",
-          "Website": "A website URL.",
-          "Instagram": "An Instagram handle or link.",
-          "Facebook": "A Facebook handle or link.",
-          "Blog": "A blog URL.",
-          "Description": "Description for the account.",
-          "Industry": "Mention of industry.",
-          "Talking Points": "Objectives or talking points.",
-          "Primary Objective": "Main purpose or goal."
-        }
-        Always respond with a JSON object strictly following this schema.`,
-      messages: [{ role: "user", content: combinedMessage }],
-      maxToolRoundtrips: 1,
-    });
-
     logs.push(`[LLM] Full AI Response: ${extractionResponse.text}`);
     extractedFields = JSON.parse(extractionResponse.text.trim());
     logs.push(`[LLM] Extracted fields successfully parsed: ${JSON.stringify(extractedFields)}`);
   } catch (error) {
     logs.push("[LLM] Initial parsing failed. Attempting retry...");
 
-    if (extractionResponse && extractionResponse.text) {
-      const jsonStart = extractionResponse.text.indexOf("{");
-      const jsonEnd = extractionResponse.text.lastIndexOf("}") + 1;
-
-      if (jsonStart !== -1 && jsonEnd !== -1) {
-        try {
-          const retryJson = extractionResponse.text.substring(jsonStart, jsonEnd);
-          extractedFields = JSON.parse(retryJson);
-          logs.push(`[LLM] Retry successful. Parsed fields: ${JSON.stringify(extractedFields)}`);
-        } catch (retryError) {
-          logs.push("[LLM] Retry failed. Defaulting to empty.");
-        }
-      } else {
-        logs.push("[LLM] No JSON structure found in response. Defaulting to empty.");
+    // Retry parsing logic
+    const jsonStart = extractionResponse.text.indexOf("{");
+    const jsonEnd = extractionResponse.text.lastIndexOf("}") + 1;
+    if (jsonStart !== -1 && jsonEnd !== -1) {
+      try {
+        const retryJson = extractionResponse.text.substring(jsonStart, jsonEnd);
+        extractedFields = JSON.parse(retryJson);
+        logs.push(`[LLM] Retry successful. Parsed fields: ${JSON.stringify(extractedFields)}`);
+      } catch (retryError) {
+        logs.push("[LLM] Retry failed. Defaulting to empty.");
       }
+    } else {
+      logs.push("[LLM] No JSON structure found in response. Defaulting to empty.");
     }
   }
 
-  return sanitizeFields({ ...lastExtractedFields, ...extractedFields });
+  lastExtractedFields = { ...lastExtractedFields, ...extractedFields }; // Merge with previously extracted fields
+  return extractedFields;
 };
+
+
+
 export async function continueConversation(history: Message[]) {
   const logs: string[] = [];
   const fieldsToUpdate: Record<string, any> = {};
@@ -150,30 +160,32 @@ export async function continueConversation(history: Message[]) {
 
       const userMessage = history[history.length - 1]?.content.trim() || "";
       const extractedFields = await extractAndRefineFields(userMessage, logs);
-
-      // Update immediately upon receiving user input
-      if (currentRecordId && extractedFields) {
-        logs.push(`[LLM] Immediately updating Airtable for record ID: ${currentRecordId} with extracted fields.`);
-        try {
-          const fieldsToUpdate = Object.fromEntries(
-            Object.entries(extractedFields).filter(([key]) => key !== "questionsAsked")
-          );
-          await updateRecordFields(currentRecordId, fieldsToUpdate, logs);
-          logs.push(`[LLM] Field updated for record ID ${currentRecordId}: ${JSON.stringify(fieldsToUpdate)}`);
-        } catch (error) {
-          logs.push(`[LLM] Failed to update Airtable for record ID ${currentRecordId}: ${
-            error instanceof Error ? error.message : "Unknown error."
-          }`);
+        // Update immediately upon receiving user input
+        if (currentRecordId && extractedFields) {
+          logs.push(`[LLM] Immediately updating Airtable for record ID: ${currentRecordId} with extracted fields.`);
+          try {
+            // Exclude questionsAsked from the update payload
+            const fieldsToUpdate = Object.fromEntries(
+              Object.entries(extractedFields).filter(([key]) => key !== "questionsAsked")
+            );
+            await updateRecordFields(currentRecordId, fieldsToUpdate, logs);
+            logs.push(`[LLM] Field updated for record ID ${currentRecordId}: ${JSON.stringify(fieldsToUpdate)}`);
+          } catch (error) {
+            logs.push(`[LLM] Failed to update Airtable for record ID ${currentRecordId}: ${
+              error instanceof Error ? error.message : "Unknown error."
+            }`);
+          }
         }
-      }
 
-      // Ensure questions are tracked internally and not synced with Airtable
-      if (currentRecordId && !recordFields[currentRecordId]?.questionsAsked) {
-        recordFields[currentRecordId] = {
-          ...recordFields[currentRecordId],
-          questionsAsked: [],
-        };
-      }
+        // Ensure questions are tracked internally and not synced with Airtable
+        if (currentRecordId && !recordFields[currentRecordId]?.questionsAsked) {
+          recordFields[currentRecordId] = {
+            ...recordFields[currentRecordId],
+            questionsAsked: [],
+          };
+        }
+
+
 
       // If Name or equivalent is missing, prompt the user for it
       if (!currentRecordId && !extractedFields.Name) {
@@ -193,13 +205,13 @@ export async function continueConversation(history: Message[]) {
       if (!currentRecordId && extractedFields.Name) {
         logs.push("[LLM] Creating new record because currentRecordId is null or invalid.");
         try {
-          const createResponse = await createAccount.execute({
-            ...Object.fromEntries(
-              Object.entries(sanitizeFields(extractedFields)).filter(([key]) => key !== "questionsAsked")
-            ),
-            Name: extractedFields.Name,
-            Status: "Draft",
-          });
+              const createResponse = await createAccount.execute({
+                ...Object.fromEntries(
+                  Object.entries(cleanFields(extractedFields)).filter(([key]) => key !== "questionsAsked")
+                ), // Exclude questionsAsked field
+                Name: extractedFields.Name,
+                Status: "Draft",
+              });
 
           if (createResponse?.recordId) {
             currentRecordId = createResponse.recordId;
@@ -250,6 +262,46 @@ export async function continueConversation(history: Message[]) {
           logs,
         };
       }
+
+      if (!questionAsked && currentRecordId) {
+        logs.push("[LLM] Re-checking for unanswered questions...");
+
+        const allQuestions = [
+          "Can you share any of the following for the company: Website, Instagram, Facebook, or Blog?",
+          "Can you tell me more about the company, including its industry, purpose, or mission?",
+          "What are the major objectives or talking points you'd like to achieve with Wonderland?",
+        ];
+
+        let unaskedQuestions: string[] = [];
+        if (currentRecordId !== null && recordFields[currentRecordId]) {
+          const record = recordFields[currentRecordId];
+          unaskedQuestions = allQuestions.filter(
+            (q) => !record.questionsAsked?.includes(q)
+          );
+        } else {
+          logs.push("[LLM] currentRecordId is null or recordFields[currentRecordId] is undefined.");
+        }
+
+        if (unaskedQuestions.length > 0) {
+          const nextUnaskedQuestion = unaskedQuestions[0];
+          logs.push(`[LLM] Re-asking missing question: "${nextUnaskedQuestion}"`);
+          recordFields[currentRecordId].questionsAsked = [
+            ...(recordFields[currentRecordId]?.questionsAsked || []),
+            nextUnaskedQuestion,
+          ];
+          return {
+            messages: [...history, { role: "assistant", content: nextUnaskedQuestion }],
+            logs,
+          };
+        }
+        logs.push("[LLM] Fallback confirmed all questions were asked.");
+      }
+
+      logs.push("[LLM] No more questions to ask. Account creation complete.");
+      return {
+        messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
+        logs,
+      };
     }
   } catch (error) {
     logs.push(`[LLM] Error during conversation: ${error instanceof Error ? error.message : "Unknown error occurred."}`);
@@ -259,7 +311,6 @@ export async function continueConversation(history: Message[]) {
     };
   }
 }
-
 
 
 
@@ -346,7 +397,7 @@ const getNextQuestion = (recordId: string, logs: string[]): string | null => {
     {
       progress: 1,
       prompt: "Can you tell me more about the company, including its industry, purpose, or mission?",
-      fields: ["Description", "Industry"],
+      fields: ["Description", "About the Client", "Industry"],
     },
     {
       progress: 2,
@@ -356,60 +407,82 @@ const getNextQuestion = (recordId: string, logs: string[]): string | null => {
   ];
 
   for (const question of questions) {
+    // Skip if already asked
     if (recordFields[recordId]?.questionsAsked?.includes(question.prompt)) {
       logs.push(`[LLM] Question already asked: "${question.prompt}"`);
       continue;
     }
 
+    // Check if any associated fields are missing
     const anyFieldMissing = question.fields.some(
       (field) => !recordFields[recordId]?.[field] || recordFields[recordId][field].trim() === ""
     );
 
     if (anyFieldMissing) {
-      logs.push(`[LLM] Missing fields detected. Asking: "${question.prompt}"`);
+      logs.push(`[LLM] Missing fields detected for progress ${question.progress}. Asking: "${question.prompt}"`);
       recordFields[recordId].questionsAsked = [
         ...(recordFields[recordId].questionsAsked || []),
         question.prompt,
-      ];
+      ]; // Persist question tracking
       return question.prompt;
     }
+
+    logs.push(`[LLM] All fields complete for progress ${question.progress}. Skipping question.`);
   }
 
   logs.push("[LLM] All questions asked or fields filled. No further questions.");
   return null;
 };
 
+
+
+
+// Helper: Update record fields and prevent redundant updates
+const recordFields: Record<string, Record<string, any>> = {};
 const updateRecordFields = async (
   recordId: string,
   newFields: Record<string, any>,
   logs: string[]
-): Promise<void> => {
+) => {
   if (!recordFields[recordId]) {
     recordFields[recordId] = {};
   }
 
-  const sanitizedFields = sanitizeFields(newFields);
+  // Filter out `questionsAsked` and sanitize fields
+  const sanitizedFields = Object.fromEntries(
+    Object.entries(newFields).filter(([key, value]) => key !== "questionsAsked" && value !== null && value !== "")
+  );
 
+  // Update `recordFields` with sanitized fields
   Object.entries(sanitizedFields).forEach(([key, value]) => {
-    if (!recordFields[recordId][key] || recordFields[recordId][key] !== value) {
+    if (
+      !recordFields[recordId][key] || 
+      recordFields[recordId][key] !== value
+    ) {
       recordFields[recordId][key] = value;
       logs.push(`[LLM] Field updated for record ID ${recordId}: ${key} = ${value}`);
     } else {
       logs.push(
-        `[LLM] Skipping update for field ${key} on record ID ${recordId}. Current value: ${recordFields[recordId][key]}, New value: ${value}`
+        `[LLM] Skipping update for field ${key} on record ID ${recordId}. Current value: ${
+          recordFields[recordId][key]
+        }, New value: ${value}`
       );
     }
   });
 
+  // Perform the Airtable update
   try {
     await airtableBase("Accounts").update(recordId, sanitizedFields);
     logs.push(`[LLM] Airtable updated successfully for record ID: ${recordId}`);
   } catch (error) {
     logs.push(
-      `[LLM] Failed to update Airtable for record ID ${recordId}: ${error instanceof Error ? error.message : error}`
+      `[LLM] Failed to update Airtable for record ID ${recordId}: ${
+        error instanceof Error ? error.message : error
+      }`
     );
   }
 };
+
 
 
 
