@@ -199,66 +199,118 @@ export async function continueConversation(history: Message[]) {
           logs,
         };
       }
+if (!currentRecordId && extractedFields.Name) {
+  logs.push("[LLM] Creating new record because currentRecordId is null or invalid.");
+  try {
+    // Dynamically include all extracted fields during account creation
+    const fieldsForCreation = {
+      Name: extractedFields.Name,
+      Status: "Draft",
+      ...cleanFields(extractedFields), // Includes all other extracted fields
+    };
 
-      if (!currentRecordId && extractedFields.Name) {
-        logs.push("[LLM] Creating new record because currentRecordId is null or invalid.");
-        try {
-          const createResponse = await createAccount.execute({
-            Name: extractedFields.Name,
-            "Client Company Name": extractedFields["Client Company Name"],
-            Status: "Draft",
-            ...cleanFields(extractedFields),
-          });
+    const createResponse = await createAccount.execute(fieldsForCreation);
 
-          if (createResponse?.recordId) {
-            currentRecordId = createResponse.recordId;
-            recordFields[currentRecordId] = { ...extractedFields };
-            logs.push(`[LLM] New account created successfully with ID: ${currentRecordId}`);
-          } else {
-            throw new Error("Failed to retrieve a valid record ID after account creation.");
-          }
-        } catch (error) {
-          logs.push(`[LLM] Account creation error: ${error instanceof Error ? error.message : "Unknown error"}`);
-          return {
-            messages: [
-              ...history,
-              {
-                role: "assistant",
-                content: "An error occurred while creating the account. Please try again or contact support.",
-              },
-            ],
-            logs,
-          };
-        }
-      }
+    if (createResponse?.recordId) {
+      currentRecordId = createResponse.recordId;
+      // Store extracted fields in the recordFields for tracking
+      recordFields[currentRecordId] = { ...extractedFields, questionsAsked: [] };
+      logs.push(`[LLM] New account created successfully with ID: ${currentRecordId}`);
+    } else {
+      throw new Error("Failed to retrieve a valid record ID after account creation.");
+    }
+  } catch (error) {
+    logs.push(`[LLM] Account creation error: ${error instanceof Error ? error.message : "Unknown error"}`);
+    return {
+      messages: [
+        ...history,
+        {
+          role: "assistant",
+          content: "An error occurred while creating the account. Please try again or contact support.",
+        },
+      ],
+      logs,
+    };
+  }
+}
+// Ensure updates to Airtable and recordFields are non-destructive
+if (currentRecordId) {
+  logs.push(`[LLM] Updating Airtable record ID: ${currentRecordId} with extracted fields.`);
 
-      // Ensure questions are asked in sequence
-      if (currentRecordId) {
-        logs.push("[LLM] Preparing to invoke getNextQuestion...");
-        questionToAsk = getNextQuestion(currentRecordId, logs);
-        questionAsked = !!questionToAsk;
+  try {
+    // Filter and merge new valid fields into recordFields
+    const sanitizedFields = Object.fromEntries(
+      Object.entries(extractedFields).filter(([key, value]) => value !== null && value !== "")
+    );
 
-        if (!questionToAsk) {
-          logs.push(`[LLM] Syncing record fields before marking account creation as complete for record ID: ${currentRecordId}`);
-          try {
-            await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
-          } catch (syncError) {
-            logs.push(`[LLM] Failed to sync fields: ${syncError instanceof Error ? syncError.message : syncError}`);
-          }
+if (currentRecordId && recordFields[currentRecordId]) {
+  const record = recordFields[currentRecordId]; // Access once and reuse safely
+  Object.keys(sanitizedFields).forEach((key) => {
+    if (!record[key] || record[key] !== sanitizedFields[key]) {
+      recordFields[currentRecordId] = {
+        ...record,
+        [key]: sanitizedFields[key], // Add or update with new value
+      };
+    }
+  });
+}
 
-          logs.push("[LLM] No more questions to ask. All fields have been captured.");
-          return {
-            messages: [...history, { role: "assistant", content: "The account creation process is complete." }],
-            logs,
-          };
-        }
 
-        logs.push(`[LLM] Generated next question: "${questionToAsk}"`);
-        return {
-          messages: [...history, { role: "assistant", content: questionToAsk }],
-          logs,
-        };
-      }
+
+
+    // Perform the Airtable update
+    await updateRecordFields(currentRecordId, recordFields[currentRecordId], logs);
+
+    logs.push(`[LLM] Fields updated successfully for record ID: ${currentRecordId}`);
+  } catch (updateError) {
+    logs.push(`[LLM] Initial update failed for record ID ${currentRecordId}: ${
+      updateError instanceof Error ? updateError.message : "Unknown error"
+    }`);
+
+    // Retry Logic
+    try {
+      logs.push("[LLM] Retrying field update...");
+      const retryFields = {
+        ...recordFields[currentRecordId], // Use last known valid state
+        ...Object.fromEntries(
+          Object.entries(extractedFields).filter(([key, value]) => value !== null && value !== "")
+        ),
+      };
+
+      await updateRecordFields(currentRecordId, retryFields, logs);
+      logs.push(`[LLM] Retry successful for record ID: ${currentRecordId}`);
+    } catch (retryError) {
+      logs.push(`[LLM] Retry failed for record ID ${currentRecordId}: ${
+        retryError instanceof Error ? retryError.message : "Unknown error"
+      }`);
+      return {
+        messages: [
+          ...history,
+          { role: "assistant", content: "An error occurred while syncing the account fields. Please try again later." },
+        ],
+        logs,
+      };
+    }
+  }
+}
+
+// Ensure extractedFields is updated without overwriting with null or empty values
+const sanitizedFields = Object.fromEntries(
+  Object.entries(extractedFields).filter(([key, value]) => value !== null && value !== "")
+);
+
+Object.keys(sanitizedFields).forEach((key) => {
+  // Only add new fields or update existing ones if the value is non-null and non-empty
+if (currentRecordId && (!recordFields[currentRecordId]?.[key] || recordFields[currentRecordId][key] !== sanitizedFields[key])) {
+    recordFields[currentRecordId] = {
+      ...recordFields[currentRecordId],
+      [key]: sanitizedFields[key],
+    };
+  }
+});
+
+
+
 
       if (!questionAsked && currentRecordId) {
         logs.push("[LLM] Re-checking for unanswered questions...");
@@ -310,9 +362,6 @@ export async function continueConversation(history: Message[]) {
 }
 
 
-
-
-// Avoid filling defaults for optional fields during account creation
 const createAccount = tool({
   description: "Create a new account in Wonderland with comprehensive details.",
   parameters: z.object({
@@ -323,7 +372,7 @@ const createAccount = tool({
     Instagram: z.string().optional(),
     Facebook: z.string().optional(),
     Blog: z.string().optional(),
-        "Client Company Name": z.string().optional(),
+    "Client Company Name": z.string().optional(),
     "Primary Objective": z.string().optional(),
     "Talking Points": z.string().optional(),
   }),
@@ -351,12 +400,9 @@ const createAccount = tool({
         recordId = existingDraft[0].id;
         logs.push(`[TOOL] Reusing existing draft account with Record ID: ${recordId}`);
       } else {
-        const record = await airtableBase("Accounts").create({
-          Name: fields.Name,
-          Status: fields.Status || "Draft",
-        });
+        const record = await airtableBase("Accounts").create(fields);
         recordId = record.id;
-        logs.push(`[TOOL] New draft account created with Record ID: ${recordId}`);
+        logs.push(`[TOOL] New account created with Record ID: ${recordId}`);
       }
 
       return {
