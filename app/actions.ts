@@ -92,32 +92,8 @@ const extractAndRefineFields = async (
   }
 
 lastExtractedFields = { ...(lastExtractedFields || {}), ...(extractedFields || {}) };
-logs.push(`[LLM] Final merged fields: ${JSON.stringify(lastExtractedFields)}`);
-
-if (currentRecordId && extractedFields) {
-  logs.push(`[LLM] Immediately updating Airtable for record ID: ${currentRecordId} with extracted fields.`);
-  try {
-    // Exclude `questionsAsked` and filter out empty fields
-    const fieldsToUpdate = Object.fromEntries(
-      Object.entries(extractedFields).filter(([key, value]) => key !== "questionsAsked" && value.trim() !== "")
-    );
-
-    if (Object.keys(fieldsToUpdate).length > 0) {
-      await airtableBase("Accounts").update(currentRecordId, fieldsToUpdate);
-      logs.push(`[LLM] Fields synced immediately for record ID ${currentRecordId}: ${JSON.stringify(fieldsToUpdate)}`);
-    } else {
-      logs.push("[LLM] No new fields to update in Airtable.");
-    }
-  } catch (error) {
-    logs.push(
-      `[LLM] Failed to sync fields immediately for record ID ${currentRecordId}: ${
-        error instanceof Error ? error.message : "Unknown error."
-      }`
-    );
-  }
-}
-
-return extractedFields;
+  logs.push(`[LLM] Final merged fields: ${JSON.stringify(lastExtractedFields)}`);
+  return extractedFields;
 };
 
 
